@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-import logging # Import logging
+import logging  # Import logging
 import json
 from PIL import Image
 from PIL.ExifTags import TAGS
@@ -18,13 +18,13 @@ STATIC_DIR = BASE_DIR / "static"
 IMAGES_DIR = STATIC_DIR / "images"
 TEMPLATES_DIR = BASE_DIR / "templates"
 
-# Create necessary directories if they don't exist
+# Create the necessary directories if they don't exist
 # parents=True creates any necessary parent directories
 # exist_ok=True prevents an error if the directory already exists
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
-(STATIC_DIR / "css").mkdir(parents=True, exist_ok=True) # For optional CSS
+(STATIC_DIR / "css").mkdir(parents=True, exist_ok=True)  # For optional CSS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,7 +56,7 @@ def get_image_metadata(file_path):
         "size": file_path.stat().st_size
     }
     
-    # Try to load additional metadata from companion JSON file
+    # Try to load additional metadata from a companion JSON file
     json_path = file_path.with_suffix('.json')
     if json_path.exists():
         try:
@@ -145,9 +145,9 @@ async def read_root(request: Request):
 
     # Data to pass to the HTML template
     context = {
-        "request": request, # Required by Jinja2Templates
+        "request": request,  # Required by Jinja2Templates
         "artwork_files": artwork_list,
-        "gallery_title": "My Girlfriend's Artwork Gallery" # Customizable title
+        "gallery_title": "My Girlfriend's Artwork Gallery"  # Customizable title
     }
 
     # Render the HTML template with the context data
@@ -162,7 +162,7 @@ async def read_root(request: Request):
 # 5. Create `static/css/styles.css` (code provided separately).
 # 6. Create a virtual environment: python -m venv .venv
 # 7. Activate it: source .venv/bin/activate (or .\venv\Scripts\activate on Windows)
-# 8. Install necessary libraries: pip install "fastapi[all]"
+# 8. Install the necessary libraries: pip install "fastapi[all]"
 # 9. Freeze requirements: pip freeze > requirements.txt
 # 10. Run from your terminal in the directory containing 'main.py':
 #     uvicorn main:app --reload
