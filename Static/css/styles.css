@@ -1,0 +1,151 @@
+/* General body styling */
+body {
+    /* Use a system font stack for broad compatibility and native look/feel */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    margin: 0; /* Remove default body margin */
+    padding: 0; /* Remove default body padding */
+    background-color: #f8f9fa; /* Light grey background */
+    color: #343a40; /* Dark grey text for good contrast */
+    line-height: 1.6; /* Improve readability */
+    min-height: 100vh; /* Ensure body takes at least full viewport height */
+    display: flex; /* Use flexbox for layout */
+    flex-direction: column; /* Stack children vertically */
+}
+
+/* Header styling */
+header {
+    background-color: #e9ecef; /* Slightly darker grey for header */
+    padding: 1.5rem 1rem; /* Padding top/bottom and left/right */
+    text-align: center;
+    border-bottom: 1px solid #dee2e6; /* Subtle separator line */
+}
+
+header h1 {
+    margin: 0; /* Remove default heading margin */
+    color: #495057; /* Darker text for heading */
+    font-weight: 300; /* Lighter font weight for a modern feel */
+    font-size: 2rem; /* Slightly larger heading */
+}
+
+/* Main content area */
+main {
+    padding: 2rem 1rem; /* Add padding around the gallery */
+    max-width: 1200px; /* Limit max width for larger screens */
+    margin: 0 auto; /* Center the main content horizontally */
+    flex-grow: 1; /* Allow main content to grow and push footer down */
+    width: 100%; /* Ensure it takes full width within max-width */
+    box-sizing: border-box; /* Include padding in width calculation */
+}
+
+/* Grid layout for the gallery */
+.gallery-grid {
+    display: grid;
+    /* Responsive grid columns:
+       - Default: Minimum 220px wide columns, fitting as many as possible.
+       - Creates a flexible grid that adapts to screen size.
+    */
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem; /* Space between grid items */
+    justify-content: center; /* Center grid items if they don't fill the row */
+}
+
+/* Individual artwork item styling */
+.artwork-item {
+    background-color: #ffffff; /* White background for items */
+    border: 1px solid #dee2e6; /* Light border */
+    border-radius: 8px; /* Rounded corners */
+    padding: 1rem;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05); /* Subtle shadow for depth */
+    text-align: center;
+    /* Smooth transition for hover effects */
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    overflow: hidden; /* Prevent content from spilling out */
+    display: flex; /* Use flexbox for internal layout */
+    flex-direction: column; /* Stack image and text vertically */
+}
+
+.artwork-item:hover {
+    transform: translateY(-5px); /* Lift item slightly on hover */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1); /* Increase shadow intensity on hover */
+}
+
+/* Styling for the image link container */
+.artwork-item a {
+    display: block; /* Make link take up space */
+    margin-bottom: 0.75rem; /* Space below image link */
+    flex-shrink: 0; /* Prevent link/image container from shrinking */
+}
+
+/* Image styling */
+.artwork-item img {
+    max-width: 100%; /* Ensure image fits within its container */
+    height: auto; /* Maintain aspect ratio */
+    display: block; /* Remove extra space below image */
+    border-radius: 4px; /* Slightly rounded corners for image */
+    /* Maintain a consistent aspect ratio for visual uniformity */
+    aspect-ratio: 4 / 3;
+    /* Cover the area, cropping if necessary to fill the aspect ratio box */
+    object-fit: cover;
+    background-color: #eee; /* Light background color while image is loading */
+}
+
+/* Artwork name styling */
+.artwork-name {
+    font-size: 0.9em;
+    color: #6c757d; /* Muted grey color for filename */
+    margin-top: auto; /* Push filename to the bottom if extra space */
+    margin-bottom: 0; /* Remove default paragraph margin */
+    /* Prevent long filenames from breaking layout */
+    word-wrap: break-word; /* Allow breaking long words */
+    white-space: nowrap; /* Keep filename on one line initially */
+    overflow: hidden; /* Hide overflow */
+    text-overflow: ellipsis; /* Add ellipsis (...) if text overflows */
+    padding-top: 0.5rem; /* Add some space above the text */
+}
+
+/* Message shown when no artwork is found */
+.no-artwork-message {
+    text-align: center;
+    color: #6c757d;
+    padding: 2rem;
+    background-color: #e9ecef; /* Use header background color */
+    border-radius: 8px;
+    margin-top: 1rem; /* Add some space above the message */
+}
+
+/* Footer styling */
+footer {
+    text-align: center;
+    padding: 1.5rem 1rem;
+    margin-top: 2rem; /* Space above the footer */
+    font-size: 0.9em;
+    color: #6c757d; /* Muted text color */
+    border-top: 1px solid #dee2e6; /* Separator line */
+    background-color: #e9ecef; /* Match header background */
+    flex-shrink: 0; /* Prevent footer from shrinking */
+}
+
+/* Media query for smaller screens (e.g., mobile phones) */
+@media (max-width: 600px) {
+    header h1 {
+        font-size: 1.5rem; /* Smaller heading on small screens */
+    }
+    main {
+        padding: 1rem 0.5rem; /* Reduce padding on small screens */
+    }
+    .gallery-grid {
+        /* Adjust grid minimum size for smaller screens */
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem; /* Reduce gap on smaller screens */
+    }
+    .artwork-item {
+        padding: 0.75rem; /* Reduce padding inside items */
+    }
+    .artwork-name {
+        font-size: 0.8em; /* Smaller font for filename */
+    }
+    footer {
+        padding: 1rem 0.5rem;
+        font-size: 0.8em;
+    }
+}
