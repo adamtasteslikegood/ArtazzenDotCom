@@ -1,4 +1,3 @@
-# main.py
 import os
 from pathlib import Path
 from fastapi import FastAPI, Request
@@ -6,6 +5,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 import logging # Import logging
+import json
+from PIL import Image
+from PIL.ExifTags import TAGS
+from datetime import datetime
 
 # --- Configuration ---
 # Get the directory where this script is located
@@ -41,35 +44,89 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # --- Helper Function ---
+def get_image_metadata(file_path):
+    """
+    Extract metadata from image file and optional JSON metadata file
+    """
+    metadata = {
+        "name": file_path.name,
+        "title": file_path.stem,  # Default to filename without extension
+        "description": "",
+        "date_added": datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
+        "size": file_path.stat().st_size
+    }
+    
+    # Try to load additional metadata from companion JSON file
+    json_path = file_path.with_suffix('.json')
+    if json_path.exists():
+        try:
+            with open(json_path, 'r') as f:
+                custom_metadata = json.load(f)
+                metadata.update(custom_metadata)
+        except json.JSONDecodeError as e:
+            logger.error(f"Error reading metadata file {json_path}: {e}")
+
+    # Try to get image-specific metadata using PIL
+    try:
+        with Image.open(file_path) as img:
+            # Get basic image info
+            metadata.update({
+                "width": img.width,
+                "height": img.height,
+                "format": img.format,
+            })
+            
+            # Try to get EXIF data if available
+            if hasattr(img, '_getexif') and img._getexif():
+                exif = img._getexif()
+                if exif:
+                    for tag_id in exif:
+                        tag = TAGS.get(tag_id, tag_id)
+                        data = exif.get(tag_id)
+                        if tag in ['ImageDescription', 'UserComment']:
+                            metadata['description'] = str(data)
+                        elif tag == 'DateTime':
+                            metadata['date_taken'] = data
+                            
+    except Exception as e:
+        logger.error(f"Error reading image metadata for {file_path}: {e}")
+    
+    return metadata
+
 def get_artwork_files():
     """
     Scans the IMAGES_DIR and returns a list of dictionaries,
-    each containing the URL and name of an image file.
+    each containing the URL, name, and metadata of an image file.
     """
     artwork = []
-    # Define allowed image file extensions (case-insensitive)
     allowed_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".tiff"}
     logger.info(f"Scanning for artwork in: {IMAGES_DIR}")
+    
     if IMAGES_DIR.exists() and IMAGES_DIR.is_dir():
         try:
-            # Iterate through all files in the images directory
             for filename in os.listdir(IMAGES_DIR):
-                # Check if the file has an allowed image extension
                 file_path = IMAGES_DIR / filename
-                # Ensure it's a file, not a directory
                 if file_path.is_file():
-                    file_ext = os.path.splitext(filename)[1].lower()
+                    file_ext = file_path.suffix.lower()
                     if file_ext in allowed_extensions:
-                        # Construct the web-accessible URL path for the image
-                        # This path corresponds to the StaticFiles mount point
+                        # Get metadata for the image
+                        metadata = get_image_metadata(file_path)
+                        
+                        # Construct the web-accessible URL path
                         image_url = f"/static/images/{filename}"
-                        artwork.append({"url": image_url, "name": filename})
-                        logger.debug(f"Found artwork: {filename}")
-                    else:
-                        logger.debug(f"Skipping non-image file: {filename}")
+                        
+                        # Combine URL and metadata
+                        artwork_item = {
+                            "url": image_url,
+                            "metadata": metadata
+                        }
+                        
+                        artwork.append(artwork_item)
+                        logger.debug(f"Found artwork with metadata: {filename}")
+            
         except OSError as e:
             logger.error(f"Error reading image directory {IMAGES_DIR}: {e}")
-            return [] # Return empty list on error
+            return []
     else:
         logger.warning(f"Images directory not found or is not a directory: {IMAGES_DIR}")
 

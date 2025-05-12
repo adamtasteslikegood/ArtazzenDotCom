@@ -16,15 +16,28 @@
     <main>
         {% if artwork_files %}
             <div class="gallery-grid">
-                {% for artwork in artwork_files %}
-                    <div class="artwork-item">
-                        <a href="{{ artwork.url }}" target="_blank" title="View full size: {{ artwork.name }}">
-                            <img src="{{ artwork.url }}"
-                                 alt="{{ artwork.name }}"
-                                 loading="lazy"
-                                 onerror="this.onerror=null; this.src='https://placehold.co/250x200/EEE/CCC?text=Image+Not+Found'; this.alt='Image not found';">
-                        </a>
-                        <p class="artwork-name">{{ artwork.name }}</p>
+                {% for item in artwork_files %}
+                    <div class="artwork-card">
+                        <img src="{{ item.url }}" alt="{{ item.metadata.title }}">
+                        <div class="artwork-info">
+                            <h3>{{ item.metadata.title }}</h3>
+                            {% if item.metadata.description %}
+                                <p>{{ item.metadata.description }}</p>
+                            {% endif %}
+                            {% if item.metadata.artist %}
+                                <p>Artist: {{ item.metadata.artist }}</p>
+                            {% endif %}
+                            {% if item.metadata.date_created %}
+                                <p>Created: {{ item.metadata.date_created }}</p>
+                            {% endif %}
+                            {% if item.metadata.medium %}
+                                <p>Medium: {{ item.metadata.medium }}</p>
+                            {% endif %}
+                            <div class="technical-details">
+                                <small>Dimensions: {{ item.metadata.width }}x{{ item.metadata.height }}</small>
+                                <small>Format: {{ item.metadata.format }}</small>
+                            </div>
+                        </div>
                     </div>
                 {% endfor %}
             </div>
