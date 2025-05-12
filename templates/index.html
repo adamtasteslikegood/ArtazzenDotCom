@@ -18,24 +18,33 @@
             <div class="gallery-grid">
                 {% for item in artwork_files %}
                     <div class="artwork-card">
-                        <img src="{{ item.url }}" alt="{{ item.metadata.title }}">
+                        <a href="{{ item.url }}" target="_blank" class="artwork-image-link" title="View full size: {{ item.metadata.title or item.metadata.name }}">
+                            <img src="{{ item.url }}"
+                                 alt="{{ item.metadata.title or item.metadata.name }}"
+                                 loading="lazy"
+                                 onerror="this.onerror=null; this.src='https://placehold.co/250x200/EEE/CCC?text=Image+Not+Found'; this.alt='Image not found';">
+                        </a>
                         <div class="artwork-info">
-                            <h3>{{ item.metadata.title }}</h3>
+                            <h3>{{ item.metadata.title or item.metadata.name }}</h3>
                             {% if item.metadata.description %}
-                                <p>{{ item.metadata.description }}</p>
+                                <p class="artwork-description">{{ item.metadata.description }}</p>
                             {% endif %}
                             {% if item.metadata.artist %}
-                                <p>Artist: {{ item.metadata.artist }}</p>
+                                <p><strong>Artist:</strong> {{ item.metadata.artist }}</p>
                             {% endif %}
                             {% if item.metadata.date_created %}
-                                <p>Created: {{ item.metadata.date_created }}</p>
+                                <p><strong>Created:</strong> {{ item.metadata.date_created }}</p>
                             {% endif %}
                             {% if item.metadata.medium %}
-                                <p>Medium: {{ item.metadata.medium }}</p>
+                                <p><strong>Medium:</strong> {{ item.metadata.medium }}</p>
                             {% endif %}
                             <div class="technical-details">
-                                <small>Dimensions: {{ item.metadata.width }}x{{ item.metadata.height }}</small>
-                                <small>Format: {{ item.metadata.format }}</small>
+                                {% if item.metadata.width and item.metadata.height %}
+                                    <small>Dimensions: {{ item.metadata.width }}x{{ item.metadata.height }}</small>
+                                {% endif %}
+                                {% if item.metadata.format %}
+                                    <small>Format: {{ item.metadata.format }}</small>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -45,7 +54,7 @@
             <p class="no-artwork-message">
                 No artwork images found in the 'static/images' folder.
                 <br>
-                Please add some images (e.g., .jpg, .png, .gif) to that folder.
+                Please add some images (e.g., .jpg, .png, .gif) and optional .json metadata files to that folder.
             </p>
         {% endif %}
     </main>

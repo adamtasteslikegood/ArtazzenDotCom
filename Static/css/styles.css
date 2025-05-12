@@ -1,12 +1,11 @@
 /* General body styling */
 body {
-    /* Use a system font stack for broad compatibility and native look/feel */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    margin: 0; /* Remove default body margin */
-    padding: 0; /* Remove default body padding */
+    margin: 0;
+    padding: 0;
     background-color: #f8f9fa; /* Light grey background */
-    color: #343a40; /* Dark grey text for good contrast */
-    line-height: 1.6; /* Improve readability */
+    color: #343a40; /* Dark grey text */
+    line-height: 1.6;
     min-height: 100vh; /* Ensure body takes at least full viewport height */
     display: flex; /* Use flexbox for layout */
     flex-direction: column; /* Stack children vertically */
@@ -18,6 +17,7 @@ header {
     padding: 1.5rem 1rem; /* Padding top/bottom and left/right */
     text-align: center;
     border-bottom: 1px solid #dee2e6; /* Subtle separator line */
+    flex-shrink: 0; /* Prevent header from shrinking if content is too tall */
 }
 
 header h1 {
@@ -41,66 +41,118 @@ main {
 .gallery-grid {
     display: grid;
     /* Responsive grid columns:
-       - Default: Minimum 220px wide columns, fitting as many as possible.
+       - Default: Minimum 250px wide columns, fitting as many as possible.
        - Creates a flexible grid that adapts to screen size.
     */
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 1.5rem; /* Space between grid items */
     justify-content: center; /* Center grid items if they don't fill the row */
 }
 
-/* Individual artwork item styling */
-.artwork-item {
-    background-color: #ffffff; /* White background for items */
+/* Styling for the new artwork card */
+.artwork-card {
+    background-color: #ffffff; /* White background for cards */
     border: 1px solid #dee2e6; /* Light border */
     border-radius: 8px; /* Rounded corners */
-    padding: 1rem;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05); /* Subtle shadow for depth */
-    text-align: center;
+    /* Use flexbox to manage internal layout */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Hide overflow to respect border-radius on children */
     /* Smooth transition for hover effects */
     transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-    overflow: hidden; /* Prevent content from spilling out */
-    display: flex; /* Use flexbox for internal layout */
-    flex-direction: column; /* Stack image and text vertically */
 }
 
-.artwork-item:hover {
+.artwork-card:hover {
     transform: translateY(-5px); /* Lift item slightly on hover */
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1); /* Increase shadow intensity on hover */
 }
 
-/* Styling for the image link container */
-.artwork-item a {
+/* Styling for the image link container within the card */
+.artwork-image-link {
     display: block; /* Make link take up space */
-    margin-bottom: 0.75rem; /* Space below image link */
     flex-shrink: 0; /* Prevent link/image container from shrinking */
+    text-decoration: none; /* Remove underline from image link */
 }
 
-/* Image styling */
-.artwork-item img {
-    max-width: 100%; /* Ensure image fits within its container */
-    height: auto; /* Maintain aspect ratio */
+/* Image styling within the card - THIS IS THE KEY PART FOR UNIFORMITY */
+.artwork-card img {
     display: block; /* Remove extra space below image */
-    border-radius: 4px; /* Slightly rounded corners for image */
-    /* Maintain a consistent aspect ratio for visual uniformity */
+    width: 100%; /* Make image fill the width of its container */
+    height: auto; /* Maintain aspect ratio initially */
+    /* Force a consistent aspect ratio (e.g., 4:3). Adjust as needed. */
     aspect-ratio: 4 / 3;
-    /* Cover the area, cropping if necessary to fill the aspect ratio box */
+    /* Ensure the image covers the aspect ratio box, cropping if necessary */
     object-fit: cover;
     background-color: #eee; /* Light background color while image is loading */
+    /* Apply border-radius only to top corners if image is at the top of the card */
+    border-top-left-radius: 7px; /* Slightly less than card for better fit */
+    border-top-right-radius: 7px;
+    border-bottom-left-radius: 0; /* No radius if text follows */
+    border-bottom-right-radius: 0;
 }
 
-/* Artwork name styling */
-.artwork-name {
+/* Styling for the metadata info section */
+.artwork-info {
+    padding: 1rem; /* Padding inside the info section */
+    text-align: left; /* Align text to the left */
+    flex-grow: 1; /* Allow info section to take remaining space */
+    display: flex; /* Use flex for internal alignment */
+    flex-direction: column; /* Stack children vertically */
+}
+
+.artwork-info h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    font-size: 1.1em;
+    color: #343a40;
+    /* Prevent long titles from breaking layout */
+    word-wrap: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap; /* Try to keep it on one line, then ellipsis */
+}
+
+.artwork-info p {
+    margin-top: 0;
+    margin-bottom: 0.3rem;
     font-size: 0.9em;
-    color: #6c757d; /* Muted grey color for filename */
-    margin-top: auto; /* Push filename to the bottom if extra space */
-    margin-bottom: 0; /* Remove default paragraph margin */
-    /* Prevent long filenames from breaking layout */
-    word-wrap: break-word; /* Allow breaking long words */
-    white-space: nowrap; /* Keep filename on one line initially */
-    overflow: hidden; /* Hide overflow */
-    text-overflow: ellipsis; /* Add ellipsis (...) if text overflows */
-    padding-top: 0.5rem; /* Add some space above the text */
+    color: #495057;
+}
+
+.artwork-info p.artwork-description {
+    font-style: italic;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+    /* Allow description to wrap */
+    white-space: normal;
+    /* Limit description lines for brevity in card view if desired */
+    display: -webkit-box;
+    -webkit-line-clamp: 3; /* Show up to 3 lines */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.artwork-info strong {
+    color: #343a40;
+}
+
+/* Styling for technical details (dimensions, format) */
+.technical-details {
+    margin-top: auto; /* Push to the bottom of the .artwork-info flex container */
+    padding-top: 0.5rem; /* Space above details */
+    font-size: 0.8em;
+    color: #6c757d;
+    border-top: 1px solid #eee; /* Subtle separator */
+    display: flex;
+    justify-content: space-between; /* Space out details */
+    flex-wrap: wrap; /* Allow wrapping if needed */
+    gap: 0.5rem; /* Space between details if they wrap */
+}
+
+.technical-details small {
+    display: inline-block; /* Allow spacing */
 }
 
 /* Message shown when no artwork is found */
@@ -135,14 +187,26 @@ footer {
     }
     .gallery-grid {
         /* Adjust grid minimum size for smaller screens */
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 1rem; /* Reduce gap on smaller screens */
     }
-    .artwork-item {
-        padding: 0.75rem; /* Reduce padding inside items */
+    .artwork-card {
+        /* Adjust card styling if needed */
     }
-    .artwork-name {
-        font-size: 0.8em; /* Smaller font for filename */
+    .artwork-info {
+        padding: 0.75rem;
+    }
+    .artwork-info h3 {
+        font-size: 1em;
+    }
+     .artwork-info p {
+        font-size: 0.85em;
+    }
+    .artwork-info p.artwork-description {
+        -webkit-line-clamp: 2; /* Show fewer lines on small screens */
+    }
+    .technical-details {
+        font-size: 0.75em;
     }
     footer {
         padding: 1rem 0.5rem;
