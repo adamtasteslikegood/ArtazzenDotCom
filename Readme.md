@@ -22,34 +22,35 @@ A FastAPI-based web application for displaying and managing an artwork gallery. 
     - GItHub https://github.com/adamtasteslikegood/ArtazzenDotCom.git
 
    ```Bash
-    git clone [your-repository-url] cd [repository-name]
-
+    git clone [your-repository-url] 
+    cd [repository-name]
    ```
 
 2. Create and activate a virtual environment:
 
    ```Bash
     python -m venv .venv
-    source .venv/bin/activate
-    (or .\venv\Scripts\activate on Windows)
+    source .venv/bin/activate #(or .\venv\Scripts\activate on Windows)
    ```
 
 3. Install required packages:
    
    ```bash
     pip install "fastapi[all]" Pillow pip freeze > requirements.txt
+
    ```
 
 ## Project Structure
-
-`project_root/ │ ├── main.py # Main application file 
-   ├── static/ # Static files directory │ 
-      ├── images/ # Directory for artwork images 
-      │
-      └── css/ # CSS stylesheets 
-   │
-   └── templates/ # HTML templates 
-      └── index.html # Main gallery template`
+```
+project_root/ 
+├── main.py # Main application file
+├── static/ # Static files directory 
+│  ├── images/ # Directory for artwork images 
+│  └── css/ # CSS stylesheets 
+│  └── css/ # CSS stylesheets
+└── templates/ # HTML templates 
+      └── index.html # Main gallery template
+```
 
 ## Configuration
 
