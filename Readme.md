@@ -36,12 +36,13 @@ A FastAPI-based web application for displaying and managing an artwork gallery. 
 3. Install required packages:
    
    ```bash
-    pip install "fastapi[all]" Pillow pip freeze > requirements.txt
+    pip install "fastapi[all]" Pillow 
+    pip freeze > requirements.txt
 
    ```
 
 ## Project Structure
-```
+```graphql
 project_root/ 
 ├── main.py # Main application file
 ├── static/ # Static files directory 
