@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review {{ metadata.title }} &mdash; Artwork Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+</head>
+<body class="admin-page">
+    <header>
+        <h1>Review metadata</h1>
+        <nav class="admin-nav">
+            <a href="{{ review_url }}" class="button secondary">Back to pending list</a>
+            <a href="/" class="button secondary">View Public Gallery</a>
+        </nav>
+    </header>
+
+    <main class="admin-container single">
+        <section class="admin-panel">
+            <h2>{{ metadata.title }}</h2>
+            <div class="preview-wrapper">
+                <img src="{{ image_url }}" alt="Preview of {{ metadata.title }}" class="preview-image">
+                <dl class="preview-meta">
+                    <div>
+                        <dt>Filename</dt>
+                        <dd>{{ image_name }}</dd>
+                    </div>
+                    <div>
+                        <dt>Image URL</dt>
+                        <dd><a href="{{ image_url }}" target="_blank" rel="noopener">{{ image_url }}</a></dd>
+                    </div>
+                </dl>
+            </div>
+        </section>
+
+        <section class="admin-panel">
+            <h2>Edit text for this image</h2>
+            <p class="panel-description">Update the fields below to control the title and description that accompany the artwork in the public gallery. Saving will also update or create the JSON sidecar file.</p>
+            <form class="metadata-form" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
+                <div class="form-field">
+                    <label for="title">Title</label>
+                    <input type="text" id="title" name="title" value="{{ metadata.title | e }}" required>
+                </div>
+                <div class="form-field">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description" rows="6" placeholder="Describe the story, medium, or inspiration for this piece.">{{ metadata.description | e }}</textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" name="action" value="save" class="button">OK</button>
+                    <button type="submit" name="action" value="cancel" class="button secondary">Cancel</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <footer>
+        <p>Artwork Gallery Administration</p>
+    </footer>
+</body>
+</html>

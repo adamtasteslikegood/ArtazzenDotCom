@@ -6,10 +6,11 @@ A FastAPI-based web application for displaying and managing an artwork gallery. 
 
 - Display artwork images in a responsive gallery layout
 - Support for multiple image formats (JPG, PNG, GIF, WEBP, SVG, BMP, TIFF)
-- Image metadata support including title, description, and technical details
+- Image metadata support including title and description
 - Static file serving for images and CSS
 - Templated HTML using Jinja2
 - Logging system for debugging and monitoring
+- Admin dashboard for uploading images, detecting new files, and editing metadata before publication
 
 ## Prerequisites
 
@@ -44,9 +45,8 @@ A FastAPI-based web application for displaying and managing an artwork gallery. 
 ```
 project_root/ 
 ├── main.py # Main application file
-├── static/ # Static files directory 
-│  ├── images/ # Directory for artwork images 
-│  └── css/ # CSS stylesheets 
+├── Static/ # Static files directory
+│  ├── images/ # Directory for artwork images
 │  └── css/ # CSS stylesheets
 └── templates/ # HTML templates 
       └── index.html # Main gallery template
@@ -54,11 +54,11 @@ project_root/
 
 ## Configuration
 
-1. Place your artwork images in the `static/images/` directory
+1. Place your artwork images in the `Static/images/` directory
 2. (Optional) Create JSON metadata files for images with the same name as the image file:
    ```
-   static/images/artwork1.jpg
-   static/images/artwork1.json
+   Static/images/artwork1.jpg
+   Static/images/artwork1.json
    ```
 
 ## Running the Application
@@ -73,17 +73,27 @@ project_root/
 
 ## Usage
 
-- Add images to the `static/images/` directory
-- Create corresponding JSON files for custom metadata (optional)
+- Add images to the `Static/images/` directory
+- (Optional) create corresponding JSON files for custom metadata
+- If no JSON exists, the app will read embedded EXIF captions and titles
 - Access the gallery through your web browser
 - Images will be automatically displayed with their metadata
+
+### Admin dashboard
+
+- Navigate to `http://127.0.0.1:8000/admin` to open the administrative tools
+- Drag-and-drop or browse to upload new artwork files (image formats or JSON sidecars)
+- Provide an absolute server path to import images that already exist on disk
+- Newly detected files appear in a review queue where you can inspect thumbnails and detected metadata
+- Selecting **Review details** opens a form that lets you edit the title and description that will be saved to the JSON sidecar file
+- Once metadata is saved, the entry is marked as reviewed and removed from the pending list
 
 ## Development
 
 - The `--reload` flag enables auto-reload on code changes
 - Logging is configured for debugging
 - Templates can be modified in the `templates` directory
-- Static files (CSS, images) are served from the `static` directory
+- Static files (CSS, images) are served from the `Static` directory on disk and mounted at `/static` in the application
 
 ## License
 
