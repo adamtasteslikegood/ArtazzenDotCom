@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Artwork Admin Review</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+</head>
+<body class="admin-page">
+    <header>
+        <h1>Artwork Administration</h1>
+        <p class="admin-subheading">Upload, detect, and describe the images that appear in your gallery.</p>
+        <nav class="admin-nav">
+            <a href="/" class="button secondary">View Public Gallery</a>
+            <button type="button" id="refresh-pending" class="button secondary">Refresh Pending List</button>
+        </nav>
+    </header>
+
+    <main class="admin-container">
+        <section class="admin-panel">
+            <h2>Upload new artwork</h2>
+            <p class="panel-description">Drag and drop image files or click below to open a file browser. You can also include existing JSON sidecar files.</p>
+            <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop images here or press enter to choose files">
+                <svg aria-hidden="true" focusable="false" class="dropzone-icon" viewBox="0 0 24 24">
+                    <path d="M12 2a5 5 0 0 1 5 5h3a1 1 0 1 1 0 2h-3v2h1a4 4 0 1 1 0 8H7a5 5 0 0 1-1-9.9V9H3a1 1 0 1 1 0-2h3a5 5 0 0 1 6-5Zm0 2a3 3 0 0 0-3 3v2a1 1 0 0 1-1 1H7a3 3 0 1 0 0 6h11a2 2 0 1 0 0-4h-2a1 1 0 0 1-1-1V7a3 3 0 0 0-3-3Zm0 4a1 1 0 0 1 1 1v2.585l1.293-1.293a1 1 0 1 1 1.414 1.414l-3.004 3.003a1 1 0 0 1-1.414 0l-3.004-3.003a1 1 0 0 1 1.414-1.414L11 11.585V9a1 1 0 0 1 1-1Z" fill="currentColor"/>
+                </svg>
+                <p><strong>Drop files here</strong> or use the button below.</p>
+                <button type="button" id="select-files" class="button">Choose files</button>
+                <input type="file" id="file-input" name="files" accept="image/*,.json" multiple hidden>
+                <p class="supported-formats">Supported formats: {{ allowed_extensions | join(', ') }} and JSON sidecars.</p>
+            </div>
+
+            <form id="path-form" class="path-form">
+                <h3>Import from server path</h3>
+                <p class="panel-description">Paste an absolute file or directory path that the server can read. Images will be copied into <code>Static/images</code>.</p>
+                <label for="path-input" class="sr-only">Absolute path on the server</label>
+                <div class="path-input-row">
+                    <input type="text" id="path-input" name="path" placeholder="/home/user/photos" required>
+                    <button type="submit" class="button">Import</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="admin-panel">
+            <div class="panel-header">
+                <h2>Pending review <span id="pending-count" class="badge">{{ pending_images | length }}</span></h2>
+                <p class="panel-description">Review each image to confirm or edit the metadata that appears to visitors.</p>
+            </div>
+            <div id="pending-list" class="pending-list" aria-live="polite">
+                {% if pending_images %}
+                    {% for item in pending_images %}
+                        <article class="pending-card" data-image-name="{{ item.name }}">
+                            <div class="pending-thumb">
+                                <img src="{{ item.url }}" alt="Preview of {{ item.metadata.title }}" loading="lazy">
+                            </div>
+                            <div class="pending-info">
+                                <h3>{{ item.metadata.title }}</h3>
+                                <p class="filename">{{ item.name }}</p>
+                                {% if item.metadata.description %}
+                                    <p class="description">{{ item.metadata.description }}</p>
+                                {% else %}
+                                    <p class="description empty">No description detected yet.</p>
+                                {% endif %}
+                                <a class="button" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Review details</a>
+                            </div>
+                        </article>
+                    {% endfor %}
+                {% else %}
+                    <p class="empty-state">No new files waiting for review. Upload artwork to begin curating descriptions.</p>
+                {% endif %}
+            </div>
+        </section>
+    </main>
+
+    <section id="feedback" class="feedback" role="status" aria-live="polite" hidden></section>
+
+    <footer>
+        <p>Artwork Gallery Administration</p>
+    </footer>
+
+    <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const selectFilesButton = document.getElementById('select-files');
+    const feedback = document.getElementById('feedback');
+    const pendingList = document.getElementById('pending-list');
+    const pendingCount = document.getElementById('pending-count');
+    const refreshButton = document.getElementById('refresh-pending');
+    const pathForm = document.getElementById('path-form');
+
+    function showFeedback(message, type = 'info') {
+        feedback.textContent = message;
+        feedback.classList.remove('error', 'success');
+        feedback.classList.add(type === 'error' ? 'error' : 'success');
+        feedback.hidden = false;
+        window.setTimeout(() => {
+            feedback.hidden = true;
+        }, 8000);
+    }
+
+    function renderPendingList(pending) {
+        pendingList.innerHTML = '';
+        if (!pending || pending.length === 0) {
+            const emptyMessage = document.createElement('p');
+            emptyMessage.className = 'empty-state';
+            emptyMessage.textContent = 'No new files waiting for review. Upload artwork to begin curating descriptions.';
+            pendingList.appendChild(emptyMessage);
+        } else {
+            pending.forEach((item) => {
+                const card = document.createElement('article');
+                card.className = 'pending-card';
+                card.dataset.imageName = item.name;
+
+                const thumb = document.createElement('div');
+                thumb.className = 'pending-thumb';
+                const img = document.createElement('img');
+                img.src = item.url;
+                img.alt = `Preview of ${item.metadata?.title || item.name}`;
+                img.loading = 'lazy';
+                thumb.appendChild(img);
+                card.appendChild(thumb);
+
+                const info = document.createElement('div');
+                info.className = 'pending-info';
+
+                const title = document.createElement('h3');
+                title.textContent = item.metadata?.title || item.name;
+                info.appendChild(title);
+
+                const filename = document.createElement('p');
+                filename.className = 'filename';
+                filename.textContent = item.name;
+                info.appendChild(filename);
+
+                const description = document.createElement('p');
+                description.className = 'description';
+                const desc = item.metadata?.description;
+                if (desc) {
+                    description.textContent = desc;
+                } else {
+                    description.classList.add('empty');
+                    description.textContent = 'No description detected yet.';
+                }
+                info.appendChild(description);
+
+                const link = document.createElement('a');
+                link.className = 'button';
+                link.href = `/admin/review/${encodeURIComponent(item.name)}`;
+                link.textContent = 'Review details';
+                info.appendChild(link);
+
+                card.appendChild(info);
+                pendingList.appendChild(card);
+            });
+        }
+        if (pendingCount) {
+            pendingCount.textContent = pending ? pending.length : 0;
+        }
+    }
+
+    async function uploadFiles(files) {
+        if (!files || files.length === 0) {
+            return;
+        }
+        const formData = new FormData();
+        Array.from(files).forEach((file) => formData.append('files', file));
+
+        const response = await fetch('/admin/upload', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || 'Upload failed');
+        }
+        renderPendingList(data.pending || []);
+        const saved = data.saved?.length ? `Saved: ${data.saved.join(', ')}` : '';
+        const skipped = data.skipped?.length ? ` Skipped: ${data.skipped.join(', ')}` : '';
+        showFeedback(`${data.message || 'Upload complete.'} ${saved}${skipped}`.trim(), 'success');
+    }
+
+    async function fetchPending(showMessage = false) {
+        const response = await fetch('/admin/api/new-files');
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || 'Unable to refresh pending files');
+        }
+        renderPendingList(data.pending || []);
+        if (showMessage) {
+            showFeedback('Pending list refreshed.', 'success');
+        }
+    }
+
+    if (dropzone) {
+        ['dragenter', 'dragover'].forEach((eventName) => {
+            dropzone.addEventListener(eventName, (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dropzone.classList.add('is-dragover');
+            });
+        });
+
+        ['dragleave', 'dragend', 'drop'].forEach((eventName) => {
+            dropzone.addEventListener(eventName, (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dropzone.classList.remove('is-dragover');
+            });
+        });
+
+        dropzone.addEventListener('drop', async (event) => {
+            try {
+                await uploadFiles(event.dataTransfer.files);
+            } catch (error) {
+                console.error(error);
+                showFeedback(error.message, 'error');
+            }
+        });
+
+        dropzone.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                fileInput?.click();
+            }
+        });
+    }
+
+    selectFilesButton?.addEventListener('click', () => fileInput?.click());
+
+    fileInput?.addEventListener('change', async (event) => {
+        try {
+            await uploadFiles(event.target.files);
+            event.target.value = '';
+        } catch (error) {
+            console.error(error);
+            showFeedback(error.message, 'error');
+        }
+    });
+
+    pathForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const formData = new FormData(pathForm);
+        try {
+            const response = await fetch('/admin/import-path', {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.detail || 'Import failed');
+            }
+            renderPendingList(data.pending || []);
+            const copied = data.copied?.length ? `Imported: ${data.copied.join(', ')}` : '';
+            const skipped = data.skipped?.length ? ` Skipped: ${data.skipped.join(', ')}` : '';
+            showFeedback(`${copied}${skipped}`.trim() || 'Import complete.', 'success');
+            pathForm.reset();
+        } catch (error) {
+            console.error(error);
+            showFeedback(error.message, 'error');
+        }
+    });
+
+    refreshButton?.addEventListener('click', async () => {
+        try {
+            await fetchPending(true);
+        } catch (error) {
+            console.error(error);
+            showFeedback(error.message, 'error');
+        }
+    });
+
+    window.setInterval(async () => {
+        try {
+            await fetchPending(false);
+        } catch (error) {
+            console.error(error);
+        }
+    }, 15000);
+    </script>
+</body>
+</html>
