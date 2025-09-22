@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/ImageSidecar.schema.json",
+  "title": "Image Sidecar Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string",
+      "default": ""
+    },
+    "description": {
+      "type": "string",
+      "default": ""
+    },
+    "reviewed": {
+      "type": "boolean",
+      "default": false
+    },
+    "detected_at": {
+      "type": "number",
+      "description": "Unix epoch seconds when the image was first detected.",
+      "default": 0
+    }
+  },
+  "required": ["title", "description", "reviewed", "detected_at"]
+}
+

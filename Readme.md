@@ -11,6 +11,8 @@ A FastAPI-based web application for displaying and managing an artwork gallery. 
 - Templated HTML using Jinja2
 - Logging system for debugging and monitoring
 - Admin dashboard for uploading images, detecting new files, and editing metadata before publication
+- Per-image JSON sidecars as the source of truth (no shared manifest)
+- Startup validation/migration of sidecars against `ImageSidecar.schema.json`
 
 ## Prerequisites
 
@@ -35,10 +37,9 @@ A FastAPI-based web application for displaying and managing an artwork gallery. 
    ```
 
 3. Install required packages:
-   
-   ```bash
-    pip install "fastapi[all]" Pillow pip freeze > requirements.txt
 
+   ```bash
+   pip install -r requirements.txt
    ```
 
 ## Project Structure
@@ -50,16 +51,16 @@ project_root/
 │  └── css/ # CSS stylesheets
 └── templates/ # HTML templates 
       └── index.html # Main gallery template
+└── ImageSidecar.schema.json # JSON Schema for sidecar files
+└── manage_sidecars.py # CLI to validate/migrate sidecars
 ```
 
-## Configuration
+## Data Model & Configuration
 
 1. Place your artwork images in the `Static/images/` directory
-2. (Optional) Create JSON metadata files for images with the same name as the image file:
-   ```
-   Static/images/artwork1.jpg
-   Static/images/artwork1.json
-   ```
+2. Sidecar JSON: for each image `foo.jpg`, the app expects `foo.json` next to it. If absent, the app creates it at detection time with fields:
+   - `title` (string), `description` (string), `reviewed` (boolean), `detected_at` (number)
+3. Schema: sidecars are validated at server startup against `ImageSidecar.schema.json`. Missing fields are defaulted and simple types coerced.
 
 ## Running the Application
 
@@ -86,7 +87,22 @@ project_root/
 - Provide an absolute server path to import images that already exist on disk
 - Newly detected files appear in a review queue where you can inspect thumbnails and detected metadata
 - Selecting **Review details** opens a form that lets you edit the title and description that will be saved to the JSON sidecar file
-- Once metadata is saved, the entry is marked as reviewed and removed from the pending list
+- Once metadata is saved, the entry is marked as `reviewed: true` and removed from the pending list
+
+## Maintenance
+
+- Validate/migrate all sidecars against the current schema at any time:
+
+  ```bash
+  python manage_sidecars.py validate
+  ```
+
+- Example API checks:
+
+  ```bash
+  curl http://127.0.0.1:8000/admin/api/new-files
+  curl -F "files=@/path/to/image.jpg" http://127.0.0.1:8000/admin/upload
+  ```
 
 ## Development
 
