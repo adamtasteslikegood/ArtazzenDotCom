@@ -55,10 +55,35 @@ def _load_schema() -> Dict[str, Any]:
             "properties": {
                 "title": {"type": "string", "default": ""},
                 "description": {"type": "string", "default": ""},
+                "ai_generated": {"type": "boolean", "default": False},
+                "ai_details": {
+                    "type": "object",
+                    "default": {},
+                    "additionalProperties": False,
+                    "properties": {
+                        "provider": {"type": "string", "default": ""},
+                        "model": {"type": "string", "default": ""},
+                        "prompt": {"type": "string", "default": ""},
+                        "response_id": {"type": "string", "default": ""},
+                        "finish_reason": {"type": "string", "default": ""},
+                        "created": {"type": "number", "default": 0},
+                        "attempted_at": {"type": "number", "default": 0},
+                        "status": {"type": "string", "default": ""},
+                        "error": {"type": "string", "default": ""},
+                        "raw_response": {"type": "object", "default": {}},
+                    },
+                },
                 "reviewed": {"type": "boolean", "default": False},
                 "detected_at": {"type": "number", "default": 0},
             },
-            "required": ["title", "description", "reviewed", "detected_at"],
+            "required": [
+                "title",
+                "description",
+                "ai_generated",
+                "ai_details",
+                "reviewed",
+                "detected_at",
+            ],
             "additionalProperties": False,
         }
 
@@ -77,6 +102,8 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
                 data[key] = False
             elif spec.get("type") == "number":
                 data[key] = 0.0
+            elif spec.get("type") == "object":
+                data[key] = {}
             else:
                 data[key] = None
     # Simple coercions
@@ -86,11 +113,24 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
             data["reviewed"] = True
         elif lowered in {"false", "0", "no", "n"}:
             data["reviewed"] = False
+    if isinstance(data.get("ai_generated"), str):
+        lowered = data["ai_generated"].strip().lower()
+        if lowered in {"true", "1", "yes", "y"}:
+            data["ai_generated"] = True
+        elif lowered in {"false", "0", "no", "n"}:
+            data["ai_generated"] = False
     if isinstance(data.get("detected_at"), str):
         try:
-            data["detected_at"] = float(data["detected_at"]) 
+            data["detected_at"] = float(data["detected_at"])
         except ValueError:
             data["detected_at"] = time.time()
+    if not isinstance(data.get("ai_details"), dict):
+        data["ai_details"] = {}
+    ai_spec = props.get("ai_details", {})
+    if isinstance(data.get("ai_details"), dict):
+        for sub_key, sub_spec in ai_spec.get("properties", {}).items():
+            if sub_key not in data["ai_details"] and "default" in sub_spec:
+                data["ai_details"][sub_key] = sub_spec["default"]
     return data
 
 
@@ -103,8 +143,11 @@ def _ensure_sidecar(image_path: Path, schema: Dict[str, Any]) -> None:
     for key, spec in schema.get("properties", {}).items():
         if "default" in spec:
             sidecar[key] = spec["default"]
-    sidecar.setdefault("title", image_path.stem)
+    sidecar.setdefault("title", "")
     sidecar.setdefault("description", "")
+    sidecar.setdefault("ai_generated", False)
+    if not isinstance(sidecar.get("ai_details"), dict):
+        sidecar["ai_details"] = {}
     sidecar.setdefault("reviewed", False)
     sidecar.setdefault("detected_at", now)
     _atomic_write_json(json_path, sidecar)
