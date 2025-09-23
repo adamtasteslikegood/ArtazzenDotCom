@@ -13,6 +13,58 @@
       "type": "string",
       "default": ""
     },
+    "ai_generated": {
+      "type": "boolean",
+      "description": "Indicates whether AI generated the current title or description.",
+      "default": false
+    },
+    "ai_details": {
+      "type": "object",
+      "default": {},
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "default": ""
+        },
+        "model": {
+          "type": "string",
+          "default": ""
+        },
+        "prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "response_id": {
+          "type": "string",
+          "default": ""
+        },
+        "finish_reason": {
+          "type": "string",
+          "default": ""
+        },
+        "created": {
+          "type": "number",
+          "default": 0
+        },
+        "attempted_at": {
+          "type": "number",
+          "default": 0
+        },
+        "status": {
+          "type": "string",
+          "default": ""
+        },
+        "error": {
+          "type": "string",
+          "default": ""
+        },
+        "raw_response": {
+          "type": "object",
+          "default": {}
+        }
+      }
+    },
     "reviewed": {
       "type": "boolean",
       "default": false
@@ -23,6 +75,13 @@
       "default": 0
     }
   },
-  "required": ["title", "description", "reviewed", "detected_at"]
+  "required": [
+    "title",
+    "description",
+    "ai_generated",
+    "ai_details",
+    "reviewed",
+    "detected_at"
+  ]
 }
 
