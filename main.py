@@ -2,12 +2,15 @@
 import os
 import json
 import asyncio
+import base64
 import shutil
 import threading
 import time
+import textwrap
 from contextlib import suppress
+from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import (
     FastAPI,
@@ -23,6 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette import status
 from PIL import Image, ExifTags
 from jsonschema import validate as js_validate, ValidationError
+import httpx
 import logging # Import logging
 
 # --- Configuration ---
@@ -49,6 +53,14 @@ ALLOWED_IMAGE_EXTENSIONS = {
 }
 
 POLL_INTERVAL_SECONDS = 5
+
+OPENAI_API_KEY_ENV = "My_OpenAI_APIKey"
+OPENAI_MODEL_ENV = "OPENAI_IMAGE_METADATA_MODEL"
+OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
+try:
+    OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
+except ValueError:
+    OPENAI_TIMEOUT_SECONDS = 30.0
 
 # Create necessary directories if they don't exist
 # parents=True creates any necessary parent directories
@@ -114,6 +126,247 @@ def _allowed_image(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_IMAGE_EXTENSIONS
 
 
+def _extract_exif_metadata(image_path: Path) -> Dict[str, str]:
+    """Return a subset of EXIF metadata relevant to titles and descriptions."""
+    data: Dict[str, str] = {}
+    try:
+        with Image.open(image_path) as img:
+            exif = img.getexif()
+            if not exif:
+                return data
+            for tag_id, value in exif.items():
+                tag = ExifTags.TAGS.get(tag_id, tag_id)
+                if tag == "ImageDescription" and value:
+                    if isinstance(value, bytes):
+                        data["description"] = value.decode("utf-8", errors="ignore").strip()
+                    else:
+                        data["description"] = str(value).strip()
+                if tag == "XPTitle" and value:
+                    if isinstance(value, bytes):
+                        data["title"] = value.decode("utf-16-le", errors="ignore").rstrip("\x00").strip()
+                    else:
+                        data["title"] = str(value).strip()
+                if tag == "XPComment" and value and "description" not in data:
+                    if isinstance(value, bytes):
+                        data["description"] = value.decode("utf-16-le", errors="ignore").rstrip("\x00").strip()
+                    else:
+                        data["description"] = str(value).strip()
+    except Exception as exc:  # pragma: no cover - dependent on image format
+        logger.debug("Unable to extract EXIF from %s: %s", image_path, exc)
+    return {k: v for k, v in data.items() if v}
+
+
+def _build_openai_prompt(
+    image_path: Path,
+    metadata: Dict[str, Any],
+    needs_title: bool,
+    needs_description: bool,
+) -> str:
+    """Create a deterministic prompt for the OpenAI metadata request."""
+    hints: List[str] = []
+    if metadata.get("title"):
+        hints.append(f"Existing title: {metadata['title']}")
+    if metadata.get("description"):
+        hints.append(f"Existing description: {metadata['description']}")
+    hint_text = "\n".join(hints) if hints else "No reliable text metadata was detected."
+    requested_parts: List[str] = []
+    if needs_title:
+        requested_parts.append("a short but descriptive title (<= 80 characters)")
+    if needs_description:
+        requested_parts.append("an engaging description (<= 400 characters)")
+    requested = " and ".join(requested_parts)
+    return textwrap.dedent(
+        f"""
+        You are assisting with cataloging artwork. Analyze the provided image "
+        f"named '{image_path.name}'. {hint_text}
+        Generate {requested}. Respond with JSON that contains the keys \
+        "title" and "description" with concise English text suitable for \
+        a public art gallery. Avoid mentioning that information is guessed \
+        or unavailable.
+        """
+    ).strip()
+
+
+def _prepare_image_for_openai(image_path: Path) -> Optional[str]:
+    """Return a data URL encoded version of the image for OpenAI vision models."""
+    try:
+        with Image.open(image_path) as img:
+            if img.mode not in {"RGB", "L"}:
+                img = img.convert("RGB")
+            max_edge = 1024
+            img.thumbnail((max_edge, max_edge))
+            buffer = BytesIO()
+            img.save(buffer, format="JPEG", quality=85)
+        encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{encoded}"
+    except Exception as exc:  # pragma: no cover - dependent on Pillow support
+        logger.warning("Failed to prepare %s for OpenAI metadata request: %s", image_path, exc)
+        return None
+
+
+def _request_openai_metadata(
+    image_path: Path,
+    metadata: Dict[str, Any],
+    needs_title: bool,
+    needs_description: bool,
+) -> Dict[str, Any]:
+    """Request metadata from OpenAI and return the response payload."""
+    model = os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL)
+    prompt = _build_openai_prompt(image_path, metadata, needs_title, needs_description)
+    details: Dict[str, Any] = {
+        "provider": "openai",
+        "model": model,
+        "prompt": prompt,
+        "response_id": "",
+        "finish_reason": "",
+        "created": 0.0,
+        "attempted_at": time.time(),
+        "status": "",
+        "error": "",
+        "raw_response": {},
+    }
+
+    api_key = os.getenv(OPENAI_API_KEY_ENV)
+    if not api_key:
+        details["status"] = "skipped_no_api_key"
+        details["error"] = (
+            f"Missing OpenAI API key. Set the '{OPENAI_API_KEY_ENV}' environment variable."
+        )
+        return {"title": "", "description": "", "details": details}
+
+    image_payload = _prepare_image_for_openai(image_path)
+    if not image_payload:
+        details["status"] = "error_image_encoding"
+        details["error"] = "Unable to prepare image for OpenAI request."
+        return {"title": "", "description": "", "details": details}
+
+    request_body = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You create concise, visitor-friendly metadata for artwork images. "
+                    "Always respond with valid JSON only."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": image_payload, "detail": "low"}},
+                ],
+            },
+        ],
+        "max_tokens": 600,
+        "temperature": 0.6,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "image_metadata",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["title", "description"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        timeout = httpx.Timeout(OPENAI_TIMEOUT_SECONDS)
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=request_body,
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        details["status"] = "error_http"
+        details["error"] = str(exc)
+        return {"title": "", "description": "", "details": details}
+
+    details["response_id"] = payload.get("id", "")
+    details["created"] = float(payload.get("created", details["attempted_at"]))
+    details["model"] = payload.get("model", model)
+    choice = next(iter(payload.get("choices", []) or []), {})
+    details["finish_reason"] = choice.get("finish_reason", "")
+    details["status"] = "success"
+    details["raw_response"] = {
+        "id": payload.get("id"),
+        "usage": payload.get("usage", {}),
+        "choices": [
+            {
+                "index": choice.get("index"),
+                "finish_reason": choice.get("finish_reason"),
+            }
+        ],
+    }
+
+    message = choice.get("message", {})
+    content = message.get("content", "")
+    if isinstance(content, list):
+        text_parts = [part.get("text", "") for part in content if isinstance(part, dict)]
+        content = "".join(text_parts)
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        details["status"] = "error_parse"
+        details["error"] = f"Failed to parse OpenAI response: {exc}"
+        return {"title": "", "description": "", "details": details}
+
+    title = str(parsed.get("title", "")).strip()
+    description = str(parsed.get("description", "")).strip()
+    return {"title": title, "description": description, "details": details}
+
+
+def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill missing metadata using OpenAI when configured."""
+    title_value = (metadata.get("title") or "").strip()
+    description_value = (metadata.get("description") or "").strip()
+    needs_title = title_value == ""
+    needs_description = description_value == ""
+    if not (needs_title or needs_description):
+        return metadata
+
+    ai_details = metadata.get("ai_details")
+    if not isinstance(ai_details, dict):
+        ai_details = {}
+    metadata["ai_details"] = ai_details
+
+    if not os.getenv(OPENAI_API_KEY_ENV) and ai_details.get("status") == "skipped_no_api_key":
+        return metadata
+
+    result = _request_openai_metadata(image_path, metadata, needs_title, needs_description)
+    details = result.get("details", {})
+    metadata["ai_details"] = details
+
+    if details.get("status") == "success":
+        if needs_title and result.get("title"):
+            metadata["title"] = result["title"]
+        if needs_description and result.get("description"):
+            metadata["description"] = result["description"]
+        metadata["ai_generated"] = True
+    else:
+        metadata.setdefault("ai_generated", False)
+
+    metadata.setdefault("detected_at", time.time())
+    metadata.setdefault("reviewed", False)
+    _write_sidecar(image_path, metadata)
+    return metadata
+
+
 def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
     """Ensure a JSON sidecar exists for the provided image with schema fields."""
     json_path = image_path.with_suffix(".json")
@@ -127,8 +380,11 @@ def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
         if "default" in spec:
             sidecar_data[key] = spec["default"]
     # Fill from detected metadata
-    sidecar_data["title"] = metadata.get("title") or image_path.stem
-    sidecar_data["description"] = metadata.get("description", "")
+    sidecar_data["title"] = str(metadata.get("title") or "").strip()
+    sidecar_data["description"] = str(metadata.get("description") or "").strip()
+    sidecar_data["ai_generated"] = bool(metadata.get("ai_generated", False))
+    sidecar_ai_details = metadata.get("ai_details") if isinstance(metadata.get("ai_details"), dict) else {}
+    sidecar_data["ai_details"] = sidecar_ai_details
     sidecar_data["reviewed"] = bool(metadata.get("reviewed", False))
     sidecar_data["detected_at"] = float(metadata.get("detected_at", now))
     with sidecar_lock:
@@ -147,8 +403,11 @@ def _set_review_status_sidecar(image_path: Path, reviewed: bool) -> None:
         with suppress(json.JSONDecodeError, OSError):
             data = json.loads(json_path.read_text(encoding="utf-8"))
     data["reviewed"] = reviewed
-    data.setdefault("title", image_path.stem)
+    data.setdefault("title", "")
     data.setdefault("description", "")
+    data.setdefault("ai_generated", False)
+    if not isinstance(data.get("ai_details"), dict):
+        data["ai_details"] = {}
     data.setdefault("detected_at", time.time())
     _write_sidecar(image_path, data)
 
@@ -171,6 +430,7 @@ def new_files_detected() -> List[Dict[str, Any]]:
         metadata = _load_metadata(image_path)
         _ensure_sidecar(image_path, metadata)
         metadata = _load_metadata(image_path)
+        metadata = _populate_missing_metadata(image_path, metadata)
         if not bool(metadata.get("reviewed", False)):
             pending.append(
                 {
@@ -213,45 +473,31 @@ async def shutdown_event() -> None:
         with suppress(asyncio.CancelledError):
             await watcher
 
-def _load_metadata(image_path: Path) -> dict:
-    """Load metadata for an image.
-
-    Preference order:
-    1. JSON sidecar with same stem as image.
-    2. Embedded EXIF tags (ImageDescription, XPTitle, XPComment).
-    """
-    data: dict = {}
+def _load_metadata(image_path: Path) -> Dict[str, Any]:
+    """Load metadata for an image, combining sidecar data and EXIF hints."""
+    data: Dict[str, Any] = {}
     json_path = image_path.with_suffix(".json")
     if json_path.exists():
         try:
-            data = json.loads(json_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
-            logger.warning(f"Invalid JSON in {json_path}: {e}")
-    else:
-        try:
-            with Image.open(image_path) as img:
-                exif = img.getexif()
-                if exif:
-                    for tag_id, value in exif.items():
-                        tag = ExifTags.TAGS.get(tag_id, tag_id)
-                        if tag == "ImageDescription" and value:
-                            data["description"] = value
-                        if tag == "XPTitle" and value:
-                            if isinstance(value, bytes):
-                                data["title"] = value.decode("utf-16-le").rstrip("\x00")
-                            else:
-                                data["title"] = value
-                        if tag == "XPComment" and value and "description" not in data:
-                            if isinstance(value, bytes):
-                                data["description"] = value.decode("utf-16-le").rstrip("\x00")
-                            else:
-                                data["description"] = value
-        except Exception as e:
-            logger.debug(f"Unable to extract EXIF from {image_path}: {e}")
-    data.setdefault("title", image_path.stem)
+            loaded = json.loads(json_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data.update(loaded)
+        except json.JSONDecodeError as exc:
+            logger.warning("Invalid JSON in %s: %s", json_path, exc)
+
+    exif_data = _extract_exif_metadata(image_path)
+    if not (data.get("title") or "title" in data) and exif_data.get("title"):
+        data["title"] = exif_data["title"]
+    if not (data.get("description") or "description" in data) and exif_data.get("description"):
+        data["description"] = exif_data["description"]
+
+    data.setdefault("title", "")
     data.setdefault("description", "")
     data.setdefault("reviewed", False)
     data.setdefault("detected_at", time.time())
+    data.setdefault("ai_generated", False)
+    if not isinstance(data.get("ai_details"), dict):
+        data["ai_details"] = {}
     return data
 
 
@@ -269,6 +515,8 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
                 data[key] = False
             elif spec.get("type") == "number":
                 data[key] = 0.0
+            elif spec.get("type") == "object":
+                data[key] = {}
             else:
                 data[key] = None
     # Simple coercions
@@ -278,11 +526,24 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
             data["reviewed"] = True
         elif lowered in {"false", "0", "no", "n"}:
             data["reviewed"] = False
+    if isinstance(data.get("ai_generated"), str):
+        lowered = data["ai_generated"].strip().lower()
+        if lowered in {"true", "1", "yes", "y"}:
+            data["ai_generated"] = True
+        elif lowered in {"false", "0", "no", "n"}:
+            data["ai_generated"] = False
     if isinstance(data.get("detected_at"), str):
         try:
-            data["detected_at"] = float(data["detected_at"]) 
+            data["detected_at"] = float(data["detected_at"])
         except ValueError:
             data["detected_at"] = time.time()
+    if not isinstance(data.get("ai_details"), dict):
+        data["ai_details"] = {}
+    ai_spec = props.get("ai_details", {})
+    if isinstance(data.get("ai_details"), dict):
+        for sub_key, sub_spec in ai_spec.get("properties", {}).items():
+            if sub_key not in data["ai_details"] and "default" in sub_spec:
+                data["ai_details"][sub_key] = sub_spec["default"]
     return data
 
 
@@ -465,6 +726,7 @@ async def preview_image_metadata(request: Request, image_name: str) -> HTMLRespo
 
     metadata = _load_metadata(image_path)
     _ensure_sidecar(image_path, metadata)
+    metadata = _populate_missing_metadata(image_path, _load_metadata(image_path))
 
     return templates.TemplateResponse(
         "previewImageText.html",
