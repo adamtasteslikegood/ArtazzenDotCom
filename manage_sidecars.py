@@ -70,6 +70,7 @@ def _load_schema() -> Dict[str, Any]:
                         "attempted_at": {"type": "number", "default": 0},
                         "status": {"type": "string", "default": ""},
                         "error": {"type": "string", "default": ""},
+                        "error_body": {"type": "string", "default": ""},
                         "raw_response": {"type": "object", "default": {}},
                     },
                 },
@@ -204,4 +205,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

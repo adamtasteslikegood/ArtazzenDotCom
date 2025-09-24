@@ -29,6 +29,21 @@
                         <dt>Image URL</dt>
                         <dd><a href="{{ image_url }}" target="_blank" rel="noopener">{{ image_url }}</a></dd>
                     </div>
+                    <div>
+                        <dt>AI status</dt>
+                        <dd class="ai-status">
+                            {% if metadata.get('ai_generated') %}
+                                <span class="badge">AI generated</span>
+                            {% else %}
+                                <span class="badge secondary">AI pending</span>
+                            {% endif %}
+                            {% set ai = metadata.get('ai_details') or {} %}
+                            {% set ai_time = ai.get('created') or ai.get('attempted_at') or metadata.get('detected_at') %}
+                            {% if ai_time %}
+                                <span class="timestamp" data-ts="{{ ai_time }}"></span>
+                            {% endif %}
+                        </dd>
+                    </div>
                 </dl>
             </div>
         </section>
@@ -56,5 +71,18 @@
     <footer>
         <p>Artwork Gallery Administration</p>
     </footer>
+
+    <script>
+    // Format any server-rendered timestamps on this page
+    (function () {
+        document.querySelectorAll('.ai-status .timestamp[data-ts]')
+            .forEach((el) => {
+                const ts = parseFloat(el.getAttribute('data-ts'));
+                if (!isNaN(ts)) {
+                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+                }
+            });
+    })();
+    </script>
 </body>
 </html>
