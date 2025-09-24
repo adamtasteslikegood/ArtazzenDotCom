@@ -59,6 +59,10 @@
           "type": "string",
           "default": ""
         },
+        "error_body": {
+          "type": "string",
+          "default": ""
+        },
         "raw_response": {
           "type": "object",
           "default": {}
@@ -84,4 +88,3 @@
     "detected_at"
   ]
 }
-

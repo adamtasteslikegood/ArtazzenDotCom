@@ -72,6 +72,20 @@ project_root/
    (The --reload flag automatically restarts the server when code changes)
 3. Open your browser and navigate to `http://127.0.0.1:8000`
 
+### Optional: AI Metadata Generation
+
+- Set an API key to auto-generate missing `title`/`description` using OpenAI:
+
+  ```bash
+  export MY_OPENAI_API_KEY=sk-...              # preferred env var
+  # or legacy name also supported:
+  export My_OpenAI_APIKey=sk-...
+  # Optional model override (default: gpt-4o-mini)
+  export OPENAI_IMAGE_METADATA_MODEL=gpt-4o-mini
+  ```
+
+- The server will attempt generation when new/unreviewed images are detected and on the review page for an image.
+
 ## Usage
 
 - Add images to the `Static/images/` directory
@@ -103,6 +117,12 @@ project_root/
   curl http://127.0.0.1:8000/admin/api/new-files
   curl -F "files=@/path/to/image.jpg" http://127.0.0.1:8000/admin/upload
   ```
+
+### AI metadata configuration
+
+- Runtime AI settings persist in `ai_config.json` at the project root.
+- Configure via the admin UI (Admin → AI Metadata Settings) or directly by editing `ai_config.json`.
+- Startup defaults come from environment variables and are overridden by `ai_config.json` if present.
 
 ## Development
 

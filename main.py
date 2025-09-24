@@ -40,6 +40,7 @@ STATIC_DIR = BASE_DIR / "Static"
 IMAGES_DIR = STATIC_DIR / "images"
 TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
+CONFIG_PATH = BASE_DIR / "ai_config.json"
 
 ALLOWED_IMAGE_EXTENSIONS = {
     ".jpg",
@@ -54,7 +55,8 @@ ALLOWED_IMAGE_EXTENSIONS = {
 
 POLL_INTERVAL_SECONDS = 5
 
-OPENAI_API_KEY_ENV = "My_OpenAI_APIKey"
+OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
+OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
 OPENAI_MODEL_ENV = "OPENAI_IMAGE_METADATA_MODEL"
 OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 try:
@@ -88,6 +90,71 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 sidecar_lock = threading.Lock()
+config_lock = threading.Lock()
+
+
+def _get_ai_config() -> Dict[str, Any]:
+    """Return runtime AI config from app.state with env fallbacks."""
+    cfg = getattr(app.state, "ai_config", {})
+    enabled = bool(cfg.get("enabled", True))
+    model = str(cfg.get("model", os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL)))
+    try:
+        temperature = float(cfg.get("temperature", 0.6))
+    except (TypeError, ValueError):
+        temperature = 0.6
+    try:
+        max_output_tokens = int(cfg.get("max_output_tokens", 600))
+    except (TypeError, ValueError):
+        max_output_tokens = 600
+    return {
+        "enabled": enabled,
+        "model": model,
+        "temperature": temperature,
+        "max_output_tokens": max_output_tokens,
+    }
+
+
+def _default_ai_config_from_env() -> Dict[str, Any]:
+    return {
+        "enabled": bool(int(os.getenv("AI_METADATA_ENABLED", "1"))),
+        "model": os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL),
+        "temperature": float(os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE", "0.6")),
+        "max_output_tokens": int(os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS", "600")),
+    }
+
+
+def _sanitize_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(_default_ai_config_from_env())
+    if isinstance(cfg, dict):
+        if "enabled" in cfg:
+            out["enabled"] = bool(cfg.get("enabled"))
+        if isinstance(cfg.get("model"), str) and cfg.get("model").strip():
+            out["model"] = cfg["model"].strip()
+        try:
+            t = float(cfg.get("temperature", out["temperature"]))
+            out["temperature"] = max(0.0, min(2.0, t))
+        except (TypeError, ValueError):
+            pass
+        try:
+            tok = int(cfg.get("max_output_tokens", out["max_output_tokens"]))
+            out["max_output_tokens"] = max(16, min(4000, tok))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _load_ai_config() -> Dict[str, Any]:
+    base = _default_ai_config_from_env()
+    if CONFIG_PATH.exists():
+        with suppress(json.JSONDecodeError, OSError):
+            persisted = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            return _sanitize_ai_config({**base, **(persisted or {})})
+    return base
+
+
+def _save_ai_config(cfg: Dict[str, Any]) -> None:
+    with config_lock:
+        _atomic_write_json(CONFIG_PATH, _sanitize_ai_config(cfg))
 
 
 def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
@@ -177,12 +244,11 @@ def _build_openai_prompt(
     requested = " and ".join(requested_parts)
     return textwrap.dedent(
         f"""
-        You are assisting with cataloging artwork. Analyze the provided image "
-        f"named '{image_path.name}'. {hint_text}
-        Generate {requested}. Respond with JSON that contains the keys \
-        "title" and "description" with concise English text suitable for \
-        a public art gallery. Avoid mentioning that information is guessed \
-        or unavailable.
+        You are assisting with cataloging artwork. Analyze the provided image
+        named '{image_path.name}'. {hint_text}
+        Generate {requested}. Respond with JSON that contains the keys "title" and "description"
+        with concise English text suitable for a public art gallery. Avoid mentioning that information
+        is guessed or unavailable.
         """
     ).strip()
 
@@ -204,6 +270,25 @@ def _prepare_image_for_openai(image_path: Path) -> Optional[str]:
         return None
 
 
+def _get_openai_api_key() -> Optional[str]:
+    """Return OpenAI API key from env or optional local module.
+
+    Checks env vars `MY_OPENAI_API_KEY` then legacy `My_OpenAI_APIKey`.
+    Falls back to optional my_OpenAI_APIkey.py module if present.
+    """
+    api_key = os.getenv(OPENAI_API_KEY_ENV_PRIMARY) or os.getenv(OPENAI_API_KEY_ENV_LEGACY)
+    if api_key:
+        return api_key
+    with suppress(Exception):
+        # Lazy import to avoid hard dependency
+        import my_OpenAI_APIkey as local_key  # type: ignore
+
+        v = getattr(local_key, "MY_OPENAI_API_KEY", None)
+        if v:
+            return str(v)
+    return None
+
+
 def _request_openai_metadata(
     image_path: Path,
     metadata: Dict[str, Any],
@@ -211,7 +296,8 @@ def _request_openai_metadata(
     needs_description: bool,
 ) -> Dict[str, Any]:
     """Request metadata from OpenAI and return the response payload."""
-    model = os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL)
+    ai_cfg = _get_ai_config()
+    model = ai_cfg["model"]
     prompt = _build_openai_prompt(image_path, metadata, needs_title, needs_description)
     details: Dict[str, Any] = {
         "provider": "openai",
@@ -226,11 +312,12 @@ def _request_openai_metadata(
         "raw_response": {},
     }
 
-    api_key = os.getenv(OPENAI_API_KEY_ENV)
+    api_key = _get_openai_api_key()
     if not api_key:
         details["status"] = "skipped_no_api_key"
         details["error"] = (
-            f"Missing OpenAI API key. Set the '{OPENAI_API_KEY_ENV}' environment variable."
+            "Missing OpenAI API key. Set env 'MY_OPENAI_API_KEY' "
+            "(or legacy 'My_OpenAI_APIKey'), or provide my_OpenAI_APIkey.py."
         )
         return {"title": "", "description": "", "details": details}
 
@@ -242,40 +329,48 @@ def _request_openai_metadata(
 
     request_body = {
         "model": model,
-        "messages": [
+        "input": [
             {
                 "role": "system",
-                "content": (
-                    "You create concise, visitor-friendly metadata for artwork images. "
-                    "Always respond with valid JSON only."
-                ),
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "You create concise, visitor-friendly metadata for artwork images. "
+                            "Always respond with valid JSON only."
+                        ),
+                    }
+                ],
             },
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_payload, "detail": "low"}},
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": image_payload},
                 ],
             },
         ],
-        "max_tokens": 600,
-        "temperature": 0.6,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
+        "max_output_tokens": ai_cfg["max_output_tokens"],
+        "text": {
+            "format": {
+                "type": "json_schema",
                 "name": "image_metadata",
+                "strict": True,
                 "schema": {
                     "type": "object",
                     "properties": {
                         "title": {"type": "string"},
-                        "description": {"type": "string"},
+                        "description": {"type": "string"}
                     },
                     "required": ["title", "description"],
-                    "additionalProperties": False,
-                },
-            },
+                    "additionalProperties": False
+                }
+            }
         },
     }
+    # Some models (e.g., gpt-5-mini) do not accept 'temperature'
+    if not str(model).startswith("gpt-5"):
+        request_body["temperature"] = ai_cfg["temperature"]
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -286,7 +381,7 @@ def _request_openai_metadata(
         timeout = httpx.Timeout(OPENAI_TIMEOUT_SECONDS)
         with httpx.Client(timeout=timeout) as client:
             response = client.post(
-                "https://api.openai.com/v1/chat/completions",
+                "https://api.openai.com/v1/responses",
                 headers=headers,
                 json=request_body,
             )
@@ -295,36 +390,73 @@ def _request_openai_metadata(
     except (httpx.HTTPError, json.JSONDecodeError) as exc:
         details["status"] = "error_http"
         details["error"] = str(exc)
+        # Attach response body when available for diagnostics
+        try:
+            details["error_body"] = response.text
+        except Exception:
+            pass
         return {"title": "", "description": "", "details": details}
 
     details["response_id"] = payload.get("id", "")
     details["created"] = float(payload.get("created", details["attempted_at"]))
     details["model"] = payload.get("model", model)
-    choice = next(iter(payload.get("choices", []) or []), {})
-    details["finish_reason"] = choice.get("finish_reason", "")
     details["status"] = "success"
-    details["raw_response"] = {
-        "id": payload.get("id"),
-        "usage": payload.get("usage", {}),
-        "choices": [
-            {
-                "index": choice.get("index"),
-                "finish_reason": choice.get("finish_reason"),
-            }
-        ],
-    }
 
-    message = choice.get("message", {})
-    content = message.get("content", "")
-    if isinstance(content, list):
-        text_parts = [part.get("text", "") for part in content if isinstance(part, dict)]
-        content = "".join(text_parts)
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError as exc:
-        details["status"] = "error_parse"
-        details["error"] = f"Failed to parse OpenAI response: {exc}"
-        return {"title": "", "description": "", "details": details}
+    # Extract JSON from Responses API output; support output_json and output_text
+    parsed = None
+    content_text = ""
+    output = payload.get("output")
+    if isinstance(output, list):
+        for item in output:
+            parts = (item or {}).get("content", []) or []
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                ptype = part.get("type")
+                if ptype in {"output_json", "json"} and isinstance(part.get("json"), dict):
+                    parsed = part.get("json")
+                    break
+                if ptype in {"output_text", "text"}:
+                    text_val = part.get("text", "")
+                    if isinstance(text_val, str):
+                        content_text += text_val
+            if parsed is not None:
+                break
+    # Fallback for older chat-style payloads
+    if parsed is None and not content_text:
+        choice = next(iter(payload.get("choices", []) or []), {})
+        details["finish_reason"] = choice.get("finish_reason", "")
+        message = choice.get("message", {})
+        content = message.get("content", "")
+        if isinstance(content, list):
+            text_parts = [part.get("text", "") for part in content if isinstance(part, dict)]
+            content_text = "".join(text_parts)
+        elif isinstance(content, str):
+            content_text = content
+
+    if parsed is None:
+        try:
+            parsed = json.loads(content_text) if content_text else None
+        except json.JSONDecodeError as exc:
+            details["status"] = "error_parse"
+            details["error"] = f"Failed to parse OpenAI response: {exc}"
+            # attach brief output excerpt and types for debugging
+            try:
+                details["raw_response"] = {
+                    "id": payload.get("id"),
+                    "usage": payload.get("usage", {}),
+                    "output_types": [
+                        [(p or {}).get("type") for p in ((it or {}).get("content") or [])]
+                        for it in (output or [])
+                    ],
+                    "text_excerpt": content_text[:200],
+                }
+            except Exception:
+                details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
+            return {"title": "", "description": "", "details": details}
+
+    # Keep raw id/usage only to avoid bloating sidecar
+    details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
 
     title = str(parsed.get("title", "")).strip()
     description = str(parsed.get("description", "")).strip()
@@ -339,13 +471,16 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
     needs_description = description_value == ""
     if not (needs_title or needs_description):
         return metadata
+    # Respect runtime toggle
+    if not _get_ai_config().get("enabled", True):
+        return metadata
 
     ai_details = metadata.get("ai_details")
     if not isinstance(ai_details, dict):
         ai_details = {}
     metadata["ai_details"] = ai_details
 
-    if not os.getenv(OPENAI_API_KEY_ENV) and ai_details.get("status") == "skipped_no_api_key":
+    if not _get_openai_api_key() and ai_details.get("status") == "skipped_no_api_key":
         return metadata
 
     result = _request_openai_metadata(image_path, metadata, needs_title, needs_description)
@@ -460,6 +595,8 @@ async def _watch_image_directory(app: FastAPI) -> None:
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    # Initialize runtime AI config from persisted file with env fallbacks
+    app.state.ai_config = _load_ai_config()
     _validate_and_migrate_sidecars()
     app.state.pending_images = new_files_detected()
     app.state.watcher_task = asyncio.create_task(_watch_image_directory(app))
@@ -636,6 +773,91 @@ async def api_new_files(request: Request) -> JSONResponse:
     pending = new_files_detected()
     request.app.state.pending_images = pending
     return JSONResponse({"pending": pending})
+
+
+@app.get("/admin/config", response_class=JSONResponse)
+async def get_admin_config() -> JSONResponse:
+    cfg = _get_ai_config()
+    return JSONResponse({
+        "ai": cfg,
+        "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
+    })
+
+
+@app.post("/admin/config", response_class=JSONResponse)
+async def update_admin_config(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    ai = body.get("ai", body) if isinstance(body, dict) else {}
+    cfg = _get_ai_config()
+    if isinstance(ai, dict):
+        if "enabled" in ai:
+            cfg["enabled"] = bool(ai["enabled"])
+        if "model" in ai and isinstance(ai["model"], str) and ai["model"].strip():
+            cfg["model"] = ai["model"].strip()
+        if "temperature" in ai:
+            try:
+                t = float(ai["temperature"])
+                cfg["temperature"] = max(0.0, min(2.0, t))
+            except (TypeError, ValueError):
+                pass
+        if "max_output_tokens" in ai:
+            try:
+                tok = int(ai["max_output_tokens"])
+                cfg["max_output_tokens"] = max(16, min(4000, tok))
+            except (TypeError, ValueError):
+                pass
+    request.app.state.ai_config = cfg
+    _save_ai_config(cfg)
+    return JSONResponse({"ai": cfg, "message": "Configuration updated and saved"})
+
+
+@app.post("/admin/config/reset", response_class=JSONResponse)
+async def reset_admin_config(request: Request) -> JSONResponse:
+    cfg = _default_ai_config_from_env()
+    request.app.state.ai_config = cfg
+    _save_ai_config(cfg)
+    return JSONResponse({"ai": cfg, "message": "Configuration reset to defaults"})
+
+
+@app.post("/admin/ai/regenerate", response_class=JSONResponse)
+async def regenerate_ai_metadata(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    images = body.get("images") or []
+    force = bool(body.get("force", False))
+    if not isinstance(images, list) or not images:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No images provided")
+
+    updated = []
+    errors = []
+    for name in images:
+        fname = _sanitize_filename(str(name))
+        if not fname or not _allowed_image(fname):
+            errors.append({"name": name, "error": "Unsupported or invalid filename"})
+            continue
+        path = IMAGES_DIR / fname
+        if not path.exists():
+            errors.append({"name": name, "error": "File not found"})
+            continue
+        try:
+            meta = _load_metadata(path)
+            if force:
+                meta["title"] = ""
+                meta["description"] = ""
+            meta = _populate_missing_metadata(path, meta)
+            _write_sidecar(path, meta)
+            updated.append({"name": fname, "metadata": meta})
+        except Exception as exc:
+            errors.append({"name": name, "error": str(exc)})
+
+    pending = new_files_detected()
+    request.app.state.pending_images = pending
+    return JSONResponse({"updated": updated, "errors": errors, "pending": pending})
 
 
 @app.post("/admin/upload")
