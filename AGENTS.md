@@ -5,6 +5,7 @@
 - Templates: `templates/` (`index.html`, `reviewAddedFiles.html`, `previewImageText.html`).
 - Static assets: `Static/` (note capital S), with `Static/images/` and `Static/css/` mounted at `/static`.
 - Sidecar schema: `ImageSidecar.schema.json` defines required fields on `*.json` files next to images.
+- AI config: `ai_config.json` persists runtime AI settings (enable, model, temperature, tokens).
 - Dependencies: `requirements.txt`.
 - HTTP request samples: `test_main.http` (use with IDE REST client or `curl`).
 
@@ -15,6 +16,10 @@
 - Sample API checks:
   - List pending: `curl http://127.0.0.1:8000/admin/api/new-files`.
   - Upload: `curl -F "files=@/path/to/image.jpg" http://127.0.0.1:8000/admin/upload`.
+  - Get AI config: `curl http://127.0.0.1:8000/admin/config`.
+  - Update AI config: `curl -X POST -H 'Content-Type: application/json' \
+      -d '{"ai":{"enabled":true,"model":"gpt-5-mini","temperature":0.6,"max_output_tokens":600}}' \
+      http://127.0.0.1:8000/admin/config`.
 
 ## Coding Style & Naming Conventions
 - Python: PEP 8, 4‑space indents, type hints required. Functions `snake_case`, classes `PascalCase`.

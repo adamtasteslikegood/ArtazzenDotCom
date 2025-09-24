@@ -18,6 +18,36 @@
 
     <main class="admin-container">
         <section class="admin-panel">
+            <h2>AI Metadata Settings</h2>
+            <p class="panel-description">Control automatic title/description generation for new or unreviewed images.</p>
+            <form id="ai-config-form" class="ai-config-form">
+                <div class="form-row">
+                    <label class="checkbox">
+                        <input type="checkbox" id="ai-enabled">
+                        <span>Enable AI metadata generation</span>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label for="ai-model">Model</label>
+                    <select id="ai-model">
+                        <option value="gpt-4o-mini">gpt-4o-mini</option>
+                        <option value="gpt-5-mini">gpt-5-mini</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="ai-temp">Temperature</label>
+                    <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
+                </div>
+                <div class="form-row">
+                    <label for="ai-tokens">Max output tokens</label>
+                    <input type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="button">Save settings</button>
+                </div>
+            </form>
+        </section>
+        <section class="admin-panel">
             <h2>Upload new artwork</h2>
             <p class="panel-description">Drag and drop image files or click below to open a file browser. You can also include existing JSON sidecar files.</p>
             <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop images here or press enter to choose files">
@@ -45,11 +75,22 @@
             <div class="panel-header">
                 <h2>Pending review <span id="pending-count" class="badge">{{ pending_images | length }}</span></h2>
                 <p class="panel-description">Review each image to confirm or edit the metadata that appears to visitors.</p>
+                <div class="panel-actions">
+                    <label class="checkbox" title="Overwrite existing title/description when regenerating">
+                        <input type="checkbox" id="force-overwrite">
+                        <span>Force overwrite</span>
+                    </label>
+                    <button type="button" id="select-all" class="button secondary">Select all</button>
+                    <button type="button" id="regen-selected" class="button">Re-run AI for selected</button>
+                </div>
             </div>
             <div id="pending-list" class="pending-list" aria-live="polite">
                 {% if pending_images %}
                     {% for item in pending_images %}
                         <article class="pending-card" data-image-name="{{ item.name }}">
+                            <div class="select-col">
+                                <input type="checkbox" class="item-select" aria-label="Select {{ item.name }}">
+                            </div>
                             <div class="pending-thumb">
                                 <img src="{{ item.url }}" alt="Preview of {{ item.metadata.title }}" loading="lazy">
                             </div>
@@ -61,6 +102,18 @@
                                 {% else %}
                                     <p class="description empty">No description detected yet.</p>
                                 {% endif %}
+                                {% set ai = item.metadata.get('ai_details') or {} %}
+                                {% set ai_time = ai.get('created') or ai.get('attempted_at') or item.metadata.get('detected_at') %}
+                                <p class="ai-status">
+                                    {% if item.metadata.get('ai_generated') %}
+                                        <span class="badge">AI generated</span>
+                                    {% else %}
+                                        <span class="badge secondary">AI pending</span>
+                                    {% endif %}
+                                    {% if ai_time %}
+                                        <span class="timestamp" data-ts="{{ ai_time }}"></span>
+                                    {% endif %}
+                                </p>
                                 <a class="button" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Review details</a>
                             </div>
                         </article>
@@ -87,6 +140,14 @@
     const pendingCount = document.getElementById('pending-count');
     const refreshButton = document.getElementById('refresh-pending');
     const pathForm = document.getElementById('path-form');
+    const aiForm = document.getElementById('ai-config-form');
+    const aiEnabled = document.getElementById('ai-enabled');
+    const aiModel = document.getElementById('ai-model');
+    const aiTemp = document.getElementById('ai-temp');
+    const aiTokens = document.getElementById('ai-tokens');
+    const selectAllBtn = document.getElementById('select-all');
+    const regenBtn = document.getElementById('regen-selected');
+    const forceOverwrite = document.getElementById('force-overwrite');
 
     function showFeedback(message, type = 'info') {
         feedback.textContent = message;
@@ -110,6 +171,15 @@
                 const card = document.createElement('article');
                 card.className = 'pending-card';
                 card.dataset.imageName = item.name;
+
+                const selectCol = document.createElement('div');
+                selectCol.className = 'select-col';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'item-select';
+                checkbox.setAttribute('aria-label', `Select ${item.name}`);
+                selectCol.appendChild(checkbox);
+                card.appendChild(selectCol);
 
                 const thumb = document.createElement('div');
                 thumb.className = 'pending-thumb';
@@ -143,6 +213,23 @@
                 }
                 info.appendChild(description);
 
+                const ai = item.metadata?.ai_details || {};
+                const aiStatus = document.createElement('p');
+                aiStatus.className = 'ai-status';
+                const badge = document.createElement('span');
+                const generated = !!item.metadata?.ai_generated;
+                badge.className = generated ? 'badge' : 'badge secondary';
+                badge.textContent = generated ? 'AI generated' : 'AI pending';
+                aiStatus.appendChild(badge);
+                const ts = ai.created || ai.attempted_at || item.metadata?.detected_at;
+                if (ts) {
+                    const tsSpan = document.createElement('span');
+                    tsSpan.className = 'timestamp';
+                    tsSpan.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+                    aiStatus.appendChild(tsSpan);
+                }
+                info.appendChild(aiStatus);
+
                 const link = document.createElement('a');
                 link.className = 'button';
                 link.href = `/admin/review/${encodeURIComponent(item.name)}`;
@@ -155,6 +242,77 @@
         }
         if (pendingCount) {
             pendingCount.textContent = pending ? pending.length : 0;
+        }
+    }
+
+    async function loadConfig() {
+        try {
+            const res = await fetch('/admin/config');
+            const data = await res.json();
+            const cfg = data.ai || {};
+            if (typeof cfg.enabled === 'boolean') aiEnabled.checked = cfg.enabled;
+            if (typeof cfg.model === 'string') aiModel.value = cfg.model;
+            if (typeof cfg.temperature === 'number') aiTemp.value = cfg.temperature;
+            if (typeof cfg.max_output_tokens === 'number') aiTokens.value = cfg.max_output_tokens;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function saveConfig(event) {
+        event?.preventDefault?.();
+        const payload = {
+            ai: {
+                enabled: !!aiEnabled.checked,
+                model: aiModel.value,
+                temperature: parseFloat(aiTemp.value),
+                max_output_tokens: parseInt(aiTokens.value, 10)
+            }
+        };
+        try {
+            const res = await fetch('/admin/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Failed to save settings');
+            showFeedback('Settings saved.', 'success');
+        } catch (e) {
+            console.error(e);
+            showFeedback(e.message || 'Failed to save settings', 'error');
+        }
+    }
+
+    function selectedNames() {
+        return Array.from(document.querySelectorAll('.pending-card .item-select:checked'))
+            .map((cb) => cb.closest('.pending-card')?.dataset.imageName)
+            .filter(Boolean);
+    }
+
+    async function regenSelected() {
+        const names = selectedNames();
+        if (!names.length) {
+            showFeedback('No images selected.', 'error');
+            return;
+        }
+        try {
+            const res = await fetch('/admin/ai/regenerate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ images: names, force: !!forceOverwrite?.checked })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Regeneration failed');
+            renderPendingList(data.pending || []);
+            const updated = (data.updated || []).map(x => x.name).join(', ');
+            const errs = (data.errors || []).map(x => `${x.name}: ${x.error}`).join('; ');
+            let msg = updated ? `Updated: ${updated}` : '';
+            if (errs) msg += (msg ? ' | ' : '') + `Errors: ${errs}`;
+            showFeedback(msg || 'Regeneration complete.', 'success');
+        } catch (e) {
+            console.error(e);
+            showFeedback(e.message || 'Regeneration failed', 'error');
         }
     }
 
@@ -260,6 +418,14 @@
         }
     });
 
+    aiForm?.addEventListener('submit', saveConfig);
+    selectAllBtn?.addEventListener('click', () => {
+        const boxes = document.querySelectorAll('.pending-card .item-select');
+        const allChecked = Array.from(boxes).every(cb => cb.checked);
+        boxes.forEach(cb => cb.checked = !allChecked);
+    });
+    regenBtn?.addEventListener('click', regenSelected);
+
     refreshButton?.addEventListener('click', async () => {
         try {
             await fetchPending(true);
@@ -276,6 +442,21 @@
             console.error(error);
         }
     }, 15000);
+
+    // Initial load
+    loadConfig();
+
+    // Format any server-rendered timestamps
+    function formatServerTimestamps() {
+        document.querySelectorAll('.ai-status .timestamp[data-ts]')
+            .forEach((el) => {
+                const ts = parseFloat(el.getAttribute('data-ts'));
+                if (!isNaN(ts)) {
+                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+                }
+            });
+    }
+    formatServerTimestamps();
     </script>
 </body>
 </html>
