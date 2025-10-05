@@ -114,12 +114,44 @@ def _get_ai_config() -> Dict[str, Any]:
     }
 
 
+def _parse_bool_env(value: Optional[str], default: bool) -> bool:
+    if value is None:
+        return default
+    candidate = value.strip().lower()
+    if candidate in {"1", "true", "yes", "y", "on"}:
+        return True
+    if candidate in {"0", "false", "no", "n", "off"}:
+        return False
+    try:
+        return bool(int(candidate))
+    except ValueError:
+        return default
+
+
+def _parse_float_env(value: Optional[str], default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_int_env(value: Optional[str], default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _default_ai_config_from_env() -> Dict[str, Any]:
     return {
-        "enabled": bool(int(os.getenv("AI_METADATA_ENABLED", "1"))),
+        "enabled": _parse_bool_env(os.getenv("AI_METADATA_ENABLED"), True),
         "model": os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL),
-        "temperature": float(os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE", "0.6")),
-        "max_output_tokens": int(os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS", "600")),
+        "temperature": _parse_float_env(os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE"), 0.6),
+        "max_output_tokens": _parse_int_env(os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600),
     }
 
 
