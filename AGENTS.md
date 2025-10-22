@@ -1,48 +1,49 @@
-# Repository Guidelines
+# Agent Handbook
 
-## Project Structure & Module Organization
-- App entrypoint: `main.py` (FastAPI + Jinja2).
-- Templates: `templates/` (`index.html`, `reviewAddedFiles.html`, `previewImageText.html`).
-- Static assets: `Static/` (note capital S), with `Static/images/` and `Static/css/` mounted at `/static`.
-- Sidecar schema: `ImageSidecar.schema.json` defines required fields on `*.json` files next to images.
-- AI config: `ai_config.json` persists runtime AI settings (enable, model, temperature, tokens).
-- Dependencies: `requirements.txt`.
-- HTTP request samples: `test_main.http` (use with IDE REST client or `curl`).
+This guide summarizes how autonomous coding agents should work inside the ArtazzenDotCom repository. Keep it handy while you collaborate with the human maintainers.
 
-## Build, Test, and Development Commands
-- Create venv: `python -m venv .venv` and activate (`source .venv/bin/activate`).
-- Install deps: `pip install -r requirements.txt`.
-- Run dev server: `uvicorn main:app --reload` then open `http://127.0.0.1:8000/`.
-- Sample API checks:
-  - List pending: `curl http://127.0.0.1:8000/admin/api/new-files`.
-  - Upload: `curl -F "files=@/path/to/image.jpg" http://127.0.0.1:8000/admin/upload`.
-  - Get AI config: `curl http://127.0.0.1:8000/admin/config`.
-  - Update AI config: `curl -X POST -H 'Content-Type: application/json' \
-      -d '{"ai":{"enabled":true,"model":"gpt-5-mini","temperature":0.6,"max_output_tokens":600}}' \
-      http://127.0.0.1:8000/admin/config`.
+## Mission Profile
+- Deliver well-explained code or documentation improvements without breaking existing flows.
+- Respect the FastAPI + Jinja2 architecture centered around `main.py`.
+- Treat sidecar JSON files next to each image as the source of truth—the schema lives in `ImageSidecar.schema.json`.
+- Preserve `Static/` capitalization; FastAPI mounts it at `/static`.
 
-## Coding Style & Naming Conventions
-- Python: PEP 8, 4‑space indents, type hints required. Functions `snake_case`, classes `PascalCase`.
-- Logging: use the module logger (`logger = logging.getLogger(__name__)`); avoid `print` in app code.
-- Paths: preserve `Static/` capitalization; generate URLs via `/static` (e.g., `/static/images/foo.jpg`).
-- Sidecars: keep only schema fields (`title`, `description`, `reviewed`, `detected_at`). Avoid ad‑hoc keys.
-- Templates: keep filenames consistent with existing ones (e.g., `reviewAddedFiles.html`).
+## Daily Workflow
+1. **Understand the request.** Confirm whether it is a code change, doc update, or review. Ask clarifying questions only when truly needed.
+2. **Check the repo state.** Assume the working tree may be dirty—never revert changes you did not introduce.
+3. **Plan first.** Use the planning tool for any non-trivial task (multi-file edits, new features, refactors). Skip it only for the simplest 1–2 step requests.
+4. **Work incrementally.** Prefer `apply_patch` for manual edits. Do not run destructive git commands or rely on global `cd`; set `workdir` on shell calls.
+5. **Validate.** Run targeted commands when possible (formatters, scripts, manual curl checks). If sandboxing blocks a critical command, request approval with a clear justification.
 
-## Testing Guidelines
-- No formal test suite yet. Validate via browser, `test_main.http`, and `curl` examples above.
-- When adding tests, prefer `pytest` + `httpx` client. Name files `tests/test_*.py` and keep tests fast and isolated.
-- Manual acceptance: verify gallery (`/`), admin dashboard (`/admin`), upload, review, and metadata save flows.
-- On server start, sidecars are validated/migrated to `ImageSidecar.schema.json`.
+## Coding Standards
+- Python code follows PEP 8, uses type hints, and logs through `logging.getLogger(__name__)`.
+- Functions use `snake_case`; classes use `PascalCase`.
+- Sidecar files must only contain `title`, `description`, `reviewed`, `detected_at`.
+- Template filenames stay aligned with existing naming (`index.html`, `reviewAddedFiles.html`, etc.).
 
-## Commit & Pull Request Guidelines
-- Commits: imperative, concise, and scoped (e.g., "Add admin metadata review"). Group related changes.
-- PRs must include:
-  - What/why summary and screenshots for UI changes.
-  - Repro/verification steps and impacted routes.
-  - Notes on data/asset changes under `Static/images/`.
+## Documentation & Communication
+- Write concise, actionable commit-ready descriptions even if you are not creating the commit.
+- In final responses: lead with the change explanation, cite files as `path:line`, and offer natural next steps (tests, review reminders) when relevant.
+- Summaries should be informative yet brief; avoid dumping entire file contents.
 
-## Architecture & Tips
-- FastAPI app with a background poller (`_watch_image_directory`) derives pending items from sidecars (`reviewed: false`).
-- Sidecar JSON is the source of truth. Schema enforced via `ImageSidecar.schema.json` at startup.
-- Writes use atomic replace to reduce corruption risk under multi‑worker servers.
-- Keep request handlers non‑blocking; use `async` where appropriate and avoid long I/O on the main path.
+## Tooling Expectations
+- Python ≥3.10 recommended (virtual env: `python -m venv .venv` → `source .venv/bin/activate`).
+- Install dependencies with `pip install -r requirements.txt`.
+- Local server: `uvicorn main:app --reload` and visit `http://127.0.0.1:8000/`.
+- Useful API probes:
+  - `curl http://127.0.0.1:8000/admin/api/new-files`
+  - `curl -F "files=@/path/to/image.jpg" http://127.0.0.1:8000/admin/upload`
+  - `curl http://127.0.0.1:8000/admin/config`
+- Sidecar management CLI: `python manage_sidecars.py validate`.
+
+## Testing & Quality
+- No formal automated suite yet—lean on manual verification via browser, `test_main.http`, or curl.
+- When adding tests, prefer `pytest` + `httpx` in `tests/test_*.py`, keeping runs fast and isolated.
+- Watch for regressions in gallery view (`/`), admin dashboard (`/admin`), upload flow, and metadata persistence.
+
+## Sandbox & Approvals
+- Default sandbox mode is `workspace-write`; network is restricted. Request escalation only if absolutely required and provide one-sentence justification.
+- Never execute GUI apps or destructive commands without explicit user direction.
+- If unexpected repo changes appear mid-task, stop and ask how to proceed.
+
+Stay deliberate, keep communication tight, and ensure each hand-off leaves the repository healthier than you found it.
