@@ -1,0 +1,169 @@
+/* --- Base & theming ------------------------------------------------------- */
+html { color-scheme: light dark; }
+:root {
+  --bg: #ffffff;
+  --text: #111111;
+  --muted: #d9d9d9;
+  --muted-2: #efefef;
+  --accent: #0071a1;
+  --accent-hover: #004e70;
+  --mark-bg: #e6db74;
+
+  --code-inline-bg: #6d6d6d;
+  --code-inline-fg: #f8f8f2;
+  --code-block-bg: #f5f5f5;
+
+  --blockquote-bg: #e1e1e1;
+  --blockquote-border: #75715e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --text: #f8f8f2;
+    --muted: #3a3a3a;
+    --muted-2: #262626;
+    --accent: #a6e22e;
+    --accent-hover: #f92672;
+    --mark-bg: #e6db74;
+
+    --code-inline-bg: #2b2b2b;  /* inline code chip */
+    --code-inline-fg: #f8f8f2;
+    --code-block-bg: #1a1a1a;
+
+    --blockquote-bg: #2c2c2c;
+    --blockquote-border: #75715e;
+  }
+}
+
+/* --- Layout & typography -------------------------------------------------- */
+* { box-sizing: border-box; }
+body {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  margin: 0 auto;
+  padding: 24px;
+  max-width: 72ch; /* comfy reading width */
+}
+
+h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.25em 0 0.5em; }
+p, ul, ol, pre, table, blockquote { margin: 1em 0; }
+hr { border: none; border-top: 1px solid var(--muted); margin: 2em 0; }
+img, video, canvas, svg { max-width: 100%; height: auto; }
+
+/* --- Links ---------------------------------------------------------------- */
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+a:visited { opacity: 0.95; }
+
+/* --- Inline elements ------------------------------------------------------ */
+mark { background: var(--mark-bg); border-radius: 3px; padding: 0 3px; }
+kbd {
+  background: #fd971f;
+  color: #000;
+  border-radius: 3px;
+  padding: 0 3px;
+  border: 1px solid rgba(0,0,0,0.15);
+}
+
+/* Inline code (but NOT language blocks or Mermaid) */
+code:not([class^="language-"]):not([class~="mermaid"]) {
+  background: var(--code-inline-bg);
+  color: var(--code-inline-fg);
+  border-radius: 3px;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+
+/* --- Code blocks ---------------------------------------------------------- */
+pre {
+  background: var(--code-block-bg);
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--muted);
+}
+pre > code {
+  background: transparent !important;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+}
+
+/* PrismJS token colors (scoped to code blocks) */
+pre[class*="language-"], code[class*="language-"] { color: var(--text); }
+[class*="language-"] .token.comment,
+[class*="language-"] .token.prolog,
+[class*="language-"] .token.doctype,
+[class*="language-"] .token.cdata { color: #75715e; }
+
+[class*="language-"] .token.punctuation { color: #ffffff; }
+[class*="language-"] .token.operator { color: #f92672; }
+[class*="language-"] .token.boolean,
+[class*="language-"] .token.number { color: #ae81ff; }
+[class*="language-"] .token.string { color: #e6db74; }
+[class*="language-"] .token.property,
+[class*="language-"] .token.attr-name,
+[class*="language-"] .token.literal-property { color: #e6db74; }
+[class*="language-"] .token.parameter { color: #fd971f; }
+[class*="language-"] .token.function,
+[class*="language-"] .token["function-variable"] { color: #a6e22e; }
+[class*="language-"] .token.selector,
+[class*="language-"] .token.class-name { color: #a6e22e; }
+
+/* Mermaid should render on its own background, don’t chip it */
+.mermaid { background: transparent !important; }
+
+/* --- Blockquotes ---------------------------------------------------------- */
+blockquote {
+  background: var(--blockquote-bg);
+  border-left: 5px solid var(--blockquote-border);
+  padding: 8px 12px;
+  margin: 16px 0;
+  border-radius: 4px;
+}
+
+/* --- Tables --------------------------------------------------------------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  overflow: hidden;
+  display: block;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+}
+th, td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--muted);
+  border-right: 1px solid var(--muted);
+}
+tr td:last-of-type, tr th:last-of-type { border-right: none; }
+tbody tr:nth-child(odd) td { background: var(--muted-2); }
+
+/* --- Lists ---------------------------------------------------------------- */
+li + li { margin-top: 0.25em; }
+
+/* --- Selection & motion --------------------------------------------------- */
+::selection { background: rgba(166, 226, 46, 0.35); }
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* --- Print (optional) ----------------------------------------------------- */
+@media print {
+  body { background: #fff; color: #000; }
+  a { text-decoration: underline; }
+  pre { page-break-inside: avoid; }
+}
