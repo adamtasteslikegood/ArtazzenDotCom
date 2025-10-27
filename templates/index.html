@@ -18,7 +18,7 @@
             <div class="gallery-grid">
                 {% for artwork in artwork_files %}
                     <div class="artwork-item">
-                        <a href="{{ artwork.url }}" target="_blank" title="View full size: {{ artwork.title }}">
+                        <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
                             <img src="{{ artwork.url }}"
                                  alt="{{ artwork.title }}"
                                  loading="lazy"

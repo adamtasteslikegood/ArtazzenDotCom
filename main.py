@@ -1035,6 +1035,35 @@ async def update_image_metadata(
     )
 
 
+
+@app.get("/artwork/{image_filename}", response_class=HTMLResponse)
+async def artwork_detail(request: Request, image_filename: str):
+    """
+    Displays the details of a single piece of artwork.
+    """
+    filename = _sanitize_filename(image_filename)
+    if not filename or not _allowed_image(filename):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
+
+    image_path = IMAGES_DIR / filename
+    if not image_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
+
+    metadata = _load_metadata(image_path)
+    image_url = f"/static/images/{filename}"
+
+    artwork_data = {
+        "title": metadata.get("title", "Artwork"),
+        "description": metadata.get("description", ""),
+        "image_url": image_url,
+    }
+
+    return templates.TemplateResponse(
+        "artwork_detail.html",
+        {"request": request, "artwork": artwork_data},
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     """
