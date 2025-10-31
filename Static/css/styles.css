@@ -26,6 +26,11 @@ body {
     line-height: 1.7;
 }
 
+body.admin-page {
+    background: #f8f9fa;
+    color: #212529;
+}
+
 .gallery-page,
 .artwork-page {
     background-attachment: fixed;
