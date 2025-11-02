@@ -28,6 +28,12 @@ from PIL import Image, ExifTags
 from jsonschema import validate as js_validate, ValidationError
 import httpx
 import logging # Import logging
+import tempfile
+# Optional: used to coordinate a single background watcher across gunicorn workers
+try:  # pragma: no cover - platform dependent
+    import fcntl  # type: ignore
+except Exception:  # pragma: no cover - e.g., Windows
+    fcntl = None  # type: ignore
 
 # --- Configuration ---
 # Get the directory where this script is located
@@ -41,6 +47,8 @@ IMAGES_DIR = STATIC_DIR / "images"
 TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 CONFIG_PATH = BASE_DIR / "ai_config.json"
+WATCHER_LOCK_PATH = BASE_DIR / ".watcher.lock"
+MIGRATION_LOCK_PATH = BASE_DIR / ".migration.lock"
 
 ALLOWED_IMAGE_EXTENSIONS = {
     ".jpg",
@@ -119,6 +127,9 @@ def _get_ai_config() -> Dict[str, Any]:
         "model": model,
         "temperature": temperature,
         "max_output_tokens": max_output_tokens,
+        "startup_enrichment_enabled": bool(cfg.get("startup_enrichment_enabled", True)),
+        "startup_sidecar_enabled": bool(cfg.get("startup_sidecar_enabled", True)),
+        "max_workers_create_sidecars": int(cfg.get("max_workers_create_sidecars", 2)),
     }
 
 
@@ -160,6 +171,9 @@ def _default_ai_config_from_env() -> Dict[str, Any]:
         "model": os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL),
         "temperature": _parse_float_env(os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE"), 0.6),
         "max_output_tokens": _parse_int_env(os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600),
+        "startup_enrichment_enabled": _parse_bool_env(os.getenv("AI_METADATA_AT_STARTUP_ENABLED"), True),
+        "startup_sidecar_enabled": _parse_bool_env(os.getenv("AI_SIDECAR_AT_STARTUP_ENABLED"), True),
+        "max_workers_create_sidecars": max(1, _parse_int_env(os.getenv("AI_SIDECAR_MAX_WORKERS"), 2)),
     }
 
 
@@ -180,6 +194,16 @@ def _sanitize_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
             out["max_output_tokens"] = max(16, min(4000, tok))
         except (TypeError, ValueError):
             pass
+        if "startup_enrichment_enabled" in cfg:
+            out["startup_enrichment_enabled"] = bool(cfg.get("startup_enrichment_enabled"))
+        if "startup_sidecar_enabled" in cfg:
+            out["startup_sidecar_enabled"] = bool(cfg.get("startup_sidecar_enabled"))
+        if "max_workers_create_sidecars" in cfg:
+            try:
+                slots = int(cfg.get("max_workers_create_sidecars", out.get("max_workers_create_sidecars", 2)))
+                out["max_workers_create_sidecars"] = max(1, min(64, slots))
+            except (TypeError, ValueError):
+                pass
     return out
 
 
@@ -198,11 +222,103 @@ def _save_ai_config(cfg: Dict[str, Any]) -> None:
 
 
 def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
-    """Write JSON atomically to reduce corruption risk across workers."""
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    """Write JSON atomically with a unique temp file to avoid cross-process races."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, indent=2, ensure_ascii=False)
-    tmp_path.write_text(text, encoding="utf-8")
-    tmp_path.replace(path)
+    fd = None
+    tmp_name = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = None
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    except FileNotFoundError:
+        # Retry once by recreating a temp file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd2, tmp_name2 = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+        with os.fdopen(fd2, "w", encoding="utf-8") as f2:
+            f2.write(text)
+            f2.flush()
+            os.fsync(f2.fileno())
+        os.replace(tmp_name2, path)
+    finally:
+        if fd is not None:
+            with suppress(Exception):
+                os.close(fd)
+        if tmp_name and os.path.exists(tmp_name):
+            with suppress(Exception):
+                os.remove(tmp_name)
+
+
+def _acquire_process_lock(path: Path) -> Optional[int]:
+    """Attempt to acquire a cross-process exclusive lock. Returns fd if held."""
+    if fcntl is None:  # pragma: no cover - platform dependent
+        logger.warning("fcntl not available; cannot ensure single watcher across workers")
+        return None
+    fd: Optional[int] = None
+    try:
+        fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fd
+    except BlockingIOError:  # lock held by another process
+        if fd is not None:
+            with suppress(Exception):
+                os.close(fd)
+        return None
+    except Exception as exc:
+        logger.warning("Failed to acquire watcher lock %s: %s", path, exc)
+        if fd is not None:
+            with suppress(Exception):
+                os.close(fd)
+        return None
+
+
+def _release_process_lock(fd: Optional[int]) -> None:
+    if fd is None:
+        return
+    try:
+        if fcntl is not None:  # pragma: no cover - platform dependent
+            with suppress(Exception):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        with suppress(Exception):
+            os.close(fd)
+
+
+def _acquire_sidecar_slot(max_slots: int) -> Optional[int]:
+    """Acquire one of N sidecar creation slots across processes.
+
+    Returns an OS file descriptor if a slot is held, else None.
+    """
+    if fcntl is None:  # pragma: no cover
+        # Without fcntl we cannot coordinate across processes; treat as unlimited
+        return None
+    max_slots = max(1, int(max_slots or 1))
+    for i in range(max_slots):
+        path = BASE_DIR / f".sidecar.slot.{i}"
+        fd: Optional[int] = None
+        try:
+            fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o644)
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            if fd is not None:
+                with suppress(Exception):
+                    os.close(fd)
+            continue
+        except Exception:
+            if fd is not None:
+                with suppress(Exception):
+                    os.close(fd)
+            continue
+    return None
+
+
+def _release_sidecar_slot(fd: Optional[int]) -> None:
+    _release_process_lock(fd)
 
 
 def _load_schema() -> Dict[str, Any]:
@@ -543,6 +659,16 @@ def _request_openai_metadata(
                 details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
             return {"title": "", "description": "", "details": details}
 
+    # If still no structured JSON, bail gracefully instead of crashing
+    if not isinstance(parsed, dict):
+        details["status"] = "error_parse"
+        details["error"] = "OpenAI response did not include JSON content."
+        try:
+            details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
+        except Exception:
+            pass
+        return {"title": "", "description": "", "details": details}
+
     # Keep raw id/usage only to avoid bloating sidecar
     details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
 
@@ -588,9 +714,11 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
     metadata.setdefault("author", author_value)
     metadata.setdefault("copyright", metadata.get("copyright", ""))
     if not (needs_title or needs_description or needs_caption or needs_author or needs_tags):
+        logger.debug("AI enrichment not needed for %s (metadata complete)", image_path.name)
         return metadata
     # Respect runtime toggle
     if not _get_ai_config().get("enabled", True):
+        logger.info("AI enrichment disabled; skipping for %s", image_path.name)
         return metadata
 
     ai_details = metadata.get("ai_details")
@@ -600,6 +728,22 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
 
     if not _get_openai_api_key() and ai_details.get("status") == "skipped_no_api_key":
         return metadata
+
+    # Log start of enrichment
+    requested = [
+        key for key, need in (
+            ("title", needs_title),
+            ("description", needs_description),
+            ("caption", needs_caption),
+            ("author", needs_author),
+            ("tags", needs_tags),
+        ) if need
+    ]
+    logger.info(
+        "AI enrichment starting for %s (fields: %s)",
+        image_path.name,
+        ", ".join(requested) or "none",
+    )
 
     result = _request_openai_metadata(
         image_path,
@@ -625,8 +769,33 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
         if needs_tags and result.get("tags"):
             metadata["tags"] = result["tags"]
         metadata["ai_generated"] = True
+        updated_fields = [
+            k for k in [
+                "title" if needs_title and result.get("title") else None,
+                "description" if needs_description and result.get("description") else None,
+                "caption" if needs_caption and result.get("caption") else None,
+                "author" if needs_author and result.get("author") else None,
+                "tags" if needs_tags and result.get("tags") else None,
+            ] if k
+        ]
+        logger.info(
+            "AI enrichment succeeded for %s (updated: %s)",
+            image_path.name,
+            ", ".join(updated_fields) or "none",
+        )
     else:
         metadata.setdefault("ai_generated", False)
+        status_text = details.get("status") or "unknown"
+        error_text = details.get("error") or ""
+        if status_text.startswith("skipped"):
+            logger.info("AI enrichment skipped for %s: %s", image_path.name, status_text)
+        else:
+            logger.warning(
+                "AI enrichment failed for %s: %s %s",
+                image_path.name,
+                status_text,
+                f"- {error_text}" if error_text else "",
+            )
 
     metadata.setdefault("detected_at", time.time())
     metadata.setdefault("reviewed", False)
@@ -690,7 +859,10 @@ def _set_review_status_sidecar(image_path: Path, reviewed: bool) -> None:
     _write_sidecar(image_path, data)
 
 
-def new_files_detected() -> List[Dict[str, Any]]:
+def new_files_detected(
+    allow_ai_enrichment: bool = True,
+    allow_sidecar_creation: bool = True,
+) -> List[Dict[str, Any]]:
     """Detect unreviewed image files based on their sidecar JSON."""
     pending: List[Dict[str, Any]] = []
     try:
@@ -706,9 +878,18 @@ def new_files_detected() -> List[Dict[str, Any]]:
     for filename in existing_files:
         image_path = IMAGES_DIR / filename
         metadata = _load_metadata(image_path)
-        _ensure_sidecar(image_path, metadata)
-        metadata = _load_metadata(image_path)
-        metadata = _populate_missing_metadata(image_path, metadata)
+        if allow_sidecar_creation:
+            _ensure_sidecar(image_path, metadata)
+            metadata = _load_metadata(image_path)
+        else:
+            logger.info("Startup sidecar creation disabled; skipping for %s", image_path.name)
+        if allow_ai_enrichment:
+            metadata = _populate_missing_metadata(image_path, metadata)
+        else:
+            logger.info(
+                "Startup enrichment disabled; skipping AI for %s",
+                image_path.name,
+            )
         if not bool(metadata.get("reviewed", False)):
             item = dict(metadata)
             item.update(
@@ -764,9 +945,54 @@ async def _watch_image_directory(app: FastAPI) -> None:
 async def startup_event() -> None:
     # Initialize runtime AI config from persisted file with env fallbacks
     app.state.ai_config = _load_ai_config()
-    _validate_and_migrate_sidecars()
-    app.state.pending_images = new_files_detected()
-    app.state.watcher_task = asyncio.create_task(_watch_image_directory(app))
+    # Run schema validation/migration and startup enrichment in a single process when possible
+    mig_fd = _acquire_process_lock(MIGRATION_LOCK_PATH)
+    startup_ai = bool(app.state.ai_config.get("startup_enrichment_enabled", True))
+    startup_sidecar = bool(app.state.ai_config.get("startup_sidecar_enabled", True))
+    sidecar_slots = int(app.state.ai_config.get("max_workers_create_sidecars", 2) or 2)
+    if mig_fd is not None:
+        try:
+            _validate_and_migrate_sidecars()
+            if not startup_ai:
+                logger.info("Startup AI enrichment disabled by config; scanning without enrichment")
+            if not startup_sidecar:
+                logger.info("Startup sidecar creation disabled by config; scanning without sidecars")
+            # Only the process holding the lock performs startup enrichment
+            # Attempt to acquire a sidecar creation slot for this scan
+            slot_fd = _acquire_sidecar_slot(sidecar_slots) if startup_sidecar else None
+            try:
+                app.state.pending_images = new_files_detected(
+                    allow_ai_enrichment=startup_ai,
+                    allow_sidecar_creation=startup_sidecar and (slot_fd is not None or fcntl is None),
+                )
+            finally:
+                _release_sidecar_slot(slot_fd)
+        finally:
+            _release_process_lock(mig_fd)
+    else:
+        logger.info(
+            "Another process holds migration/enrichment lock; scanning without startup enrichment here",
+        )
+        if not startup_sidecar:
+            logger.info("Startup sidecar creation disabled by config; scanning without sidecars")
+        slot_fd = _acquire_sidecar_slot(sidecar_slots) if startup_sidecar else None
+        try:
+            app.state.pending_images = new_files_detected(
+                allow_ai_enrichment=False,
+                allow_sidecar_creation=startup_sidecar and (slot_fd is not None or fcntl is None),
+            )
+        finally:
+            _release_sidecar_slot(slot_fd)
+    app.state.watcher_task = None
+    app.state.watcher_lock_fd = None
+    if os.getenv("DISABLE_WATCHER", "").strip().lower() not in {"1", "true", "yes", "y"}:
+        lock_fd = _acquire_process_lock(WATCHER_LOCK_PATH)
+        if lock_fd is not None:
+            app.state.watcher_lock_fd = lock_fd
+            app.state.watcher_task = asyncio.create_task(_watch_image_directory(app))
+            logger.info("Started image watcher in this process (lock acquired)")
+        else:
+            logger.info("Another process holds the watcher lock; skipping watcher here")
 
 
 @app.on_event("shutdown")
@@ -776,6 +1002,7 @@ async def shutdown_event() -> None:
         watcher.cancel()
         with suppress(asyncio.CancelledError):
             await watcher
+    _release_process_lock(getattr(app.state, "watcher_lock_fd", None))
 
 def _load_metadata(image_path: Path) -> Dict[str, Any]:
     """Load metadata for an image, combining sidecar data and EXIF hints."""
@@ -995,6 +1222,15 @@ async def update_admin_config(request: Request) -> JSONResponse:
     if isinstance(ai, dict):
         if "enabled" in ai:
             cfg["enabled"] = bool(ai["enabled"])
+        if "startup_enrichment_enabled" in ai:
+            cfg["startup_enrichment_enabled"] = bool(ai["startup_enrichment_enabled"])
+        if "startup_sidecar_enabled" in ai:
+            cfg["startup_sidecar_enabled"] = bool(ai["startup_sidecar_enabled"])
+        if "max_workers_create_sidecars" in ai:
+            try:
+                cfg["max_workers_create_sidecars"] = max(1, min(64, int(ai["max_workers_create_sidecars"])) )
+            except (TypeError, ValueError):
+                pass
         if "model" in ai and isinstance(ai["model"], str) and ai["model"].strip():
             cfg["model"] = ai["model"].strip()
         if "temperature" in ai:
@@ -1009,6 +1245,8 @@ async def update_admin_config(request: Request) -> JSONResponse:
                 cfg["max_output_tokens"] = max(16, min(4000, tok))
             except (TypeError, ValueError):
                 pass
+        if "startup_enrichment_enabled" in ai:
+            cfg["startup_enrichment_enabled"] = bool(ai["startup_enrichment_enabled"])
     request.app.state.ai_config = cfg
     _save_ai_config(cfg)
     return JSONResponse({"ai": cfg, "message": "Configuration updated and saved"})

@@ -71,40 +71,62 @@
         </section>
 
         <section class="admin-panel">
-            <h2>Edit text for this image</h2>
+            <h2>
+                Edit text for this image
+                <span class="info-tip" aria-label="Edit fields below to customize what visitors see. Saving updates the JSON sidecar." title="Edit fields below to customize what visitors see. Saving updates the JSON sidecar.">i</span>
+            </h2>
             <p class="panel-description">Update the fields below to control the title, captions, and descriptions that accompany the artwork in the public gallery. Saving will also update or create the JSON sidecar file.</p>
             <form class="metadata-form" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
                 <div class="form-field">
-                    <label for="title">Title</label>
+                    <label for="title" title="Short, descriptive title that appears prominently in the gallery">
+                        Title
+                        <span class="info-tip" aria-label="Short, descriptive title that appears prominently in the gallery" title="Short, descriptive title that appears prominently in the gallery">i</span>
+                    </label>
                     <input type="text" id="title" name="title" value="{{ metadata.title | e }}" required>
                 </div>
                 <div class="form-field">
-                    <label for="description">Description</label>
+                    <label for="description" title="1–3 sentences describing story, medium, or context">
+                        Description
+                        <span class="info-tip" aria-label="1–3 sentences describing story, medium, or context" title="1–3 sentences describing story, medium, or context">i</span>
+                    </label>
                     <textarea id="description" name="description" rows="6" placeholder="Describe the story, medium, or inspiration for this piece.">{{ metadata.description | e }}</textarea>
                 </div>
                 <div class="form-field">
-                    <label for="caption">Caption</label>
+                    <label for="caption" title="Short highlight shown near the image">
+                        Caption
+                        <span class="info-tip" aria-label="Short highlight shown near the image" title="Short highlight shown near the image">i</span>
+                    </label>
                     <textarea id="caption" name="caption" rows="2" placeholder="Short caption for quick highlights.">{{ metadata.caption | e }}</textarea>
                 </div>
                 <div class="form-field">
-                    <label for="author">Author credit</label>
+                    <label for="author" title="Artist or creator name as you want it displayed">
+                        Author credit
+                        <span class="info-tip" aria-label="Artist or creator name as you want it displayed" title="Artist or creator name as you want it displayed">i</span>
+                    </label>
                     <input type="text" id="author" name="author" value="{{ metadata.author | e }}" placeholder="e.g., Jane Doe">
                 </div>
                 <div class="form-field">
-                    <label for="copyright">Copyright</label>
+                    <label for="copyright" title="Copyright statement or symbol and year">
+                        Copyright
+                        <span class="info-tip" aria-label="Copyright statement or symbol and year" title="Copyright statement or symbol and year">i</span>
+                    </label>
                     <input type="text" id="copyright" name="copyright" value="{{ metadata.copyright | e }}" placeholder="© 2024 Jane Doe">
                 </div>
                 <div class="form-field">
-                    <label for="tags">Tags</label>
+                    <label for="tags" title="Comma-separated keywords to aid search and grouping">
+                        Tags
+                        <span class="info-tip" aria-label="Comma-separated keywords to aid search and grouping" title="Comma-separated keywords to aid search and grouping">i</span>
+                    </label>
                     <input type="text" id="tags" name="tags" value="{{ metadata.tags | join(', ') | e }}" placeholder="surreal, oil painting, dusk">
                     <small class="form-hint">Separate tags with commas.</small>
                 </div>
                 <div class="form-field regen-controls">
-                    <label class="checkbox">
+                    <label class="checkbox" title="When enabled, AI regeneration replaces text you have already set.">
                         <input type="checkbox" id="detail-force">
                         <span>Force overwrite existing text when regenerating</span>
+                        <span class="info-tip" aria-label="When enabled, AI regeneration replaces text you have already set." title="When enabled, AI regeneration replaces text you have already set.">i</span>
                     </label>
-                    <button type="button" id="regen-image" class="button secondary">Regenerate metadata</button>
+                    <button type="button" id="regen-image" class="button secondary" title="Request new AI metadata for this image">Regenerate metadata</button>
                 </div>
                 <div class="form-actions">
                     <button type="submit" name="action" value="save" class="button">OK</button>

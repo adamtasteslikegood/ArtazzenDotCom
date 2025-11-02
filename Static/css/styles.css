@@ -583,6 +583,17 @@ footer {
     line-height: 1.5;
 }
 
+.legend-list {
+    margin: 0.5rem 0 1rem;
+    padding-left: 1.2rem;
+    color: #6c757d;
+    font-size: 0.95rem;
+}
+
+.legend-list li {
+    margin: 0.15rem 0;
+}
+
 .badge {
     display: inline-flex;
     align-items: center;
@@ -800,6 +811,28 @@ footer {
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
+}
+
+/* Small inline info tooltip icon */
+.info-tip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 0.35rem;
+    border-radius: 50%;
+    border: 1px solid #ced4da;
+    color: #495057;
+    font-size: 12px;
+    line-height: 1;
+    cursor: help;
+    user-select: none;
+}
+
+.info-tip:hover,
+.info-tip:focus {
+    background-color: #f1f3f5;
 }
 
 .sr-only {
