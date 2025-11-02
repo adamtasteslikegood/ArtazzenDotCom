@@ -12,7 +12,10 @@
 
     <div class="page-container">
     <header class="gallery-header">
-        <h1>{{ gallery_title }}</h1>
+        <h1>
+            {{ gallery_title }}
+            <span class="info-tip" aria-label="Public gallery — click any artwork to view details and full text." title="Public gallery — click any artwork to view details and full text.">i</span>
+        </h1>
         <p class="gallery-subtitle">A living collection of luminous works, inked stories, and chromatic experiments.</p>
         <section class="hero-panel" aria-label="Gallery introduction">
             <div>
@@ -23,9 +26,9 @@
                 </p>
             </div>
             <div class="hero-hints">
-                <span>✨ Curated moments</span>
-                <span>🎨 Mixed media focus</span>
-                <span>🌓 Dreamlike palettes</span>
+                <span title="Highlights chosen for balance and mood">✨ Curated moments</span>
+                <span title="Includes painting, illustration, and experimental media">🎨 Mixed media focus</span>
+                <span title="Explores soft gradients, moonlit tones, and night color">🌓 Dreamlike palettes</span>
             </div>
         </section>
     </header>

@@ -20,17 +20,50 @@
 
     <main class="admin-layout">
         <section class="admin-panel admin-panel--settings">
-            <h2>AI Metadata Settings</h2>
+            <h2>
+                AI Metadata Settings
+                <span class="info-tip" aria-label="Controls for OpenAI-powered metadata generation and when it runs." title="Controls for OpenAI-powered metadata generation and when it runs.">i</span>
+            </h2>
             <p class="panel-description">Control automatic title, description, and caption generation for new or unreviewed images.</p>
+            <ul class="legend-list" aria-label="AI settings quick guide">
+                <li><strong>Enable AI</strong>: Master switch to allow AI to fill missing fields.</li>
+                <li><strong>Startup enrichment</strong>: Runs once at boot for items missing metadata.</li>
+                <li><strong>Startup sidecars</strong>: Creates JSON sidecars if missing during initial scan.</li>
+            </ul>
             <form id="ai-config-form" class="ai-config-form">
                 <div class="form-row">
-                    <label class="checkbox">
+                    <label class="checkbox" title="Master switch for automatic metadata generation using OpenAI.">
                         <input type="checkbox" id="ai-enabled">
                         <span>Enable AI metadata generation</span>
+                        <span class="info-tip" aria-label="Master switch for automatic metadata generation using OpenAI." title="Master switch for automatic metadata generation using OpenAI.">i</span>
                     </label>
                 </div>
                 <div class="form-row">
-                    <label for="ai-model">Model</label>
+                    <label class="checkbox" title="On server startup, analyze images needing metadata and request AI to fill missing fields.">
+                        <input type="checkbox" id="ai-startup-enabled">
+                        <span>Run AI enrichment during startup scan</span>
+                        <span class="info-tip" aria-label="On server startup, analyze images needing metadata and request AI to fill missing fields." title="On server startup, analyze images needing metadata and request AI to fill missing fields.">i</span>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label class="checkbox" title="On server startup, create missing JSON sidecar files for images discovered in the library.">
+                        <input type="checkbox" id="sidecar-startup-enabled">
+                        <span>Create JSON sidecars during startup scan</span>
+                        <span class="info-tip" aria-label="On server startup, create missing JSON sidecar files for images discovered in the library." title="On server startup, create missing JSON sidecar files for images discovered in the library.">i</span>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label for="sidecar-max-workers" title="Upper limit of worker processes allowed to create sidecars during startup scans.">
+                        Max workers creating sidecars
+                        <span class="info-tip" aria-label="Upper limit of worker processes allowed to create sidecars during startup scans." title="Upper limit of worker processes allowed to create sidecars during startup scans.">i</span>
+                    </label>
+                    <input type="number" id="sidecar-max-workers" min="1" max="64" step="1" value="2">
+                </div>
+                <div class="form-row">
+                    <label for="ai-model" title="Preferred model for AI metadata generation. Choose 'auto' to let the server decide.">
+                        Model
+                        <span class="info-tip" aria-label="Preferred model for AI metadata generation. Choose 'auto' to let the server decide." title="Preferred model for AI metadata generation. Choose 'auto' to let the server decide.">i</span>
+                    </label>
                     <select id="ai-model">
                         {% for option in model_options %}
                             <option value="{{ option }}">{{ option }}</option>
@@ -38,11 +71,17 @@
                     </select>
                 </div>
                 <div class="form-row">
-                    <label for="ai-temp">Temperature</label>
+                    <label for="ai-temp" title="Higher values are more creative; lower values are more consistent.">
+                        Temperature
+                        <span class="info-tip" aria-label="Higher values are more creative; lower values are more consistent." title="Higher values are more creative; lower values are more consistent.">i</span>
+                    </label>
                     <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
                 </div>
                 <div class="form-row">
-                    <label for="ai-tokens">Max output tokens</label>
+                    <label for="ai-tokens" title="Upper bound on response length. Keep modest for concise gallery text.">
+                        Max output tokens
+                        <span class="info-tip" aria-label="Upper bound on response length. Keep modest for concise gallery text." title="Upper bound on response length. Keep modest for concise gallery text.">i</span>
+                    </label>
                     <input type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
                 </div>
                 <div class="form-actions">
@@ -53,7 +92,10 @@
         </section>
 
         <section class="admin-panel admin-panel--upload">
-            <h2>Upload new artwork</h2>
+            <h2>
+                Upload new artwork
+                <span class="info-tip" aria-label="Drop images or JSON sidecars. Images are stored under Static/images." title="Drop images or JSON sidecars. Images are stored under Static/images.">i</span>
+            </h2>
             <p class="panel-description">Drag and drop images or click below to upload. JSON sidecars are supported for bulk imports.</p>
             <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop images here or press enter to choose files">
                 <svg aria-hidden="true" focusable="false" class="dropzone-icon" viewBox="0 0 24 24">
@@ -66,7 +108,10 @@
             </div>
 
             <form id="path-form" class="path-form">
-                <h3>Import from server path</h3>
+                <h3>
+                    Import from server path
+                    <span class="info-tip" aria-label="Copies files from a local server path into Static/images." title="Copies files from a local server path into Static/images.">i</span>
+                </h3>
                 <p class="panel-description">Paste an absolute file or directory path accessible to the server. Images are copied into <code>Static/images</code>.</p>
                 <label for="path-input" class="sr-only">Absolute path on the server</label>
                 <div class="path-input-row">
@@ -86,6 +131,7 @@
                     <label class="checkbox" title="Overwrite existing fields when regenerating">
                         <input type="checkbox" id="force-overwrite">
                         <span>Force overwrite</span>
+                        <span class="info-tip" aria-label="Overwrite existing fields when regenerating AI metadata." title="Overwrite existing fields when regenerating AI metadata.">i</span>
                     </label>
                     <button type="button" id="select-all" class="button secondary">Select all</button>
                     <button type="button" id="regen-selected" class="button">Re-run AI</button>
@@ -147,7 +193,7 @@
                 </div>
                 <div class="panel-actions">
                     <label for="gallery-sort" class="sr-only">Sort gallery</label>
-                    <select id="gallery-sort">
+                    <select id="gallery-sort" title="Sort curated artwork by date, title, or author">
                         <option value="detected_at:desc">Newest first</option>
                         <option value="detected_at:asc">Oldest first</option>
                         <option value="title:asc">Title A–Z</option>
@@ -155,8 +201,10 @@
                         <option value="author:asc">Author A–Z</option>
                         <option value="author:desc">Author Z–A</option>
                     </select>
+                    <span class="info-tip" aria-label="Sort curated artwork by date, title, or author" title="Sort curated artwork by date, title, or author">i</span>
                     <label for="gallery-filter" class="sr-only">Filter gallery</label>
-                    <input type="search" id="gallery-filter" placeholder="Filter by title, author, or tag" autocomplete="off">
+                    <input type="search" id="gallery-filter" placeholder="Filter by title, author, or tag" autocomplete="off" title="Type to filter the curated gallery by title, author, or tag">
+                    <span class="info-tip" aria-label="Type to filter the curated gallery by title, author, or tag" title="Type to filter the curated gallery by title, author, or tag">i</span>
                 </div>
             </div>
             <div id="reviewed-list" class="media-grid">
@@ -222,9 +270,12 @@
     const pathForm = document.getElementById('path-form');
     const aiForm = document.getElementById('ai-config-form');
     const aiEnabled = document.getElementById('ai-enabled');
+    const aiStartupEnabled = document.getElementById('ai-startup-enabled');
+    const sidecarStartupEnabled = document.getElementById('sidecar-startup-enabled');
     const aiModel = document.getElementById('ai-model');
     const aiTemp = document.getElementById('ai-temp');
     const aiTokens = document.getElementById('ai-tokens');
+    const sidecarMaxWorkers = document.getElementById('sidecar-max-workers');
     const resetAiButton = document.getElementById('reset-ai-config');
     const selectAllBtn = document.getElementById('select-all');
     const regenBtn = document.getElementById('regen-selected');
@@ -588,6 +639,9 @@
             const data = await response.json();
             const ai = data.ai || {};
             aiEnabled.checked = !!ai.enabled;
+            aiStartupEnabled.checked = !!ai.startup_enrichment_enabled;
+            sidecarStartupEnabled.checked = !!ai.startup_sidecar_enabled;
+            sidecarMaxWorkers.value = ai.max_workers_create_sidecars ?? 2;
             if (ai.model && Array.from(aiModel.options).some((opt) => opt.value === ai.model)) {
                 aiModel.value = ai.model;
             } else {
@@ -673,6 +727,9 @@
         const payload = {
             ai: {
                 enabled: aiEnabled.checked,
+                startup_enrichment_enabled: aiStartupEnabled.checked,
+                startup_sidecar_enabled: sidecarStartupEnabled.checked,
+                max_workers_create_sidecars: parseInt(sidecarMaxWorkers.value || '2', 10),
                 model: aiModel.value,
                 temperature: parseFloat(aiTemp.value || '0.6'),
                 max_output_tokens: parseInt(aiTokens.value || '600', 10),
@@ -704,6 +761,9 @@
             const data = await response.json();
             const ai = data.ai || {};
             aiEnabled.checked = !!ai.enabled;
+            aiStartupEnabled.checked = !!ai.startup_enrichment_enabled;
+            sidecarStartupEnabled.checked = !!ai.startup_sidecar_enabled;
+            sidecarMaxWorkers.value = ai.max_workers_create_sidecars ?? 2;
             aiModel.value = ai.model && Array.from(aiModel.options).some((opt) => opt.value === ai.model)
                 ? ai.model
                 : aiModel.options[0].value;
