@@ -44,13 +44,35 @@
                             {% endif %}
                         </dd>
                     </div>
+                    <div>
+                        <dt>Caption</dt>
+                        <dd data-field="caption">{{ metadata.caption or '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt>Author</dt>
+                        <dd data-field="author">{{ metadata.author or '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt>Tags</dt>
+                        <dd data-field="tags">
+                            {% if metadata.tags %}
+                                {{ metadata.tags | join(', ') }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt>Copyright</dt>
+                        <dd data-field="copyright">{{ metadata.copyright or '—' }}</dd>
+                    </div>
                 </dl>
             </div>
         </section>
 
         <section class="admin-panel">
             <h2>Edit text for this image</h2>
-            <p class="panel-description">Update the fields below to control the title and description that accompany the artwork in the public gallery. Saving will also update or create the JSON sidecar file.</p>
+            <p class="panel-description">Update the fields below to control the title, captions, and descriptions that accompany the artwork in the public gallery. Saving will also update or create the JSON sidecar file.</p>
             <form class="metadata-form" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
                 <div class="form-field">
                     <label for="title">Title</label>
@@ -60,11 +82,37 @@
                     <label for="description">Description</label>
                     <textarea id="description" name="description" rows="6" placeholder="Describe the story, medium, or inspiration for this piece.">{{ metadata.description | e }}</textarea>
                 </div>
+                <div class="form-field">
+                    <label for="caption">Caption</label>
+                    <textarea id="caption" name="caption" rows="2" placeholder="Short caption for quick highlights.">{{ metadata.caption | e }}</textarea>
+                </div>
+                <div class="form-field">
+                    <label for="author">Author credit</label>
+                    <input type="text" id="author" name="author" value="{{ metadata.author | e }}" placeholder="e.g., Jane Doe">
+                </div>
+                <div class="form-field">
+                    <label for="copyright">Copyright</label>
+                    <input type="text" id="copyright" name="copyright" value="{{ metadata.copyright | e }}" placeholder="© 2024 Jane Doe">
+                </div>
+                <div class="form-field">
+                    <label for="tags">Tags</label>
+                    <input type="text" id="tags" name="tags" value="{{ metadata.tags | join(', ') | e }}" placeholder="surreal, oil painting, dusk">
+                    <small class="form-hint">Separate tags with commas.</small>
+                </div>
+                <div class="form-field regen-controls">
+                    <label class="checkbox">
+                        <input type="checkbox" id="detail-force">
+                        <span>Force overwrite existing text when regenerating</span>
+                    </label>
+                    <button type="button" id="regen-image" class="button secondary">Regenerate metadata</button>
+                </div>
                 <div class="form-actions">
                     <button type="submit" name="action" value="save" class="button">OK</button>
                     <button type="submit" name="action" value="cancel" class="button secondary">Cancel</button>
+                    <button type="submit" name="action" value="mark_unreviewed" class="button tertiary">Mark as pending</button>
                 </div>
             </form>
+            <p id="detail-feedback" class="feedback" hidden></p>
         </section>
     </main>
 
@@ -73,15 +121,103 @@
     </footer>
 
     <script>
-    // Format any server-rendered timestamps on this page
     (function () {
-        document.querySelectorAll('.ai-status .timestamp[data-ts]')
-            .forEach((el) => {
-                const ts = parseFloat(el.getAttribute('data-ts'));
-                if (!isNaN(ts)) {
-                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+        const timestampEls = document.querySelectorAll('.ai-status .timestamp[data-ts]');
+        timestampEls.forEach((el) => {
+            const ts = parseFloat(el.getAttribute('data-ts'));
+            if (!isNaN(ts)) {
+                el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+            }
+        });
+
+        const regenButton = document.getElementById('regen-image');
+        const forceToggle = document.getElementById('detail-force');
+        const feedback = document.getElementById('detail-feedback');
+        const imageName = {{ image_name | tojson }};
+
+        const titleInput = document.getElementById('title');
+        const descriptionInput = document.getElementById('description');
+        const captionInput = document.getElementById('caption');
+        const authorInput = document.getElementById('author');
+        const copyrightInput = document.getElementById('copyright');
+        const tagsInput = document.getElementById('tags');
+
+        const detailFields = {
+            caption: document.querySelector('[data-field="caption"]'),
+            author: document.querySelector('[data-field="author"]'),
+            tags: document.querySelector('[data-field="tags"]'),
+            copyright: document.querySelector('[data-field="copyright"]'),
+        };
+
+        function setFeedback(message, isError = false) {
+            feedback.textContent = message;
+            feedback.hidden = false;
+            feedback.classList.remove('error', 'success');
+            feedback.classList.toggle('error', isError);
+            feedback.classList.toggle('success', !isError);
+        }
+
+        function updateDetailField(key, value) {
+            const target = detailFields[key];
+            if (!target) return;
+            if (Array.isArray(value)) {
+                target.textContent = value.length ? value.join(', ') : '—';
+            } else {
+                target.textContent = value ? value : '—';
+            }
+        }
+
+        async function regenerateMetadata() {
+            setFeedback('Regenerating metadata…');
+            try {
+                const response = await fetch('/admin/ai/regenerate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ images: [imageName], force: !!forceToggle?.checked }),
+                });
+                if (!response.ok) {
+                    throw new Error('Request failed');
                 }
-            });
+                const data = await response.json();
+                const match = (data.updated || []).find((item) => item.name === imageName);
+                if (!match || !match.metadata) {
+                    setFeedback('Regeneration finished but no metadata was returned.', true);
+                    return;
+                }
+                const meta = match.metadata;
+                if (meta.title) {
+                    titleInput.value = meta.title;
+                }
+                if (meta.description) {
+                    descriptionInput.value = meta.description;
+                }
+                if (meta.caption !== undefined) {
+                    captionInput.value = meta.caption || '';
+                    updateDetailField('caption', meta.caption || '');
+                }
+                if (meta.author !== undefined) {
+                    authorInput.value = meta.author || '';
+                    updateDetailField('author', meta.author || '');
+                }
+                if (meta.copyright !== undefined) {
+                    copyrightInput.value = meta.copyright || '';
+                    updateDetailField('copyright', meta.copyright || '');
+                }
+                if (meta.tags !== undefined) {
+                    const tags = Array.isArray(meta.tags) ? meta.tags : [];
+                    tagsInput.value = tags.join(', ');
+                    updateDetailField('tags', tags);
+                }
+                setFeedback('Metadata regenerated. Review and save to keep these changes.');
+            } catch (error) {
+                console.error(error);
+                setFeedback('Unable to regenerate metadata at this time.', true);
+            }
+        }
+
+        if (regenButton) {
+            regenButton.addEventListener('click', regenerateMetadata);
+        }
     })();
     </script>
 </body>
