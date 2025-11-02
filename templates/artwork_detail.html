@@ -5,49 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ artwork.title }}</title>
     <link rel="stylesheet" href="/static/css/styles.css">
-    <style>
-        .artwork-detail-container {
-            max-width: 800px;
-            margin: 2rem auto;
-            padding: 1rem;
-            background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-        .artwork-image {
-            width: 100%;
-            height: auto;
-            border-radius: 8px;
-        }
-        .artwork-title {
-            font-size: 2rem;
-            margin-top: 1rem;
-        }
-        .artwork-description {
-            margin-top: 1rem;
-            line-height: 1.6;
-        }
-        .back-button {
-            display: inline-block;
-            margin-top: 2rem;
-            padding: 0.5rem 1rem;
-            background-color: #007bff;
-            color: #fff;
-            text-decoration: none;
-            border-radius: 4px;
-            transition: background-color 0.3s;
-        }
-        .back-button:hover {
-            background-color: #0056b3;
-        }
-    </style>
 </head>
-<body>
-    <div class="artwork-detail-container">
-        <h1 class="artwork-title">{{ artwork.title }}</h1>
-        <img class="artwork-image" src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
-        <p class="artwork-description">{{ artwork.description }}</p>
-        <a href="/" class="back-button">Back to Gallery</a>
-    </div>
+<body class="artwork-detail-page">
+    <main>
+        <article class="artwork-detail-shell">
+            <figure class="artwork-figure">
+                <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                <figcaption>Gallery highlight</figcaption>
+            </figure>
+            <section class="artwork-story">
+                <h1>{{ artwork.title }}</h1>
+                <p>{{ artwork.description }}</p>
+                <div class="artwork-actions">
+                    <a href="/" class="back-button">← Back to Gallery</a>
+                    <a href="/admin" class="button secondary">Curate more work</a>
+                </div>
+            </section>
+        </article>
+    </main>
 </body>
 </html>
