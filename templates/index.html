@@ -9,18 +9,31 @@
 </head>
 <body class="gallery-home">
 
-    <header class="hero">
-        <div class="hero__inner">
+    {% set hero_artwork = artwork_files[0] if artwork_files else None %}
+
+    <header class="hero" {% if hero_artwork %}style="--hero-image: url('{{ hero_artwork.url }}')"{% endif %}>
+        <div class="hero__content">
             <p class="hero__eyebrow">Artazzen Gallery</p>
             <h1 class="hero__title">{{ gallery_title }}</h1>
-            <p class="hero__lead">Discover luminous experiments in color, texture, and light. Each piece is paired with a
-                handwritten story to invite you deeper into the world of the artist.</p>
+            <p class="hero__lead">Discover luminous experiments in colour, light, and gesture. Each canvas in the collection is
+                paired with the artist's notes to invite you deeper into their process.</p>
+            {% if hero_artwork %}
+            <p class="hero__caption">Currently featuring: {{ hero_artwork.title }}</p>
+            {% endif %}
             <div class="hero__actions">
                 <a class="button" href="#gallery">Enter the collection</a>
                 <a class="button secondary" href="/admin">Curate new work</a>
             </div>
         </div>
-        <div class="hero__mood"></div>
+        {% if artwork_files %}
+        <div class="hero__preview" aria-hidden="true">
+            {% for artwork in artwork_files[:3] %}
+            <div class="hero-preview-card" style="--preview-image: url('{{ artwork.url }}')">
+                <span class="hero-preview-card__title">{{ artwork.title }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </header>
 
     <main id="gallery">
