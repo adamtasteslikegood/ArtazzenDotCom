@@ -66,7 +66,9 @@ max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "0"))
 # --- Logging ---
 # DEFAULT: write access and error logs to files under ./logs
 # Reset to Gunicorn's defaults by unsetting these env vars (errorlog= '-', accesslog=None)
-errorlog = os.getenv("GUNICORN_ERRORLOG", str(LOG_DIR / "gunicorn_error.log"))
+# Stream error log to console by default for real-time visibility.
+# Application code still writes to logs/app.log.
+errorlog = os.getenv("GUNICORN_ERRORLOG", "-")
 accesslog = os.getenv("GUNICORN_ACCESSLOG", str(LOG_DIR / "gunicorn_access.log"))
 
 # DEFAULT: info
@@ -96,4 +98,3 @@ proxy_protocol = os.getenv("GUNICORN_PROXY_PROTOCOL", "false").lower() == "true"
 # How to reset to defaults:
 # - Remove/ignore this file OR unset the env vars above to let Gunicorn use its own defaults.
 # - Example to revert binding to localhost: export GUNICORN_BIND=127.0.0.1:8000
-
