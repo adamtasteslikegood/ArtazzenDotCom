@@ -723,10 +723,10 @@ def _request_openai_metadata(
             },
         ],
         "max_output_tokens": ai_cfg["max_output_tokens"],
-        # Ask for JSON Schema output to increase structured responses
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
+        # Ask for JSON Schema output using Responses API 'text.format'
+        "text": {
+            "format": {
+                "type": "json_schema",
                 "name": "image_metadata",
                 "strict": True,
                 "schema": {
@@ -749,6 +749,7 @@ def _request_openai_metadata(
             },
         },
     }
+    # Note: The Responses API infers modalities from content; do not set 'modalities'.
     # Some models (e.g., gpt-5 variants) do not accept 'temperature'
     if not str(model).startswith("gpt-5"):
         request_body["temperature"] = ai_cfg["temperature"]
@@ -774,6 +775,29 @@ def _request_openai_metadata(
         # Attach response body when available for diagnostics
         try:
             details["error_body"] = response.text
+        except Exception:
+            pass
+        # Dump diagnostics to logs/ai for 4xx/5xx to aid debugging
+        try:
+            logs_dir = BASE_DIR / "logs" / "ai"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", image_path.name)
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            out_path = logs_dir / f"openai_{ts}_{safe_name}_error_http.json"
+            debug_doc = {
+                "reason": "error_http",
+                "image": image_path.name,
+                "model": model,
+                "request_preview": {
+                    "keys": list(request_body.keys()),
+                    "has_image": bool(image_payload),
+                    "text_format": (request_body.get("text") or {}).get("format"),
+                },
+                "error": details.get("error"),
+                "error_body": details.get("error_body", ""),
+            }
+            with open(out_path, "w", encoding="utf-8") as fh:
+                json.dump(debug_doc, fh, indent=2, ensure_ascii=False)
         except Exception:
             pass
         return {"title": "", "description": "", "details": details}
