@@ -40,7 +40,7 @@ The command line (or "terminal") is a text-based interface for interacting with 
 ## Build and Run
 
 ### Prerequisites
-- Python 3.9+
+- Python 3.13 (recommended) or 3.10+
 
 ### Setup
 1. Create virtual environment:
@@ -58,7 +58,7 @@ The command line (or "terminal") is a text-based interface for interacting with 
      ```
 
 ### Dependencies
-Install project dependencies:
+Install project dependencies (after activating the venv):
 ```bash
 pip install -r requirements.txt
 ```

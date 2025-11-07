@@ -88,8 +88,12 @@ IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "css").mkdir(parents=True, exist_ok=True) # For optional CSS
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with timestamps and concise format
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 # --- FastAPI App Setup ---
@@ -875,6 +879,8 @@ def new_files_detected(
         name for name in disk_listing if (IMAGES_DIR / name).is_file() and _allowed_image(name)
     ]
 
+    skipped_sidecar = 0
+    skipped_ai = 0
     for filename in existing_files:
         image_path = IMAGES_DIR / filename
         metadata = _load_metadata(image_path)
@@ -882,14 +888,11 @@ def new_files_detected(
             _ensure_sidecar(image_path, metadata)
             metadata = _load_metadata(image_path)
         else:
-            logger.info("Startup sidecar creation disabled; skipping for %s", image_path.name)
+            skipped_sidecar += 1
         if allow_ai_enrichment:
             metadata = _populate_missing_metadata(image_path, metadata)
         else:
-            logger.info(
-                "Startup enrichment disabled; skipping AI for %s",
-                image_path.name,
-            )
+            skipped_ai += 1
         if not bool(metadata.get("reviewed", False)):
             item = dict(metadata)
             item.update(
@@ -902,6 +905,10 @@ def new_files_detected(
             )
             pending.append(item)
 
+    if not allow_sidecar_creation and skipped_sidecar:
+        logger.info("Startup sidecar creation disabled; skipped for %d images", skipped_sidecar)
+    if not allow_ai_enrichment and skipped_ai:
+        logger.info("Startup AI enrichment disabled; skipped for %d images", skipped_ai)
     logger.debug("Pending review files: %s", [item["name"] for item in pending])
     return pending
 

@@ -228,21 +228,23 @@ footer {
     align-items: center;
     justify-content: center;
     gap: 0.25rem;
-    padding: 0.55rem 1rem;
-    border-radius: 6px;
+    padding: 0.6rem 1.05rem;
+    min-height: 38px;
+    border-radius: 8px;
     background-color: #495057;
     color: #ffffff;
     text-decoration: none;
     font-weight: 600;
     border: none;
     cursor: pointer;
-    transition: background-color 0.2s ease-in-out, transform 0.2s ease-in-out;
+    transition: background-color 0.2s ease-in-out, transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
 
 .button:hover,
 .button:focus {
     background-color: #343a40;
     transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
 }
 
 .button.secondary {
@@ -376,12 +378,12 @@ footer {
     align-items: flex-end;
     justify-content: space-between;
     gap: 1.5rem;
-    margin-bottom: 2rem;
+    margin-bottom: 2.5rem;
 }
 
 .admin-header__intro h1 {
     margin: 0;
-    font-size: clamp(1.8rem, 2.8vw, 2.4rem);
+    font-size: clamp(2rem, 3vw, 2.6rem);
 }
 
 .admin-subheading {
@@ -416,26 +418,26 @@ footer {
 
 .admin-panel {
     background-color: #ffffff;
-    border: 1px solid #dee2e6;
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    padding: 1.75rem;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
 }
 
 .media-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.25rem;
+    gap: 1.5rem;
 }
 
 .image-card {
     display: grid;
     gap: 1rem;
-    border: 1px solid #dee2e6;
+    border: 1px solid #e9ecef;
     border-radius: 12px;
-    padding: 1rem;
+    padding: 1.25rem;
     background-color: #fff;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
 }
 
 .image-card--pending {
@@ -459,6 +461,7 @@ footer {
 
 .image-card__preview {
     position: relative;
+    aspect-ratio: 4 / 3;
 }
 
 .image-card__preview img {
@@ -467,6 +470,17 @@ footer {
     object-fit: cover;
     border-radius: 8px;
     border: 1px solid #dee2e6;
+    display: block;
+}
+
+/* Ensure consistent thumbnail sizing for pending list */
+.image-card--pending .image-card__preview {
+    width: 160px;
+}
+
+/* Avoid stretching reviewed thumbnails beyond a reasonable width */
+.image-card--reviewed .image-card__preview {
+    max-width: 320px;
 }
 
 .image-card__meta {
@@ -484,7 +498,7 @@ footer {
 
 .image-card__header h3 {
     margin: 0;
-    font-size: 1.05rem;
+    font-size: 1.1rem;
 }
 
 .image-card__footer {
@@ -565,10 +579,27 @@ footer {
 
 .panel-actions select,
 .panel-actions input[type="search"] {
-    padding: 0.5rem 0.65rem;
+    padding: 0.5rem 0.7rem;
     border: 1px solid #ced4da;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.95rem;
+}
+
+/* Enterprise-grade focus visibility */
+.button:focus-visible,
+.panel-actions select:focus-visible,
+.panel-actions input[type="search"]:focus-visible {
+    outline: 2px solid #339af0;
+    outline-offset: 2px;
+}
+
+/* Panel header layout improves at tablet+ */
+@media (min-width: 768px) {
+    .panel-header {
+        flex-direction: row;
+        align-items: baseline;
+        justify-content: space-between;
+    }
 }
 
 .panel-header {
@@ -627,6 +658,76 @@ footer {
     height: 48px;
     color: #339af0;
     margin-bottom: 0.75rem;
+}
+
+/* Admin theme: dark overrides */
+body.admin-page.theme-dark {
+    background: #0f121a;
+    color: #e2e8f0;
+}
+body.admin-page.theme-dark .admin-panel {
+    background-color: #181c26;
+    border-color: #2a303c;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+}
+body.admin-page.theme-dark .media-grid .image-card,
+body.admin-page.theme-dark .image-card {
+    background-color: #151924;
+    border-color: #2a303c;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+}
+body.admin-page.theme-dark .image-card__preview img {
+    border-color: #2a303c;
+}
+body.admin-page.theme-dark .tag-list li {
+    background-color: #1f2430;
+    color: #cbd5e1;
+    border-color: #2a303c;
+}
+body.admin-page.theme-dark .filename,
+body.admin-page.theme-dark .timestamp,
+body.admin-page.theme-dark .panel-description,
+body.admin-page.theme-dark .legend-list {
+    color: #9aa4b2;
+}
+body.admin-page.theme-dark .button {
+    background-color: #3b4352;
+    color: #f8fafc;
+}
+body.admin-page.theme-dark .button:hover,
+body.admin-page.theme-dark .button:focus {
+    background-color: #2f3644;
+}
+body.admin-page.theme-dark .button.secondary,
+body.admin-page.theme-dark .button.tertiary {
+    background-color: #242a36;
+    color: #e2e8f0;
+    border-color: #343b49;
+}
+body.admin-page.theme-dark .button.tertiary:hover,
+body.admin-page.theme-dark .button.secondary:hover {
+    background-color: #2f3644;
+}
+body.admin-page.theme-dark .button.danger {
+    background-color: #e03131;
+}
+body.admin-page.theme-dark .badge {
+    background-color: #2f3644;
+    color: #e2e8f0;
+}
+body.admin-page.theme-dark .panel-actions select,
+body.admin-page.theme-dark .panel-actions input[type="search"] {
+    background-color: #151924;
+    color: #e2e8f0;
+    border-color: #343b49;
+}
+body.admin-page.theme-dark .dropzone {
+    background-color: #10141d;
+    border-color: #343b49;
+}
+body.admin-page.theme-dark .dropzone.is-dragover {
+    background-color: #182033;
+    border-color: #4c8fe8;
 }
 
 .supported-formats {
@@ -826,13 +927,19 @@ footer {
     color: #495057;
     font-size: 12px;
     line-height: 1;
-    cursor: help;
+    cursor: default;
     user-select: none;
 }
 
 .info-tip:hover,
 .info-tip:focus {
     background-color: #f1f3f5;
+}
+
+.info-tip svg {
+    width: 12px;
+    height: 12px;
+    display: block;
 }
 
 .sr-only {

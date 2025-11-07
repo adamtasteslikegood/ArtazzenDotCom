@@ -1,5 +1,6 @@
 # Add base image
-FROM python:3.9-slim
+# Use latest stable Python 3.13 for runtime
+FROM python:3.13-slim
 
 # Define working directory
 WORKDIR /app
@@ -8,7 +9,8 @@ WORKDIR /app
 COPY . /app
 
 # Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Expose port
 EXPOSE 8000

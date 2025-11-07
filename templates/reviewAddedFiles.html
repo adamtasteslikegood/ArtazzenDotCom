@@ -15,6 +15,7 @@
         <nav class="admin-nav">
             <a href="/" class="button secondary">View Public Gallery</a>
             <button type="button" id="refresh-pending" class="button secondary">Refresh Library</button>
+            <button type="button" id="theme-toggle" class="button secondary" title="Toggle light/dark">🌙 Dark</button>
         </nav>
     </header>
 
@@ -22,7 +23,7 @@
         <section class="admin-panel admin-panel--settings">
             <h2>
                 AI Metadata Settings
-                <span class="info-tip" aria-label="Controls for OpenAI-powered metadata generation and when it runs." title="Controls for OpenAI-powered metadata generation and when it runs.">i</span>
+                <span class="info-tip" aria-label="Controls for OpenAI-powered metadata generation and when it runs." title="Controls for OpenAI-powered metadata generation and when it runs."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
             </h2>
             <p class="panel-description">Control automatic title, description, and caption generation for new or unreviewed images.</p>
             <ul class="legend-list" aria-label="AI settings quick guide">
@@ -35,34 +36,34 @@
                     <label class="checkbox" title="Master switch for automatic metadata generation using OpenAI.">
                         <input type="checkbox" id="ai-enabled">
                         <span>Enable AI metadata generation</span>
-                        <span class="info-tip" aria-label="Master switch for automatic metadata generation using OpenAI." title="Master switch for automatic metadata generation using OpenAI.">i</span>
+                        <span class="info-tip" aria-label="Master switch for automatic metadata generation using OpenAI." title="Master switch for automatic metadata generation using OpenAI."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     </label>
                 </div>
                 <div class="form-row">
                     <label class="checkbox" title="On server startup, analyze images needing metadata and request AI to fill missing fields.">
                         <input type="checkbox" id="ai-startup-enabled">
                         <span>Run AI enrichment during startup scan</span>
-                        <span class="info-tip" aria-label="On server startup, analyze images needing metadata and request AI to fill missing fields." title="On server startup, analyze images needing metadata and request AI to fill missing fields.">i</span>
+                        <span class="info-tip" aria-label="On server startup, analyze images needing metadata and request AI to fill missing fields." title="On server startup, analyze images needing metadata and request AI to fill missing fields."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     </label>
                 </div>
                 <div class="form-row">
                     <label class="checkbox" title="On server startup, create missing JSON sidecar files for images discovered in the library.">
                         <input type="checkbox" id="sidecar-startup-enabled">
                         <span>Create JSON sidecars during startup scan</span>
-                        <span class="info-tip" aria-label="On server startup, create missing JSON sidecar files for images discovered in the library." title="On server startup, create missing JSON sidecar files for images discovered in the library.">i</span>
+                        <span class="info-tip" aria-label="On server startup, create missing JSON sidecar files for images discovered in the library." title="On server startup, create missing JSON sidecar files for images discovered in the library."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     </label>
                 </div>
                 <div class="form-row">
                     <label for="sidecar-max-workers" title="Upper limit of worker processes allowed to create sidecars during startup scans.">
                         Max workers creating sidecars
-                        <span class="info-tip" aria-label="Upper limit of worker processes allowed to create sidecars during startup scans." title="Upper limit of worker processes allowed to create sidecars during startup scans.">i</span>
+                        <span class="info-tip" aria-label="Upper limit of worker processes allowed to create sidecars during startup scans." title="Upper limit of worker processes allowed to create sidecars during startup scans."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     </label>
                     <input type="number" id="sidecar-max-workers" min="1" max="64" step="1" value="2">
                 </div>
                 <div class="form-row">
                     <label for="ai-model" title="Preferred model for AI metadata generation. Choose 'auto' to let the server decide.">
                         Model
-                        <span class="info-tip" aria-label="Preferred model for AI metadata generation. Choose 'auto' to let the server decide." title="Preferred model for AI metadata generation. Choose 'auto' to let the server decide.">i</span>
+                        <span class="info-tip" aria-label="Preferred model for AI metadata generation. Choose 'auto' to let the server decide." title="Preferred model for AI metadata generation. Choose 'auto' to let the server decide."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     </label>
                     <select id="ai-model">
                         {% for option in model_options %}
@@ -73,14 +74,14 @@
                 <div class="form-row">
                     <label for="ai-temp" title="Higher values are more creative; lower values are more consistent.">
                         Temperature
-                        <span class="info-tip" aria-label="Higher values are more creative; lower values are more consistent." title="Higher values are more creative; lower values are more consistent.">i</span>
+                        <span class="info-tip" aria-label="Higher values are more creative; lower values are more consistent." title="Higher values are more creative; lower values are more consistent."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     </label>
                     <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
                 </div>
                 <div class="form-row">
                     <label for="ai-tokens" title="Upper bound on response length. Keep modest for concise gallery text.">
                         Max output tokens
-                        <span class="info-tip" aria-label="Upper bound on response length. Keep modest for concise gallery text." title="Upper bound on response length. Keep modest for concise gallery text.">i</span>
+                        <span class="info-tip" aria-label="Upper bound on response length. Keep modest for concise gallery text." title="Upper bound on response length. Keep modest for concise gallery text."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     </label>
                     <input type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
                 </div>
@@ -94,7 +95,7 @@
         <section class="admin-panel admin-panel--upload">
             <h2>
                 Upload new artwork
-                <span class="info-tip" aria-label="Drop images or JSON sidecars. Images are stored under Static/images." title="Drop images or JSON sidecars. Images are stored under Static/images.">i</span>
+                <span class="info-tip" aria-label="Drop images or JSON sidecars. Images are stored under Static/images." title="Drop images or JSON sidecars. Images are stored under Static/images."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
             </h2>
             <p class="panel-description">Drag and drop images or click below to upload. JSON sidecars are supported for bulk imports.</p>
             <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop images here or press enter to choose files">
@@ -110,7 +111,7 @@
             <form id="path-form" class="path-form">
                 <h3>
                     Import from server path
-                    <span class="info-tip" aria-label="Copies files from a local server path into Static/images." title="Copies files from a local server path into Static/images.">i</span>
+                    <span class="info-tip" aria-label="Copies files from a local server path into Static/images." title="Copies files from a local server path into Static/images."><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                 </h3>
                 <p class="panel-description">Paste an absolute file or directory path accessible to the server. Images are copied into <code>Static/images</code>.</p>
                 <label for="path-input" class="sr-only">Absolute path on the server</label>
@@ -128,6 +129,16 @@
                     <p class="panel-description">Review each image to confirm or edit the metadata before it appears publicly.</p>
                 </div>
                 <div class="panel-actions">
+                    <label for="pending-sort" class="sr-only">Sort pending</label>
+                    <select id="pending-sort" title="Sort pending images by date or title">
+                        <option value="detected_at:desc">Newest first</option>
+                        <option value="detected_at:asc">Oldest first</option>
+                        <option value="title:asc">Title A–Z</option>
+                        <option value="title:desc">Title Z–A</option>
+                        <option value="name:asc">Filename A–Z</option>
+                        <option value="name:desc">Filename Z–A</option>
+                    </select>
+                    <span class="info-tip" aria-label="Sort pending images by date or title" title="Sort pending images by date or title"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     <label class="checkbox" title="Overwrite existing fields when regenerating">
                         <input type="checkbox" id="force-overwrite">
                         <span>Force overwrite</span>
@@ -145,7 +156,9 @@
                                 <input type="checkbox" class="item-select" aria-label="Select {{ item.name }}">
                             </div>
                             <div class="image-card__preview">
-                                <img src="{{ item.url }}" alt="Preview of {{ item.title or item.name }}" loading="lazy">
+                                <a href="{{ url_for('preview_image_metadata', image_name=item.name) }}" title="Open details">
+                                    <img src="{{ item.url }}" alt="Preview of {{ item.title or item.name }}" loading="lazy">
+                                </a>
                             </div>
                             <div class="image-card__meta">
                                 <div class="image-card__header">
@@ -201,10 +214,10 @@
                         <option value="author:asc">Author A–Z</option>
                         <option value="author:desc">Author Z–A</option>
                     </select>
-                    <span class="info-tip" aria-label="Sort curated artwork by date, title, or author" title="Sort curated artwork by date, title, or author">i</span>
+                    <span class="info-tip" aria-label="Sort curated artwork by date, title, or author" title="Sort curated artwork by date, title, or author"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                     <label for="gallery-filter" class="sr-only">Filter gallery</label>
                     <input type="search" id="gallery-filter" placeholder="Filter by title, author, or tag" autocomplete="off" title="Type to filter the curated gallery by title, author, or tag">
-                    <span class="info-tip" aria-label="Type to filter the curated gallery by title, author, or tag" title="Type to filter the curated gallery by title, author, or tag">i</span>
+                    <span class="info-tip" aria-label="Type to filter the curated gallery by title, author, or tag" title="Type to filter the curated gallery by title, author, or tag"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
                 </div>
             </div>
             <div id="reviewed-list" class="media-grid">
@@ -212,7 +225,9 @@
                     {% for item in reviewed_images %}
                         <article class="image-card image-card--reviewed" data-image-name="{{ item.name }}">
                             <div class="image-card__preview">
-                                <img src="{{ item.url }}" alt="{{ item.title }}" loading="lazy">
+                                <a href="{{ url_for('preview_image_metadata', image_name=item.name) }}" title="Open details">
+                                    <img src="{{ item.url }}" alt="{{ item.title }}" loading="lazy">
+                                </a>
                             </div>
                             <div class="image-card__meta">
                                 <div class="image-card__header">
@@ -281,8 +296,10 @@
     const regenBtn = document.getElementById('regen-selected');
     const forceOverwrite = document.getElementById('force-overwrite');
     const gallerySort = document.getElementById('gallery-sort');
+    const pendingSort = document.getElementById('pending-sort');
     const galleryFilter = document.getElementById('gallery-filter');
     const adminState = document.getElementById('admin-state');
+    const themeToggle = document.getElementById('theme-toggle');
     const reviewUrlTemplate = "{{ url_for('preview_image_metadata', image_name='__IMAGE__') }}";
 
     let dashboardData = { pending: [], reviewed: [], all: [] };
@@ -296,6 +313,34 @@
 
     let pendingData = dashboardData.pending || [];
     let reviewedData = dashboardData.reviewed || [];
+
+    // Theme: init from storage or system preference
+    (function initTheme() {
+        try {
+            const saved = localStorage.getItem('adminTheme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = (saved === 'light' || saved === 'dark') ? saved : (prefersDark ? 'dark' : 'light');
+            applyTheme(theme);
+        } catch (_) {}
+    })();
+
+    function applyTheme(theme) {
+        const body = document.body;
+        body.classList.remove('theme-light', 'theme-dark');
+        body.classList.add(theme === 'dark' ? 'theme-dark' : 'theme-light');
+        if (themeToggle) {
+            themeToggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+            themeToggle.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+        }
+        try { localStorage.setItem('adminTheme', theme); } catch (_) {}
+    }
+
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const isDark = document.body.classList.contains('theme-dark');
+            applyTheme(isDark ? 'light' : 'dark');
+        });
+    }
 
     function showFeedback(message, type = 'info') {
         feedback.textContent = message;
@@ -385,11 +430,15 @@
 
             const preview = document.createElement('div');
             preview.className = 'image-card__preview';
+            const link = document.createElement('a');
+            link.href = reviewUrlTemplate.replace('__IMAGE__', encodeURIComponent(item.name));
+            link.title = 'Open details';
             const img = document.createElement('img');
             img.src = item.url;
             img.alt = `Preview of ${item.title || item.name}`;
             img.loading = 'lazy';
-            preview.appendChild(img);
+            link.appendChild(img);
+            preview.appendChild(link);
             card.appendChild(preview);
 
             const meta = document.createElement('div');
@@ -535,6 +584,22 @@
         return sorted;
     }
 
+    function sortPendingData(sortValue) {
+        const [field, direction] = sortValue.split(':');
+        const multiplier = direction === 'desc' ? -1 : 1;
+        const sorted = [...pendingData].sort((a, b) => {
+            if (field === 'detected_at') {
+                return ((a.detected_at || 0) - (b.detected_at || 0)) * multiplier;
+            }
+            const av = (a[field] || a.title || a.name || '').toString().toLowerCase();
+            const bv = (b[field] || b.title || b.name || '').toString().toLowerCase();
+            if (av < bv) return -1 * multiplier;
+            if (av > bv) return 1 * multiplier;
+            return 0;
+        });
+        return sorted;
+    }
+
     function filterGalleryData(list, query) {
         if (!query) {
             return list;
@@ -556,6 +621,11 @@
         applyGalleryView(filtered);
     }
 
+    function updatePendingView() {
+        const sorted = sortPendingData(pendingSort.value);
+        renderPendingList(sorted);
+    }
+
     function refreshCounts() {
         pendingCount.textContent = pendingData.length;
         galleryCount.textContent = reviewedData.length;
@@ -564,7 +634,7 @@
     function renderDashboard(data) {
         pendingData = data.pending || [];
         reviewedData = data.reviewed || [];
-        renderPendingList(pendingData);
+        updatePendingView();
         updateGalleryView();
         refreshCounts();
     }
@@ -801,6 +871,7 @@
     });
 
     gallerySort.addEventListener('change', updateGalleryView);
+    pendingSort.addEventListener('change', updatePendingView);
     galleryFilter.addEventListener('input', updateGalleryView);
 
     galleryList.addEventListener('click', (event) => {

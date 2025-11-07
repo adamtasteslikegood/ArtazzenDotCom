@@ -197,7 +197,7 @@ footer {
     color: color-mix(in oklab, var(--text) 70%, var(--muted) 30%);
     font-size: 12px;
     line-height: 1;
-    cursor: help;
+    cursor: default;
     user-select: none
 }
 

@@ -1,6 +1,9 @@
 {
   "enabled": true,
-  "model": "gpt-5-mini",
+  "model": "gpt-5",
   "temperature": 0.6,
-  "max_output_tokens": 624
+  "max_output_tokens": 600,
+  "startup_enrichment_enabled": false,
+  "startup_sidecar_enabled": false,
+  "max_workers_create_sidecars": 2
 }
