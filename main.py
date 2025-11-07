@@ -8,6 +8,7 @@ import threading
 import time
 import textwrap
 from contextlib import suppress
+import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -642,13 +643,69 @@ def _request_openai_metadata(
         elif isinstance(content, str):
             content_text = content
 
+    # Helper: strip markdown code fences and try to extract a JSON object
+    def _extract_json_object(text: str) -> Optional[Dict[str, Any]]:
+        if not text:
+            return None
+        # Remove common code fences like ```json ... ``` or ``` ... ```
+        cleaned = re.sub(r"```+\s*json\s*|```+", "", text, flags=re.IGNORECASE)
+        # First, try a straight parse
+        with suppress(json.JSONDecodeError):
+            return json.loads(cleaned)
+        # If that fails, try to find a balanced {...} region and parse it
+        start = cleaned.find("{")
+        if start == -1:
+            return None
+        depth = 0
+        for i in range(start, len(cleaned)):
+            ch = cleaned[i]
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    candidate = cleaned[start:i+1]
+                    with suppress(json.JSONDecodeError):
+                        return json.loads(candidate)
+        return None
+
+    # Helper: dump diagnostic file when parsing fails or when debug is enabled
+    def _dump_openai_debug(reason: str, text_excerpt: str = "") -> None:
+        try:
+            debug_enabled = os.getenv("AI_METADATA_DEBUG_DUMP", "0").lower() in {"1", "true", "yes"}
+            if reason != "success" or debug_enabled:
+                logs_dir = BASE_DIR / "logs" / "ai"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", image_path.name)
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                out_path = logs_dir / f"openai_{ts}_{safe_name}_{reason}.json"
+                doc = {
+                    "reason": reason,
+                    "image": image_path.name,
+                    "model": details.get("model"),
+                    "payload_id": payload.get("id"),
+                    "usage": payload.get("usage", {}),
+                    "output_types": [
+                        [(p or {}).get("type") for p in ((it or {}).get("content") or [])]
+                        for it in (output or [])
+                    ] if isinstance(output, list) else [],
+                    "content_text": content_text,
+                    "text_excerpt": text_excerpt or content_text[:500],
+                }
+                with open(out_path, "w", encoding="utf-8") as fh:
+                    json.dump(doc, fh, indent=2, ensure_ascii=False)
+        except Exception as dump_exc:
+            logger.debug("Failed to write OpenAI debug dump: %s", dump_exc)
+
     if parsed is None:
+        # Try strict parse, then lenient extraction
         try:
             parsed = json.loads(content_text) if content_text else None
-        except json.JSONDecodeError as exc:
+        except json.JSONDecodeError:
+            parsed = _extract_json_object(content_text)
+        if parsed is None:
             details["status"] = "error_parse"
-            details["error"] = f"Failed to parse OpenAI response: {exc}"
-            # attach brief output excerpt and types for debugging
+            details["error"] = "Failed to parse OpenAI response: no valid JSON object found"
             try:
                 details["raw_response"] = {
                     "id": payload.get("id"),
@@ -661,6 +718,7 @@ def _request_openai_metadata(
                 }
             except Exception:
                 details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
+            _dump_openai_debug("error_parse", text_excerpt=content_text[:500])
             return {"title": "", "description": "", "details": details}
 
     # If still no structured JSON, bail gracefully instead of crashing
@@ -671,10 +729,19 @@ def _request_openai_metadata(
             details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
         except Exception:
             pass
+        _dump_openai_debug("no_json")
         return {"title": "", "description": "", "details": details}
 
     # Keep raw id/usage only to avoid bloating sidecar
     details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
+
+    # Optionally dump successful responses for diagnostics when AI_METADATA_DEBUG_DUMP is enabled
+    try:
+        debug_enabled = os.getenv("AI_METADATA_DEBUG_DUMP", "0").lower() in {"1", "true", "yes"}
+        if debug_enabled:
+            _dump_openai_debug("success")
+    except Exception:
+        pass
 
     title = str(parsed.get("title", "")).strip()
     description = str(parsed.get("description", "")).strip()

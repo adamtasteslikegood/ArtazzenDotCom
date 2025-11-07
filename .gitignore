@@ -6,3 +6,5 @@
 /new_app/.venv/
 /.venv_new/
 /__pycache__/
+/# Ignore logs written by gunicorn/app
+/logs/
