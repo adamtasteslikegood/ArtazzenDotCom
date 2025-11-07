@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Settings — Artwork Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+    <style>
+    .busy-overlay {position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);z-index:9999}
+    .busy-overlay[aria-hidden="false"]{display:flex}
+    .busy-indicator{background:#fff;color:#333;padding:0.75rem 1rem;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.25);font-weight:600}
+    .form-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+    .form-row{display:flex;flex-direction:column;gap:.35rem}
+    .form-row label{font-weight:600}
+    select, input[type="number"], input[type="text"]{padding:.5rem;border:1px solid #ced4da;border-radius:6px}
+    .checkbox{display:flex;align-items:center;gap:.5rem}
+    .button-row{display:flex;gap:.5rem;flex-wrap:wrap}
+    </style>
+    <script>
+    function showBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','false'); }
+    function hideBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','true'); }
+    </script>
+</head>
+<body class="admin-page">
+    <div id="busy" class="busy-overlay" aria-hidden="true"><div class="busy-indicator">Working…</div></div>
+    <header class="admin-header">
+        <div class="admin-header__intro">
+            <h1>Advanced Settings</h1>
+            <p class="admin-subheading">Tweak logging, debug dumps, and API timeouts.</p>
+        </div>
+        <nav class="admin-nav">
+            <a href="/admin" class="button secondary">Back to Admin</a>
+        </nav>
+    </header>
+
+    <main class="admin-layout">
+        <section class="admin-panel">
+            <h2>Logging</h2>
+            <div class="form-grid">
+                <div class="form-row">
+                    <label for="log_level">Console log level</label>
+                    <select id="log_level">
+                        {% for lvl in ["DEBUG","INFO","WARNING","ERROR","CRITICAL"] %}
+                        <option value="{{ lvl }}" {% if advanced.log_level==lvl %}selected{% endif %}>{{ lvl }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="checkbox"><input type="checkbox" id="file_log" {% if advanced.file_log %}checked{% endif %}> Enable file logging (logs/app.log)</label>
+                </div>
+                <div class="form-row">
+                    <label for="file_log_level">File log level</label>
+                    <select id="file_log_level">
+                        {% for lvl in ["DEBUG","INFO","WARNING","ERROR","CRITICAL"] %}
+                        <option value="{{ lvl }}" {% if advanced.file_log_level==lvl %}selected{% endif %}>{{ lvl }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <section class="admin-panel">
+            <h2>AI Debug + Timeouts</h2>
+            <div class="form-grid">
+                <div class="form-row">
+                    <label class="checkbox"><input type="checkbox" id="ai_metadata_debug_dump" {% if advanced.ai_metadata_debug_dump %}checked{% endif %}> Save AI debug dumps to logs/ai</label>
+                </div>
+                <div class="form-row">
+                    <label for="openai_timeout_seconds">OpenAI timeout (seconds)</label>
+                    <input id="openai_timeout_seconds" type="number" min="5" step="1" value="{{ advanced.openai_timeout_seconds }}">
+                </div>
+            </div>
+        </section>
+
+        <div class="button-row" style="padding:1rem">
+            <button id="save-advanced" class="button">Save settings</button>
+            <button id="reset-advanced" class="button tertiary">Reset to defaults</button>
+        </div>
+        <section id="feedback" class="feedback" role="status" aria-live="polite" hidden></section>
+    </main>
+
+    <footer>
+        <p>Artwork Gallery Administration</p>
+    </footer>
+
+    <script>
+    const feedback = document.getElementById('feedback');
+    function showFeedback(msg, type){
+        feedback.hidden = false; feedback.textContent = msg;
+        feedback.classList.remove('error'); if(type==='error') feedback.classList.add('error');
+    }
+    async function saveAdvanced(){
+        showBusy();
+        try{
+            const payload = {
+                log_level: document.getElementById('log_level').value,
+                file_log: document.getElementById('file_log').checked,
+                file_log_level: document.getElementById('file_log_level').value,
+                ai_metadata_debug_dump: document.getElementById('ai_metadata_debug_dump').checked,
+                openai_timeout_seconds: parseFloat(document.getElementById('openai_timeout_seconds').value || '30'),
+            };
+            const res = await fetch('/admin/advanced', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+            if(!res.ok) throw new Error('Failed');
+            await res.json();
+            showFeedback('Advanced settings saved.');
+        }catch(err){ console.error(err); showFeedback('Unable to save settings.', 'error'); }
+        finally{ hideBusy(); }
+    }
+    async function resetAdvanced(){
+        showBusy();
+        try{
+            const res = await fetch('/admin/advanced/reset', {method:'POST'});
+            if(!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            const adv = data.advanced || {};
+            document.getElementById('log_level').value = adv.log_level || 'INFO';
+            document.getElementById('file_log').checked = !!adv.file_log;
+            document.getElementById('file_log_level').value = adv.file_log_level || adv.log_level || 'INFO';
+            document.getElementById('ai_metadata_debug_dump').checked = !!adv.ai_metadata_debug_dump;
+            document.getElementById('openai_timeout_seconds').value = adv.openai_timeout_seconds || 30;
+            showFeedback('Advanced settings reset to defaults.');
+        }catch(err){ console.error(err); showFeedback('Unable to reset settings.', 'error'); }
+        finally{ hideBusy(); }
+    }
+    document.getElementById('save-advanced').addEventListener('click', saveAdvanced);
+    document.getElementById('reset-advanced').addEventListener('click', resetAdvanced);
+    </script>
+</body>
+</html>
+

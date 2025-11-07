@@ -5,8 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Artwork Admin Review</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+    <style>
+    .busy-overlay {position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);z-index:9999}
+    .busy-overlay[aria-hidden="false"]{display:flex}
+    .busy-indicator{background:#fff;color:#333;padding:0.75rem 1rem;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.25);font-weight:600}
+    .button[disabled]{opacity:.6;cursor:not-allowed}
+    </style>
 </head>
 <body class="admin-page">
+    <div id="busy" class="busy-overlay" aria-hidden="true"><div class="busy-indicator">Working…</div></div>
     <header class="admin-header">
         <div class="admin-header__intro">
             <h1>Artwork Administration</h1>
@@ -16,6 +23,7 @@
             <a href="/" class="button secondary">View Public Gallery</a>
             <button type="button" id="refresh-pending" class="button secondary">Refresh Library</button>
             <button type="button" id="theme-toggle" class="button secondary" title="Toggle light/dark">🌙 Dark</button>
+            <a href="/admin/advanced" class="button secondary">Advanced Settings</a>
         </nav>
     </header>
 
@@ -273,6 +281,8 @@
 
     <script id="admin-state" type="application/json">{{ admin_data | tojson }}</script>
     <script>
+    function showBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','false'); }
+    function hideBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','true'); }
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('file-input');
     const selectFilesButton = document.getElementById('select-files');
@@ -659,6 +669,7 @@
             showFeedback('Select at least one image to regenerate.', 'error');
             return;
         }
+        showBusy();
         try {
             const response = await fetch('/admin/ai/regenerate', {
                 method: 'POST',
@@ -679,10 +690,13 @@
         } catch (error) {
             console.error(error);
             showFeedback('Unable to contact the AI regeneration endpoint.', 'error');
+        } finally {
+            hideBusy();
         }
     }
 
     async function deleteImage(name) {
+        showBusy();
         try {
             const response = await fetch(`/admin/image/${encodeURIComponent(name)}`, {
                 method: 'DELETE',
@@ -696,6 +710,8 @@
         } catch (error) {
             console.error(error);
             showFeedback('Unable to delete the selected image.', 'error');
+        } finally {
+            hideBusy();
         }
     }
 
@@ -754,6 +770,7 @@
     async function uploadFiles(files) {
         const formData = new FormData();
         Array.from(files).forEach((file) => formData.append('files', file));
+        showBusy();
         try {
             const response = await fetch('/admin/upload', {
                 method: 'POST',
@@ -768,12 +785,15 @@
         } catch (error) {
             console.error(error);
             showFeedback('Upload failed. Please try again.', 'error');
+        } finally {
+            hideBusy();
         }
     }
 
     pathForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const formData = new FormData(pathForm);
+        showBusy();
         try {
             const response = await fetch('/admin/import-path', {
                 method: 'POST',
@@ -789,6 +809,8 @@
         } catch (error) {
             console.error(error);
             showFeedback('Import failed. Verify the path and try again.', 'error');
+        } finally {
+            hideBusy();
         }
     });
 
@@ -806,6 +828,7 @@
             },
         };
         try {
+            showBusy();
             const response = await fetch('/admin/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -819,11 +842,14 @@
         } catch (error) {
             console.error(error);
             showFeedback('Unable to save AI configuration.', 'error');
+        } finally {
+            hideBusy();
         }
     });
 
     resetAiButton.addEventListener('click', async () => {
         try {
+            showBusy();
             const response = await fetch('/admin/config/reset', { method: 'POST' });
             if (!response.ok) {
                 throw new Error('Failed to reset configuration');
@@ -843,6 +869,8 @@
         } catch (error) {
             console.error(error);
             showFeedback('Unable to reset AI configuration.', 'error');
+        } finally {
+            hideBusy();
         }
     });
 

@@ -48,6 +48,7 @@ IMAGES_DIR = STATIC_DIR / "images"
 TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 CONFIG_PATH = BASE_DIR / "ai_config.json"
+ADV_CONFIG_PATH = BASE_DIR / "advanced_config.json"
 WATCHER_LOCK_PATH = BASE_DIR / ".watcher.lock"
 MIGRATION_LOCK_PATH = BASE_DIR / ".migration.lock"
 
@@ -67,7 +68,7 @@ POLL_INTERVAL_SECONDS = 5
 OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
 OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
 OPENAI_MODEL_ENV = "OPENAI_IMAGE_METADATA_MODEL"
-OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
+OPENAI_DEFAULT_MODEL = "gpt-5"
 OPENAI_MODEL_CHOICES = [
     "auto",
     "gpt-4o-mini",
@@ -89,13 +90,62 @@ IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "css").mkdir(parents=True, exist_ok=True) # For optional CSS
 
-# Configure logging with timestamps and concise format
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+def _configure_logging() -> logging.Logger:
+    """Configure console + rotating file logging with env-driven levels.
+
+    Env vars:
+    - APP_LOG_LEVEL: console log level (default INFO)
+    - APP_FILE_LOG: enable file logging to logs/app.log (default 1/true)
+    - APP_FILE_LOG_LEVEL: file log level (default INFO)
+    """
+    logger = logging.getLogger()
+    if getattr(logger, "_app_logging_configured", False):
+        return logging.getLogger(__name__)
+
+    level_name = os.getenv("APP_LOG_LEVEL", "INFO").upper()
+    file_level_name = os.getenv("APP_FILE_LOG_LEVEL", level_name).upper()
+    try:
+        level = getattr(logging, level_name)
+    except AttributeError:
+        level = logging.INFO
+    try:
+        file_level = getattr(logging, file_level_name)
+    except AttributeError:
+        file_level = level
+
+    logger.setLevel(min(level, file_level))
+
+    fmt = logging.Formatter(
+        fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Console handler (always on)
+    sh = logging.StreamHandler()
+    sh.setLevel(level)
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+
+    # Optional rotating file handler
+    file_log_enabled = os.getenv("APP_FILE_LOG", "1").lower() in {"1", "true", "yes"}
+    if file_log_enabled:
+        logs_dir = BASE_DIR / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            from logging.handlers import RotatingFileHandler
+
+            fh = RotatingFileHandler(str(logs_dir / "app.log"), maxBytes=5 * 1024 * 1024, backupCount=3)
+        except Exception:
+            fh = logging.FileHandler(str(logs_dir / "app.log"))
+        fh.setLevel(file_level)
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+
+    setattr(logger, "_app_logging_configured", True)
+    return logging.getLogger(__name__)
+
+
+logger = _configure_logging()
 
 # --- FastAPI App Setup ---
 app = FastAPI(title="Artwork Gallery")
@@ -224,6 +274,120 @@ def _load_ai_config() -> Dict[str, Any]:
 def _save_ai_config(cfg: Dict[str, Any]) -> None:
     with config_lock:
         _atomic_write_json(CONFIG_PATH, _sanitize_ai_config(cfg))
+
+
+# --- Advanced config (logging, debug dumps, timeouts) ---
+
+def _default_advanced_config_from_env() -> Dict[str, Any]:
+    lvl = os.getenv("APP_LOG_LEVEL", "INFO").upper()
+    file_lvl = os.getenv("APP_FILE_LOG_LEVEL", lvl).upper()
+    return {
+        "log_level": lvl,
+        "file_log": _parse_bool_env(os.getenv("APP_FILE_LOG"), True),
+        "file_log_level": file_lvl,
+        "ai_metadata_debug_dump": _parse_bool_env(os.getenv("AI_METADATA_DEBUG_DUMP"), False),
+        "openai_timeout_seconds": _parse_float_env(os.getenv("OPENAI_TIMEOUT_SECONDS"), 30.0),
+    }
+
+
+def _sanitize_advanced_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    base = _default_advanced_config_from_env()
+    out = dict(base)
+    if not isinstance(cfg, dict):
+        return out
+    lvl = str(cfg.get("log_level", out["log_level"])) .upper()
+    out["log_level"] = lvl if lvl in allowed else out["log_level"]
+    out["file_log"] = bool(cfg.get("file_log", out["file_log"]))
+    flvl = str(cfg.get("file_log_level", out["file_log_level"])) .upper()
+    out["file_log_level"] = flvl if flvl in allowed else out["file_log_level"]
+    out["ai_metadata_debug_dump"] = bool(cfg.get("ai_metadata_debug_dump", out["ai_metadata_debug_dump"]))
+    try:
+        out["openai_timeout_seconds"] = max(5.0, float(cfg.get("openai_timeout_seconds", out["openai_timeout_seconds"])) )
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+def _load_advanced_config() -> Dict[str, Any]:
+    base = _default_advanced_config_from_env()
+    if ADV_CONFIG_PATH.exists():
+        with suppress(json.JSONDecodeError, OSError):
+            persisted = json.loads(ADV_CONFIG_PATH.read_text(encoding="utf-8"))
+            return _sanitize_advanced_config({**base, **(persisted or {})})
+    return base
+
+
+def _save_advanced_config(cfg: Dict[str, Any]) -> None:
+    with config_lock:
+        _atomic_write_json(ADV_CONFIG_PATH, _sanitize_advanced_config(cfg))
+
+
+def _apply_logging_config(cfg: Dict[str, Any]) -> None:
+    root = logging.getLogger()
+    # Ensure a stream handler exists
+    stream = None
+    fileh = None
+    for h in root.handlers:
+        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+            stream = h
+        if isinstance(h, logging.FileHandler):
+            fileh = h
+    if stream is None:
+        stream = logging.StreamHandler()
+        fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+        stream.setFormatter(fmt)
+        root.addHandler(stream)
+    # Levels
+    level = getattr(logging, str(cfg.get("log_level", "INFO")).upper(), logging.INFO)
+    file_level = getattr(logging, str(cfg.get("file_log_level", "INFO")).upper(), logging.INFO)
+    stream.setLevel(level)
+    # File logging toggle
+    enable_file = bool(cfg.get("file_log", True))
+    logs_dir = BASE_DIR / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    if enable_file and fileh is None:
+        try:
+            from logging.handlers import RotatingFileHandler
+            fileh = RotatingFileHandler(str(logs_dir / "app.log"), maxBytes=5*1024*1024, backupCount=3)
+        except Exception:
+            fileh = logging.FileHandler(str(logs_dir / "app.log"))
+        fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+        fileh.setFormatter(fmt)
+        root.addHandler(fileh)
+    if fileh is not None:
+        if enable_file:
+            fileh.setLevel(file_level)
+        else:
+            # remove file handler
+            try:
+                root.removeHandler(fileh)
+            except Exception:
+                pass
+
+
+def _is_debug_dump_enabled() -> bool:
+    # env override still works
+    env = os.getenv("AI_METADATA_DEBUG_DUMP", "").strip().lower()
+    if env in {"1", "true", "yes"}:
+        return True
+    adv = getattr(app.state, "advanced_config", None)
+    if isinstance(adv, dict):
+        return bool(adv.get("ai_metadata_debug_dump", False))
+    return False
+
+
+def _get_openai_timeout_seconds() -> float:
+    adv = getattr(app.state, "advanced_config", None)
+    if isinstance(adv, dict):
+        try:
+            return float(adv.get("openai_timeout_seconds", 30.0))
+        except (TypeError, ValueError):
+            return 30.0
+    try:
+        return float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
+    except ValueError:
+        return 30.0
 
 
 def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
@@ -473,9 +637,16 @@ def _resolve_model_choice(model: str) -> str:
     if not candidate or candidate.lower() == "auto":
         env_model = os.getenv(OPENAI_MODEL_ENV, "").strip()
         if env_model:
-            return env_model
-        return OPENAI_DEFAULT_MODEL
-    return candidate
+            chosen = env_model
+        else:
+            chosen = OPENAI_DEFAULT_MODEL
+    else:
+        chosen = candidate
+
+    # Warn on unknown models but allow for forward compatibility
+    if chosen not in OPENAI_MODEL_CHOICES:
+        logger.warning("Using non-listed model '%s' (proceeding for compatibility)", chosen)
+    return chosen
 
 
 def _request_openai_metadata(
@@ -552,9 +723,10 @@ def _request_openai_metadata(
             },
         ],
         "max_output_tokens": ai_cfg["max_output_tokens"],
-        "text": {
-            "format": {
-                "type": "json_schema",
+        # Ask for JSON Schema output to increase structured responses
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
                 "name": "image_metadata",
                 "strict": True,
                 "schema": {
@@ -572,9 +744,9 @@ def _request_openai_metadata(
                         },
                     },
                     "required": ["title", "description", "caption", "author", "tags"],
-                    "additionalProperties": False
-                }
-            }
+                    "additionalProperties": False,
+                },
+            },
         },
     }
     # Some models (e.g., gpt-5 variants) do not accept 'temperature'
@@ -587,7 +759,7 @@ def _request_openai_metadata(
     }
 
     try:
-        timeout = httpx.Timeout(OPENAI_TIMEOUT_SECONDS)
+        timeout = httpx.Timeout(_get_openai_timeout_seconds())
         with httpx.Client(timeout=timeout) as client:
             response = client.post(
                 "https://api.openai.com/v1/responses",
@@ -672,7 +844,7 @@ def _request_openai_metadata(
     # Helper: dump diagnostic file when parsing fails or when debug is enabled
     def _dump_openai_debug(reason: str, text_excerpt: str = "") -> None:
         try:
-            debug_enabled = os.getenv("AI_METADATA_DEBUG_DUMP", "0").lower() in {"1", "true", "yes"}
+            debug_enabled = _is_debug_dump_enabled()
             if reason != "success" or debug_enabled:
                 logs_dir = BASE_DIR / "logs" / "ai"
                 logs_dir.mkdir(parents=True, exist_ok=True)
@@ -1017,6 +1189,9 @@ async def _watch_image_directory(app: FastAPI) -> None:
 
 @app.on_event("startup")
 async def startup_event() -> None:
+    # Initialize advanced + AI config from persisted files with env fallbacks
+    app.state.advanced_config = _load_advanced_config()
+    _apply_logging_config(app.state.advanced_config)
     # Initialize runtime AI config from persisted file with env fallbacks
     app.state.ai_config = _load_ai_config()
     # Run schema validation/migration and startup enrichment in a single process when possible
@@ -1232,17 +1407,17 @@ async def admin_home(request: Request) -> HTMLResponse:
     dashboard = _gather_admin_dashboard_data()
     pending = dashboard["pending"]
     request.app.state.pending_images = pending
-    return templates.TemplateResponse(
-        "reviewAddedFiles.html",
-        {
-            "request": request,
-            "pending_images": pending,
-            "reviewed_images": dashboard["reviewed"],
-            "admin_data": dashboard,
-            "model_options": OPENAI_MODEL_CHOICES,
-            "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
-        },
-    )
+        return templates.TemplateResponse(
+            "reviewAddedFiles.html",
+            {
+                "request": request,
+                "pending_images": pending,
+                "reviewed_images": dashboard["reviewed"],
+                "admin_data": dashboard,
+                "model_options": OPENAI_MODEL_CHOICES,
+                "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
+            },
+        )
 
 
 @app.get("/admin/review", response_class=HTMLResponse)
@@ -1250,17 +1425,54 @@ async def review_added_files(request: Request) -> HTMLResponse:
     dashboard = _gather_admin_dashboard_data()
     pending = dashboard["pending"]
     request.app.state.pending_images = pending
+        return templates.TemplateResponse(
+            "reviewAddedFiles.html",
+            {
+                "request": request,
+                "pending_images": pending,
+                "reviewed_images": dashboard["reviewed"],
+                "admin_data": dashboard,
+                "model_options": OPENAI_MODEL_CHOICES,
+                "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
+            },
+        )
+
+
+@app.get("/admin/advanced", response_class=HTMLResponse)
+async def advanced_settings(request: Request) -> HTMLResponse:
+    adv = getattr(app.state, "advanced_config", _load_advanced_config())
     return templates.TemplateResponse(
-        "reviewAddedFiles.html",
+        "advancedSettings.html",
         {
             "request": request,
-            "pending_images": pending,
-            "reviewed_images": dashboard["reviewed"],
-            "admin_data": dashboard,
-            "model_options": OPENAI_MODEL_CHOICES,
-            "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
+            "advanced": adv,
         },
     )
+
+
+@app.post("/admin/advanced", response_class=JSONResponse)
+async def update_advanced_settings(request: Request) -> JSONResponse:
+    data: Dict[str, Any] = {}
+    try:
+        data = await request.json()
+    except Exception:
+        # Fallback to form data
+        form = await request.form()
+        data = {k: form.get(k) for k in form.keys()}
+    cfg = _sanitize_advanced_config(data or {})
+    request.app.state.advanced_config = cfg
+    _save_advanced_config(cfg)
+    _apply_logging_config(cfg)
+    return JSONResponse({"advanced": cfg, "message": "Advanced settings updated"})
+
+
+@app.post("/admin/advanced/reset", response_class=JSONResponse)
+async def reset_advanced_settings(request: Request) -> JSONResponse:
+    cfg = _default_advanced_config_from_env()
+    request.app.state.advanced_config = cfg
+    _save_advanced_config(cfg)
+    _apply_logging_config(cfg)
+    return JSONResponse({"advanced": cfg, "message": "Advanced settings reset to defaults"})
 
 
 @app.get("/admin/api/new-files", response_class=JSONResponse)

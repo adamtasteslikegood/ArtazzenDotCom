@@ -5,13 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Review {{ metadata.title }} &mdash; Artwork Admin</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+    <style>
+    /* Minimal busy overlay */
+    .busy-overlay {position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);z-index:9999}
+    .busy-overlay[aria-hidden="false"]{display:flex}
+    .busy-indicator{background:#fff;color:#333;padding:0.75rem 1rem;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.25);font-weight:600}
+    .button[disabled]{opacity:.6;cursor:not-allowed}
+    </style>
 </head>
 <body class="admin-page">
+    <div id="busy" class="busy-overlay" aria-hidden="true"><div class="busy-indicator">Working…</div></div>
     <header>
         <h1>Review metadata</h1>
         <nav class="admin-nav">
             <a href="{{ review_url }}" class="button secondary">Back to pending list</a>
             <a href="/" class="button secondary">View Public Gallery</a>
+            <a href="/admin/advanced" class="button secondary">Advanced Settings</a>
         </nav>
     </header>
 
@@ -143,6 +152,8 @@
     </footer>
 
     <script>
+    function showBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','false'); }
+    function hideBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','true'); }
     (function () {
         const timestampEls = document.querySelectorAll('.ai-status .timestamp[data-ts]');
         timestampEls.forEach((el) => {
@@ -191,6 +202,9 @@
 
         async function regenerateMetadata() {
             setFeedback('Regenerating metadata…');
+            const prevDisabled = regenButton.disabled;
+            regenButton.disabled = true;
+            showBusy();
             try {
                 const response = await fetch('/admin/ai/regenerate', {
                     method: 'POST',
@@ -234,11 +248,20 @@
             } catch (error) {
                 console.error(error);
                 setFeedback('Unable to regenerate metadata at this time.', true);
+            } finally {
+                regenButton.disabled = prevDisabled;
+                hideBusy();
             }
         }
 
         if (regenButton) {
             regenButton.addEventListener('click', regenerateMetadata);
+        }
+
+        // Show busy while submitting the form
+        const form = document.querySelector('.metadata-form');
+        if (form){
+            form.addEventListener('submit', ()=>{ showBusy(); });
         }
     })();
     </script>
