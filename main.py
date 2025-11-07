@@ -1407,7 +1407,7 @@ async def admin_home(request: Request) -> HTMLResponse:
     dashboard = _gather_admin_dashboard_data()
     pending = dashboard["pending"]
     request.app.state.pending_images = pending
-        return templates.TemplateResponse(
+    return templates.TemplateResponse(
             "reviewAddedFiles.html",
             {
                 "request": request,
@@ -1425,7 +1425,7 @@ async def review_added_files(request: Request) -> HTMLResponse:
     dashboard = _gather_admin_dashboard_data()
     pending = dashboard["pending"]
     request.app.state.pending_images = pending
-        return templates.TemplateResponse(
+    return templates.TemplateResponse(
             "reviewAddedFiles.html",
             {
                 "request": request,
