@@ -1,7 +1,9 @@
 {
-  "log_level": "INFO",
+  "log_level": "WARNING",
   "file_log": true,
   "file_log_level": "DEBUG",
   "ai_metadata_debug_dump": true,
-  "openai_timeout_seconds": 60.0
+  "openai_timeout_seconds": 60.0,
+  "default_author": "Allison Lunn",
+  "default_copyright": "∂ 2025 - Allison Lunn -artazZen.com"
 }
