@@ -147,6 +147,8 @@
                         <option value="name:desc">Filename Z–A</option>
                     </select>
                     <span class="info-tip" aria-label="Sort pending images by date or title" title="Sort pending images by date or title"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
+                    <label for="pending-filter" class="sr-only">Filter pending</label>
+                    <input type="search" id="pending-filter" placeholder="Filter by title, author, or tag" autocomplete="off" title="Type to filter the pending list by title, author, or tag">
                     <label class="checkbox" title="Overwrite existing fields when regenerating">
                         <input type="checkbox" id="force-overwrite">
                         <span>Force overwrite</span>
@@ -154,6 +156,7 @@
                     </label>
                     <button type="button" id="select-all" class="button secondary">Select all</button>
                     <button type="button" id="regen-selected" class="button">Re-run AI</button>
+                    <button type="button" id="delete-selected" class="button danger">Delete selected</button>
                 </div>
             </div>
             <div id="pending-list" class="media-grid">
@@ -226,6 +229,8 @@
                     <label for="gallery-filter" class="sr-only">Filter gallery</label>
                     <input type="search" id="gallery-filter" placeholder="Filter by title, author, or tag" autocomplete="off" title="Type to filter the curated gallery by title, author, or tag">
                     <span class="info-tip" aria-label="Type to filter the curated gallery by title, author, or tag" title="Type to filter the curated gallery by title, author, or tag"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 12 6Zm2 11h-4a1 1 0 1 1 0-2h1v-3h-1a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 1 1 0 2Z"/></svg></span>
+                    <button type="button" id="select-all-gallery" class="button secondary">Select all</button>
+                    <button type="button" id="delete-selected-gallery" class="button danger">Delete selected</button>
                 </div>
             </div>
             <div id="reviewed-list" class="media-grid">
@@ -233,6 +238,9 @@
                     {% for item in reviewed_images %}
                         <article class="image-card image-card--reviewed" data-image-name="{{ item.name }}">
                             <div class="image-card__preview">
+                                <div class="image-card__select image-card__select--overlay">
+                                    <input type="checkbox" class="item-select" aria-label="Select {{ item.name }}">
+                                </div>
                                 <a href="{{ url_for('preview_image_metadata', image_name=item.name) }}" title="Open details">
                                     <img src="{{ item.url }}" alt="{{ item.title }}" loading="lazy">
                                 </a>
@@ -304,10 +312,14 @@
     const resetAiButton = document.getElementById('reset-ai-config');
     const selectAllBtn = document.getElementById('select-all');
     const regenBtn = document.getElementById('regen-selected');
+    const deleteSelectedBtn = document.getElementById('delete-selected');
     const forceOverwrite = document.getElementById('force-overwrite');
     const gallerySort = document.getElementById('gallery-sort');
     const pendingSort = document.getElementById('pending-sort');
     const galleryFilter = document.getElementById('gallery-filter');
+    const pendingFilter = document.getElementById('pending-filter');
+    const selectAllGalleryBtn = document.getElementById('select-all-gallery');
+    const deleteSelectedGalleryBtn = document.getElementById('delete-selected-gallery');
     const adminState = document.getElementById('admin-state');
     const themeToggle = document.getElementById('theme-toggle');
     const reviewUrlTemplate = "{{ url_for('preview_image_metadata', image_name='__IMAGE__') }}";
@@ -522,6 +534,14 @@
 
             const preview = document.createElement('div');
             preview.className = 'image-card__preview';
+            const selectOverlay = document.createElement('div');
+            selectOverlay.className = 'image-card__select image-card__select--overlay';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'item-select';
+            checkbox.setAttribute('aria-label', `Select ${item.name}`);
+            selectOverlay.appendChild(checkbox);
+            preview.appendChild(selectOverlay);
             const img = document.createElement('img');
             img.src = item.url;
             img.alt = item.title || item.name;
@@ -610,6 +630,19 @@
         return sorted;
     }
 
+    function filterPendingData(list, query) {
+        if (!query) return list;
+        const term = query.toLowerCase();
+        return list.filter((item) => {
+            const tags = (item.tags || []).join(' ').toLowerCase();
+            return (
+                (item.title || item.name || '').toLowerCase().includes(term) ||
+                (item.author || '').toLowerCase().includes(term) ||
+                tags.includes(term)
+            );
+        });
+    }
+
     function filterGalleryData(list, query) {
         if (!query) {
             return list;
@@ -633,7 +666,8 @@
 
     function updatePendingView() {
         const sorted = sortPendingData(pendingSort.value);
-        renderPendingList(sorted);
+        const filtered = filterPendingData(sorted, (pendingFilter?.value || '').trim());
+        renderPendingList(filtered);
     }
 
     function refreshCounts() {
@@ -649,11 +683,12 @@
         refreshCounts();
     }
 
-    function collectSelected() {
-        return Array.from(pendingList.querySelectorAll('.item-select:checked')).map((checkbox) => {
-            const card = checkbox.closest('.image-card');
-            return card ? card.dataset.imageName : null;
-        }).filter(Boolean);
+    function collectSelectedFrom(container) {
+        return Array.from(container.querySelectorAll('.item-select:checked'))
+            .map((checkbox) => checkbox.closest('.image-card'))
+            .filter(Boolean)
+            .map((card) => card.dataset.imageName)
+            .filter(Boolean);
     }
 
     async function fetchDashboard() {
@@ -883,7 +918,7 @@
     });
 
     regenBtn.addEventListener('click', () => {
-        const selected = collectSelected();
+        const selected = collectSelectedFrom(pendingList);
         triggerRegeneration(selected, forceOverwrite.checked);
     });
 
@@ -901,6 +936,54 @@
     gallerySort.addEventListener('change', updateGalleryView);
     pendingSort.addEventListener('change', updatePendingView);
     galleryFilter.addEventListener('input', updateGalleryView);
+    if (pendingFilter) { pendingFilter.addEventListener('input', updatePendingView); }
+
+    if (deleteSelectedBtn) {
+        deleteSelectedBtn.addEventListener('click', async () => {
+            const names = collectSelectedFrom(pendingList);
+            if (!names.length) { showFeedback('Select at least one item to delete.', 'error'); return; }
+            if (!window.confirm(`Delete ${names.length} selected item(s)? This cannot be undone.`)) return;
+            showBusy();
+            try {
+                await Promise.all(names.map((n) => fetch(`/admin/image/${encodeURIComponent(n)}`, { method: 'DELETE' })));
+                const data = await fetchDashboard();
+                renderDashboard(data);
+                showFeedback('Selected items deleted.');
+            } catch (err) {
+                console.error(err);
+                showFeedback('Failed to delete one or more items.', 'error');
+            } finally {
+                hideBusy();
+            }
+        });
+    }
+
+    if (selectAllGalleryBtn) {
+        selectAllGalleryBtn.addEventListener('click', () => {
+            const boxes = galleryList.querySelectorAll('.item-select');
+            const shouldSelectAll = Array.from(boxes).some((b) => !b.checked);
+            boxes.forEach((b) => b.checked = shouldSelectAll);
+        });
+    }
+    if (deleteSelectedGalleryBtn) {
+        deleteSelectedGalleryBtn.addEventListener('click', async () => {
+            const names = collectSelectedFrom(galleryList);
+            if (!names.length) { showFeedback('Select at least one item to delete.', 'error'); return; }
+            if (!window.confirm(`Delete ${names.length} curated item(s)? This cannot be undone.`)) return;
+            showBusy();
+            try {
+                await Promise.all(names.map((n) => fetch(`/admin/image/${encodeURIComponent(n)}`, { method: 'DELETE' })));
+                const data = await fetchDashboard();
+                renderDashboard(data);
+                showFeedback('Selected curated items deleted.');
+            } catch (err) {
+                console.error(err);
+                showFeedback('Failed to delete one or more curated items.', 'error');
+            } finally {
+                hideBusy();
+            }
+        });
+    }
 
     galleryList.addEventListener('click', (event) => {
         const action = event.target.dataset.action;

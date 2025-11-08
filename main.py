@@ -287,6 +287,9 @@ def _default_advanced_config_from_env() -> Dict[str, Any]:
         "file_log_level": file_lvl,
         "ai_metadata_debug_dump": _parse_bool_env(os.getenv("AI_METADATA_DEBUG_DUMP"), False),
         "openai_timeout_seconds": _parse_float_env(os.getenv("OPENAI_TIMEOUT_SECONDS"), 30.0),
+        # New defaults used for imported photos when metadata is missing
+        "default_author": os.getenv("DEFAULT_AUTHOR", "").strip(),
+        "default_copyright": os.getenv("DEFAULT_COPYRIGHT", "").strip(),
     }
 
 
@@ -306,7 +309,32 @@ def _sanitize_advanced_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         out["openai_timeout_seconds"] = max(5.0, float(cfg.get("openai_timeout_seconds", out["openai_timeout_seconds"])) )
     except (TypeError, ValueError):
         pass
+    # Normalize new default fields
+    try:
+        out["default_author"] = str(cfg.get("default_author", out.get("default_author", ""))).strip()
+    except Exception:
+        pass
+    try:
+        out["default_copyright"] = str(cfg.get("default_copyright", out.get("default_copyright", ""))).strip()
+    except Exception:
+        pass
     return out
+
+
+def _get_advanced_config() -> Dict[str, Any]:
+    """Return runtime advanced config from app.state with env fallbacks."""
+    cfg = getattr(app.state, "advanced_config", {})
+    base = _default_advanced_config_from_env()
+    # Only the keys we currently expose to templates/logic
+    return {
+        "log_level": str(cfg.get("log_level", base["log_level"])),
+        "file_log": bool(cfg.get("file_log", base["file_log"])),
+        "file_log_level": str(cfg.get("file_log_level", base["file_log_level"])),
+        "ai_metadata_debug_dump": bool(cfg.get("ai_metadata_debug_dump", base["ai_metadata_debug_dump"])),
+        "openai_timeout_seconds": float(cfg.get("openai_timeout_seconds", base["openai_timeout_seconds"])),
+        "default_author": str(cfg.get("default_author", base.get("default_author", ""))).strip(),
+        "default_copyright": str(cfg.get("default_copyright", base.get("default_copyright", ""))).strip(),
+    }
 
 
 def _load_advanced_config() -> Dict[str, Any]:
@@ -1085,9 +1113,11 @@ def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
     # Fill from detected metadata
     sidecar_data["title"] = str(metadata.get("title") or "").strip()
     sidecar_data["description"] = str(metadata.get("description") or "").strip()
+    # Apply defaults for imported photos if author/copyright are missing
+    adv = _get_advanced_config()
     sidecar_data["caption"] = str(metadata.get("caption") or "").strip()
-    sidecar_data["author"] = str(metadata.get("author") or "").strip()
-    sidecar_data["copyright"] = str(metadata.get("copyright") or "").strip()
+    sidecar_data["author"] = (str(metadata.get("author") or adv.get("default_author", "")).strip())
+    sidecar_data["copyright"] = (str(metadata.get("copyright") or adv.get("default_copyright", "")).strip())
     tags_value = metadata.get("tags")
     if isinstance(tags_value, str):
         tags_value = [tag.strip() for tag in tags_value.split(",") if tag.strip()]
@@ -1578,6 +1608,16 @@ async def regenerate_ai_metadata(request: Request) -> JSONResponse:
         body = {}
     images = body.get("images") or []
     force = bool(body.get("force", False))
+    # Optional field-level regeneration control
+    fields = body.get("fields") or []
+    if isinstance(fields, list):
+        fields = [
+            str(f).strip().lower()
+            for f in fields
+            if str(f).strip().lower() in {"title", "description", "caption", "author", "tags"}
+        ]
+    else:
+        fields = []
     if not isinstance(images, list) or not images:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No images provided")
 
@@ -1600,6 +1640,14 @@ async def regenerate_ai_metadata(request: Request) -> JSONResponse:
                 meta["caption"] = ""
                 meta["author"] = ""
                 meta["tags"] = []
+                meta["ai_generated"] = False
+            elif fields:
+                # Clear only requested fields so enrichment targets them
+                for f in fields:
+                    if f == "tags":
+                        meta["tags"] = []
+                    else:
+                        meta[f] = ""
                 meta["ai_generated"] = False
             meta = _populate_missing_metadata(path, meta)
             _write_sidecar(path, meta)
