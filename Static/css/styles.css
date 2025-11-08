@@ -401,7 +401,8 @@ footer {
 
 .admin-layout {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    /* Force a stable 2-column layout on wide screens */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 2rem;
     align-items: start;
 }
@@ -471,6 +472,18 @@ footer {
     border-radius: 8px;
     border: 1px solid #dee2e6;
     display: block;
+}
+
+/* Overlay checkbox for selection in gallery cards */
+.image-card__select--overlay {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    background: rgba(255,255,255,0.85);
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    padding: 2px 6px;
 }
 
 /* Ensure consistent thumbnail sizing for pending list */

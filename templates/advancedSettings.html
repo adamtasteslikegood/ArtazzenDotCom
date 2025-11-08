@@ -60,6 +60,20 @@
         </section>
 
         <section class="admin-panel">
+            <h2>Metadata Defaults</h2>
+            <div class="form-grid">
+                <div class="form-row">
+                    <label for="default_author">Default author for imports</label>
+                    <input id="default_author" type="text" placeholder="e.g., Jane Doe" value="{{ advanced.default_author }}">
+                </div>
+                <div class="form-row">
+                    <label for="default_copyright">Default copyright for imports</label>
+                    <input id="default_copyright" type="text" placeholder="© 2024 Jane Doe" value="{{ advanced.default_copyright }}">
+                </div>
+            </div>
+        </section>
+
+        <section class="admin-panel">
             <h2>AI Debug + Timeouts</h2>
             <div class="form-grid">
                 <div class="form-row">
@@ -98,6 +112,8 @@
                 file_log_level: document.getElementById('file_log_level').value,
                 ai_metadata_debug_dump: document.getElementById('ai_metadata_debug_dump').checked,
                 openai_timeout_seconds: parseFloat(document.getElementById('openai_timeout_seconds').value || '30'),
+                default_author: document.getElementById('default_author').value || '',
+                default_copyright: document.getElementById('default_copyright').value || '',
             };
             const res = await fetch('/admin/advanced', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
             if(!res.ok) throw new Error('Failed');
@@ -118,6 +134,8 @@
             document.getElementById('file_log_level').value = adv.file_log_level || adv.log_level || 'INFO';
             document.getElementById('ai_metadata_debug_dump').checked = !!adv.ai_metadata_debug_dump;
             document.getElementById('openai_timeout_seconds').value = adv.openai_timeout_seconds || 30;
+            document.getElementById('default_author').value = adv.default_author || '';
+            document.getElementById('default_copyright').value = adv.default_copyright || '';
             showFeedback('Advanced settings reset to defaults.');
         }catch(err){ console.error(err); showFeedback('Unable to reset settings.', 'error'); }
         finally{ hideBusy(); }
@@ -127,4 +145,3 @@
     </script>
 </body>
 </html>
-

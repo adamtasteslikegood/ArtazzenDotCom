@@ -1,0 +1,7 @@
+{
+  "log_level": "INFO",
+  "file_log": true,
+  "file_log_level": "DEBUG",
+  "ai_metadata_debug_dump": true,
+  "openai_timeout_seconds": 60.0
+}

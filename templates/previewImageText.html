@@ -90,6 +90,10 @@
                     <label for="title" title="Short, descriptive title that appears prominently in the gallery">
                         Title
                         <span class="info-tip" aria-label="Short, descriptive title that appears prominently in the gallery" title="Short, descriptive title that appears prominently in the gallery">i</span>
+                        <label class="checkbox" title="Regenerate title only">
+                            <input type="checkbox" class="regen-field" data-field="title">
+                            <span>Regen</span>
+                        </label>
                     </label>
                     <input type="text" id="title" name="title" value="{{ metadata.title | e }}" required>
                 </div>
@@ -97,6 +101,10 @@
                     <label for="description" title="1–3 sentences describing story, medium, or context">
                         Description
                         <span class="info-tip" aria-label="1–3 sentences describing story, medium, or context" title="1–3 sentences describing story, medium, or context">i</span>
+                        <label class="checkbox" title="Regenerate description only">
+                            <input type="checkbox" class="regen-field" data-field="description">
+                            <span>Regen</span>
+                        </label>
                     </label>
                     <textarea id="description" name="description" rows="6" placeholder="Describe the story, medium, or inspiration for this piece.">{{ metadata.description | e }}</textarea>
                 </div>
@@ -104,6 +112,10 @@
                     <label for="caption" title="Short highlight shown near the image">
                         Caption
                         <span class="info-tip" aria-label="Short highlight shown near the image" title="Short highlight shown near the image">i</span>
+                        <label class="checkbox" title="Regenerate caption only">
+                            <input type="checkbox" class="regen-field" data-field="caption">
+                            <span>Regen</span>
+                        </label>
                     </label>
                     <textarea id="caption" name="caption" rows="2" placeholder="Short caption for quick highlights.">{{ metadata.caption | e }}</textarea>
                 </div>
@@ -111,6 +123,10 @@
                     <label for="author" title="Artist or creator name as you want it displayed">
                         Author credit
                         <span class="info-tip" aria-label="Artist or creator name as you want it displayed" title="Artist or creator name as you want it displayed">i</span>
+                        <label class="checkbox" title="Regenerate author only">
+                            <input type="checkbox" class="regen-field" data-field="author">
+                            <span>Regen</span>
+                        </label>
                     </label>
                     <input type="text" id="author" name="author" value="{{ metadata.author | e }}" placeholder="e.g., Jane Doe">
                 </div>
@@ -125,6 +141,10 @@
                     <label for="tags" title="Comma-separated keywords to aid search and grouping">
                         Tags
                         <span class="info-tip" aria-label="Comma-separated keywords to aid search and grouping" title="Comma-separated keywords to aid search and grouping">i</span>
+                        <label class="checkbox" title="Regenerate tags only">
+                            <input type="checkbox" class="regen-field" data-field="tags">
+                            <span>Regen</span>
+                        </label>
                     </label>
                     <input type="text" id="tags" name="tags" value="{{ metadata.tags | join(', ') | e }}" placeholder="surreal, oil painting, dusk">
                     <small class="form-hint">Separate tags with commas.</small>
@@ -135,7 +155,7 @@
                         <span>Force overwrite existing text when regenerating</span>
                         <span class="info-tip" aria-label="When enabled, AI regeneration replaces text you have already set." title="When enabled, AI regeneration replaces text you have already set.">i</span>
                     </label>
-                    <button type="button" id="regen-image" class="button secondary" title="Request new AI metadata for this image">Regenerate metadata</button>
+                    <button type="button" id="regen-image" class="button secondary" title="Request new AI metadata for selected fields (or all if none selected)">Regenerate metadata</button>
                 </div>
                 <div class="form-actions">
                     <button type="submit" name="action" value="save" class="button">OK</button>
@@ -206,10 +226,13 @@
             regenButton.disabled = true;
             showBusy();
             try {
+                const selectedFields = Array.from(document.querySelectorAll('.regen-field:checked'))
+                    .map((el) => el.getAttribute('data-field'))
+                    .filter(Boolean);
                 const response = await fetch('/admin/ai/regenerate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ images: [imageName], force: !!forceToggle?.checked }),
+                    body: JSON.stringify({ images: [imageName], force: !!forceToggle?.checked, fields: selectedFields }),
                 });
                 if (!response.ok) {
                     throw new Error('Request failed');
