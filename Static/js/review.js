@@ -72,10 +72,34 @@ function showFeedback(message, type = 'info') {
   }, 8000);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Basic page setup
   formatTimestamps();
   initTheme();
   bindThemeToggle();
+
+  // Parse initial admin state embedded in the page (if provided)
+  try {
+    const stateEl = document.getElementById('admin-state');
+    if (stateEl?.textContent) {
+      const initial = JSON.parse(stateEl.textContent);
+      if (initial && (initial.pending || initial.reviewed)) {
+        renderDashboard(initial);
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to parse initial admin state:', err);
+  }
+
+  // Ensure config is loaded and UI bindings are attached
+  try {
+    await loadAdminConfig();
+  } catch (_) {}
+  try {
+    bindReviewUI();
+  } catch (err) {
+    console.error('Failed to bind review UI:', err);
+  }
 });
 
 // Called once DOM and admin state is ready
@@ -330,6 +354,16 @@ function renderCardList(list, type, container) {
     const card = document.createElement('article');
     card.className = 'image-card card h-100 shadow-sm p-3 mb-3';
     card.dataset.imageName = item.name;
+
+    // Selection checkbox (for bulk actions)
+    const selectWrap = document.createElement('div');
+    selectWrap.className = 'form-check mb-2';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'form-check-input item-select';
+    checkbox.setAttribute('aria-label', `Select ${item.name}`);
+    selectWrap.appendChild(checkbox);
+    card.appendChild(selectWrap);
 
     // Preview
     const preview = document.createElement('div');

@@ -16,9 +16,9 @@
 </head>
 <body class="bg-light text-dark">
 
-  <!-- Busy Overlay -->
-  <div id="busy" class="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-50 d-none z-3 d-flex align-items-center justify-content-center">
-    <div class="bg-white text-dark px-4 py-3 rounded shadow">Working…</div>
+  <!-- Busy Overlay (aria-hidden based, consistent with admin pages) -->
+  <div id="busy" class="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-50 z-3 d-flex align-items-center justify-content-center" aria-hidden="true">
+    <div class="bg-white text-dark px-4 py-3 rounded shadow busy-indicator">Working…</div>
   </div>
 
   <!-- Header -->
@@ -102,7 +102,7 @@
 
       <p class="text-muted small mb-4">Update the fields below to control what appears in the public gallery. Saving will update or create the JSON sidecar.</p>
 
-      <form class="vstack gap-4" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
+      <form class="vstack gap-4 metadata-form" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
         <!-- Title -->
         <div>
           <label for="title" class="form-label">Title</label>
@@ -211,7 +211,7 @@
     function showBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','false'); }
     function hideBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','true'); }
     (function () {
-        const timestampEls = document.querySelectorAll('.ai-status .timestamp[data-ts]');
+        const timestampEls = document.querySelectorAll('.timestamp[data-ts]');
         timestampEls.forEach((el) => {
             const ts = parseFloat(el.getAttribute('data-ts'));
             if (!isNaN(ts)) {
