@@ -32,6 +32,23 @@ body.admin-page.theme-dark .form-select {
   border-color: #343b49;
 }
 
+/* Override common light utility classes under dark theme */
+body.admin-page.theme-dark .bg-light {
+  background-color: #151924 !important;
+  color: #e2e8f0 !important;
+}
+body.admin-page.theme-dark .text-dark {
+  color: #e2e8f0 !important;
+}
+body.admin-page.theme-dark .border {
+  border-color: #343b49 !important;
+}
+body.admin-page.theme-dark .badge.bg-light.text-dark {
+  background-color: #151924 !important;
+  color: #e2e8f0 !important;
+  border-color: #343b49 !important;
+}
+
 /* Busy overlay during async ops */
 .busy-overlay {
   position: fixed;

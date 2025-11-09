@@ -32,6 +32,7 @@
         <a href="/" class="btn btn-outline-secondary">Public Gallery</a>
         <a href="/admin" class="btn btn-outline-secondary">Dashboard</a>
         <a href="/admin/advanced" class="btn btn-outline-secondary">Advanced</a>
+        <button type="button" id="theme-toggle" class="btn btn-outline-secondary" title="Toggle light/dark">🌙 Dark</button>
       </nav>
     </div>
   </header>
@@ -57,6 +58,7 @@
       }
     });
   </script>
+  <script src="{{ url_for('static', path='js/admin.js') }}"></script>
   {% endblock %}
 </body>
 </html>

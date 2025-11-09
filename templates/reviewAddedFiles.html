@@ -240,6 +240,5 @@
 {% block scripts %}
   {{ super() }}
   <script id="admin-state" type="application/json">{{ admin_data | tojson }}</script>
-  <script src="{{ url_for('static', path='js/admin.js') }}"></script>
   <script src="{{ url_for('static', path='js/review.js') }}"></script>
 {% endblock %}

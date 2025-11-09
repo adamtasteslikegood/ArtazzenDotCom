@@ -299,7 +299,7 @@ function buildTagList(tags = []) {
 }
 
 function createCardActions(item, type) {
-  const reviewUrl = `/admin/image/${encodeURIComponent(item.name)}`;
+  const reviewUrl = `/admin/review/${encodeURIComponent(item.name)}`;
   const actions = document.createElement('div');
   actions.className = 'image-card__actions d-flex gap-2 flex-wrap';
 
