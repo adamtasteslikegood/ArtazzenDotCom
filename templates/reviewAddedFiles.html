@@ -27,9 +27,13 @@
         <div>
           <label for="ai-model" class="form-label">AI Model</label>
           <select id="ai-model" class="form-select">
-            <option value="default">Default Model</option>
-            <option value="gpt-4">GPT-4</option>
-            <option value="gpt-3.5">GPT-3.5</option>
+            {% if model_options %}
+              {% for option in model_options %}
+                <option value="{{ option }}">{{ option }}</option>
+              {% endfor %}
+            {% else %}
+              <option value="default">Default</option>
+            {% endif %}
           </select>
         </div>
 
@@ -59,8 +63,14 @@
 
   <!-- Upload Files (Dropzone) -->
   <div class="col-md-6">
-    <section class="card p-4 shadow-sm h-100" >
-      <h2 class="h5 mb-3">Upload Files</h2>
+    <section class="card p-4 shadow-sm h-100">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">Upload Files</h2>
+        <div class="d-flex gap-2">
+          <button type="button" id="refresh-pending" class="btn btn-outline-secondary btn-sm">Refresh Library</button>
+          <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm" title="Toggle light/dark">🌙 Dark</button>
+        </div>
+      </div>
       <form id="path-form" class="mb-3">
         <label for="path" class="form-label">Import Path</label>
         <div class="input-group">
@@ -68,80 +78,163 @@
           <button type="submit" class="btn btn-outline-primary">Import</button>
         </div>
       </form>
-        <div class="flex-grow-1 d-flex flex-column justify-content-center min-vh-30 min-vh-md-0">
-          <div id="dropzone" class="border border-dashed rounded p-4 text-center bg-light d-flex flex-column justify-content-center align-items-center h-100">
-            <p class="mb-2">Drag and drop image files here</p>
-            <button type="button" class="btn btn-secondary" id="select-files">Select Files</button>
-            <input type="file" id="file-input" class="visually-hidden" multiple accept="image/*">
-          </div>
+      <div class="flex-grow-1 d-flex flex-column justify-content-center min-vh-30 min-vh-md-0">
+        <div id="dropzone" class="border border-dashed rounded p-4 text-center bg-light d-flex flex-column justify-content-center align-items-center h-100">
+          <p class="mb-2">Drag and drop image files here</p>
+          <button type="button" class="btn btn-secondary" id="select-files">Select Files</button>
+          <input type="file" id="file-input" class="visually-hidden" multiple accept="image/*">
         </div>
-      <div id="feedback" class="mt-3 text-success small" hidden>Ready.</div>
+      </div>
+      <div id="feedback" class="mt-3 small text-success" hidden>Ready.</div>
     </section>
   </div>
 </div>
 
-<!-- ✅ Image Grid: Pending images to review -->
-<div id="pending-list" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4">
-  {% for item in pending_images %}
-    <div class="col">
-      <article class="image-card card h-100 shadow-sm p-3" data-image-name="{{ item.name }}">
-        <div class="image-card__preview ratio ratio-4x3 mb-3">
-          <a href="{{ url_for('preview_image_metadata', image_name=item.name) }}">
-            <img src="{{ item.url }}" alt="{{ item.title or item.name }}" class="img-fluid rounded border" loading="lazy">
-          </a>
-        </div>
+<!-- ✅ Pending toolbar + list -->
+<section class="mb-5">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+    <h2 class="h5 mb-0">Needs review <span id="pending-count" class="badge text-bg-secondary">{{ pending_images | length }}</span></h2>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <label class="form-label me-2 mb-0" for="pending-sort">Sort</label>
+      <select id="pending-sort" class="form-select form-select-sm w-auto">
+        <option value="title:asc" selected>Title A–Z</option>
+        <option value="title:desc">Title Z–A</option>
+        <option value="name:asc">Filename A–Z</option>
+        <option value="name:desc">Filename Z–A</option>
+      </select>
+      <input type="search" id="pending-filter" class="form-control form-control-sm" placeholder="Filter by title, author, or tag">
+      <div class="form-check ms-2">
+        <input class="form-check-input" type="checkbox" id="force-overwrite">
+        <label class="form-check-label small" for="force-overwrite">Force overwrite</label>
+      </div>
+      <button type="button" id="select-all" class="btn btn-outline-secondary btn-sm">Select All</button>
+      <button type="button" id="regen-selected" class="btn btn-outline-primary btn-sm">Regenerate Selected</button>
+      <button type="button" id="delete-selected" class="btn btn-outline-danger btn-sm">Delete Selected</button>
+    </div>
+  </div>
 
-        <div class="image-card__meta d-flex flex-column gap-2">
-          <div class="d-flex justify-content-between align-items-center">
-            <h5 class="fw-semibold mb-0">{{ item.title or item.name }}</h5>
-            {% if item.ai_generated %}
-              <span class="badge bg-secondary">AI generated</span>
-            {% else %}
-              <span class="badge bg-light text-dark border">Needs text</span>
-            {% endif %}
+  <div id="pending-list" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4">
+    {% for item in pending_images %}
+      <div class="col">
+        <article class="image-card card h-100 shadow-sm p-3" data-image-name="{{ item.name }}">
+          <div class="form-check mb-2">
+            <input class="form-check-input item-select" type="checkbox" aria-label="Select {{ item.name }}">
           </div>
-
-          <p class="filename small text-muted mb-0">{{ item.name }}</p>
-
-          {% if item.caption %}
-            <p class="caption fst-italic text-muted mb-0">{{ item.caption }}</p>
-          {% endif %}
-
-          {% if item.description %}
-            <p class="description">{{ item.description }}</p>
-          {% else %}
-            <p class="description text-muted fst-italic">No description detected yet.</p>
-          {% endif %}
-
-          {% if item.tags %}
-            <ul class="list-inline small mb-0">
-              {% for tag in item.tags %}
-                <li class="list-inline-item border rounded-pill px-2 py-1 bg-light text-dark">{{ tag }}</li>
-              {% endfor %}
-            </ul>
-          {% endif %}
-
-          <div class="image-card__footer d-flex justify-content-between align-items-center mt-auto flex-wrap gap-2">
-            {% if item.ai_details and (item.ai_details.created or item.ai_details.attempted_at) %}
-              <span class="timestamp small text-muted" data-ts="{{ item.ai_details.created or item.ai_details.attempted_at }}"></span>
+          <div class="image-card__preview ratio ratio-4x3 mb-3">
+            <a href="{{ url_for('preview_image_metadata', image_name=item.name) }}">
+              <img src="{{ item.url }}" alt="{{ item.title or item.name }}" class="img-fluid rounded border" loading="lazy">
+            </a>
+          </div>
+          <div class="image-card__meta d-flex flex-column gap-2">
+            <div class="d-flex justify-content-between align-items-center">
+              <h5 class="fw-semibold mb-0">{{ item.title or item.name }}</h5>
+              {% if item.ai_generated %}
+                <span class="badge bg-secondary">AI generated</span>
+              {% else %}
+                <span class="badge bg-light text-dark border">Needs text</span>
+              {% endif %}
+            </div>
+            <p class="filename small text-muted mb-0">{{ item.name }}</p>
+            {% if item.caption %}
+              <p class="caption fst-italic text-muted mb-0">{{ item.caption }}</p>
             {% endif %}
-            <div class="image-card__actions d-flex gap-2 justify-content-end flex-wrap">
-              <a class="btn btn-outline-primary btn-sm" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">
-                Review details
-              </a>
+            {% if item.description %}
+              <p class="description">{{ item.description }}</p>
+            {% else %}
+              <p class="description text-muted fst-italic">No description detected yet.</p>
+            {% endif %}
+            {% if item.tags %}
+              <ul class="list-inline small mb-0">
+                {% for tag in item.tags %}
+                  <li class="list-inline-item border rounded-pill px-2 py-1 bg-light text-dark">{{ tag }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            <div class="image-card__footer d-flex justify-content-between align-items-center mt-auto flex-wrap gap-2">
+              {% if item.ai_details and (item.ai_details.created or item.ai_details.attempted_at) %}
+                <span class="timestamp small text-muted" data-ts="{{ item.ai_details.created or item.ai_details.attempted_at }}"></span>
+              {% endif %}
+              <div class="image-card__actions d-flex gap-2 justify-content-end flex-wrap">
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Review details</a>
+              </div>
             </div>
           </div>
-        </div>
-      </article>
-    </div>
-  {% endfor %}
-</div>
-
-{% if not pending_images %}
-  <div class="alert alert-info text-center mt-5">
-    No new files waiting for review. Upload artwork to begin curating descriptions.
+        </article>
+      </div>
+    {% endfor %}
   </div>
-{% endif %}
+
+  {% if not pending_images %}
+    <div class="alert alert-info text-center mt-3">No new files waiting for review.</div>
+  {% endif %}
+</section>
+
+<!-- ✅ Gallery toolbar + list -->
+<section>
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+    <h2 class="h5 mb-0">Curated gallery <span id="gallery-count" class="badge text-bg-secondary">{{ reviewed_images | length }}</span></h2>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <label class="form-label me-2 mb-0" for="gallery-sort">Sort</label>
+      <select id="gallery-sort" class="form-select form-select-sm w-auto">
+        <option value="title:asc" selected>Title A–Z</option>
+        <option value="title:desc">Title Z–A</option>
+        <option value="name:asc">Filename A–Z</option>
+        <option value="name:desc">Filename Z–A</option>
+      </select>
+      <input type="search" id="gallery-filter" class="form-control form-control-sm" placeholder="Filter by title, author, or tag">
+      <button type="button" id="select-all-gallery" class="btn btn-outline-secondary btn-sm">Select All</button>
+      <button type="button" id="delete-selected-gallery" class="btn btn-outline-danger btn-sm">Delete Selected</button>
+    </div>
+  </div>
+
+  <div id="reviewed-list" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4">
+    {% for item in reviewed_images %}
+      <div class="col">
+        <article class="image-card card h-100 shadow-sm p-3" data-image-name="{{ item.name }}">
+          <div class="form-check mb-2">
+            <input class="form-check-input item-select" type="checkbox" aria-label="Select {{ item.name }}">
+          </div>
+          <div class="image-card__preview ratio ratio-4x3 mb-3">
+            <a href="{{ url_for('preview_image_metadata', image_name=item.name) }}">
+              <img src="{{ item.url }}" alt="{{ item.title or item.name }}" class="img-fluid rounded border" loading="lazy">
+            </a>
+          </div>
+          <div class="image-card__meta d-flex flex-column gap-2">
+            <div class="d-flex justify-content-between align-items-center">
+              <h5 class="fw-semibold mb-0">{{ item.title or item.name }}</h5>
+              <span class="badge bg-secondary">Curated</span>
+            </div>
+            <p class="filename small text-muted mb-0">{{ item.name }}</p>
+            {% if item.caption %}
+              <p class="caption fst-italic text-muted mb-0">{{ item.caption }}</p>
+            {% endif %}
+            {% if item.description %}
+              <p class="description">{{ item.description }}</p>
+            {% endif %}
+            {% if item.tags %}
+              <ul class="list-inline small mb-0">
+                {% for tag in item.tags %}
+                  <li class="list-inline-item border rounded-pill px-2 py-1 bg-light text-dark">{{ tag }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            <div class="image-card__footer d-flex justify-content-between align-items-center mt-auto flex-wrap gap-2">
+              {% if item.ai_details and (item.ai_details.created or item.ai_details.attempted_at) %}
+                <span class="timestamp small text-muted" data-ts="{{ item.ai_details.created or item.ai_details.attempted_at }}"></span>
+              {% endif %}
+              <div class="image-card__actions d-flex gap-2 justify-content-end flex-wrap">
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Edit</a>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    {% endfor %}
+  </div>
+  {% if not reviewed_images %}
+    <div class="alert alert-info text-center mt-3">No curated artwork yet.</div>
+  {% endif %}
+</section>
 {% endblock %}
 
 {% block scripts %}
