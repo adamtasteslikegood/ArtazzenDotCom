@@ -727,6 +727,18 @@ def _request_openai_metadata(
         details["error"] = "Unable to prepare image for OpenAI request."
         return {"title": "", "description": "", "details": details}
 
+    user_content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+    if image_payload:
+        user_content.append(
+            {
+                "type": "input_image",
+                "image_url": {
+                    "url": image_payload,
+                    "detail": "high",
+                },
+            }
+        )
+
     request_body = {
         "model": model,
         "input": [
@@ -734,7 +746,7 @@ def _request_openai_metadata(
                 "role": "system",
                 "content": [
                     {
-                        "type": "input_text",
+                        "type": "text",
                         "text": (
                             "You create concise, visitor-friendly metadata for artwork images. "
                             "Always respond with valid JSON only."
@@ -744,19 +756,14 @@ def _request_openai_metadata(
             },
             {
                 "role": "user",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                    {"type": "input_image", "image_url": image_payload},
-                ],
+                "content": user_content,
             },
         ],
         "max_output_tokens": ai_cfg["max_output_tokens"],
-        # Ask for JSON Schema output using Responses API 'text.format'
-        "text": {
-            "format": {
-                "type": "json_schema",
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
                 "name": "image_metadata",
-                "strict": True,
                 "schema": {
                     "type": "object",
                     "properties": {
@@ -777,10 +784,11 @@ def _request_openai_metadata(
             },
         },
     }
-    # Note: The Responses API infers modalities from content; do not set 'modalities'.
-    # Some models (e.g., gpt-5 variants) do not accept 'temperature'
+    # Note: The Responses API infers modalities from supplied content; no need for explicit flag.
     if not str(model).startswith("gpt-5"):
         request_body["temperature"] = ai_cfg["temperature"]
+    else:
+        request_body["reasoning"] = {"effort": "medium"}
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -819,7 +827,7 @@ def _request_openai_metadata(
                 "request_preview": {
                     "keys": list(request_body.keys()),
                     "has_image": bool(image_payload),
-                    "text_format": (request_body.get("text") or {}).get("format"),
+                    "response_format": request_body.get("response_format"),
                 },
                 "error": details.get("error"),
                 "error_body": details.get("error_body", ""),

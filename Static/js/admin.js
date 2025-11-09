@@ -24,16 +24,20 @@ function hideBusy() {
 }
 
 // Theme handling
+function updateThemeToggleButtons(theme) {
+  document.querySelectorAll('[data-theme-toggle]').forEach(toggle => {
+    toggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+    toggle.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    toggle.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+  });
+}
+
 function applyTheme(theme) {
   const body = document.body;
   body.classList.remove('theme-light', 'theme-dark');
   body.classList.add(theme === 'dark' ? 'theme-dark' : 'theme-light');
 
-  const toggle = document.getElementById('theme-toggle');
-  if (toggle) {
-    toggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
-    toggle.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-  }
+  updateThemeToggleButtons(theme);
 
   try {
     localStorage.setItem('adminTheme', theme);
@@ -50,13 +54,13 @@ function initTheme() {
 }
 
 function bindThemeToggle() {
-  const toggle = document.getElementById('theme-toggle');
-  if (toggle) {
+  const toggles = document.querySelectorAll('[data-theme-toggle]');
+  toggles.forEach(toggle => {
     toggle.addEventListener('click', () => {
       const isDark = document.body.classList.contains('theme-dark');
       applyTheme(isDark ? 'light' : 'dark');
     });
-  }
+  });
 }
 
 // Feedback banner
