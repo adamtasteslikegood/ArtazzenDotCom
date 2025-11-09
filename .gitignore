@@ -1,10 +1,28 @@
+# API keys and secrets
 /my_OpenAI_APIkey.py
+
+# Image directories
 /new_app/static/images/
 /Static/images/
-/.venv/
-/.venv1/
-/new_app/.venv/
-/.venv_new/
-/__pycache__/
-/# Ignore logs written by gunicorn/app
+
+# Virtual environments
+.venv*/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
 /logs/
+
+# IDE
+.idea/
+
+# OS files
+.DS_Store
+
+# Lock files
+/.watcher.lock
+/.migration.lock
+/.sidecar.slot.*
