@@ -27,15 +27,15 @@ However, the **content** of those JSON files is affected by:
 ## Example Usage
 
 ```shell script
-# Disable AI metadata generation entirely
-export AI_METADATA_ENABLED=false
-
-# Enable AI with custom settings
-export AI_METADATA_ENABLED=true
-export MY_OPENAI_API_KEY="sk-your-key-here"
-export OPENAI_IMAGE_METADATA_MODEL="gpt-4o"
-export OPENAI_IMAGE_METADATA_TEMPERATURE="0.8"
-export OPENAI_IMAGE_METADATA_MAX_TOKENS="800"
+    # Disable AI metadata generation entirely
+    export AI_METADATA_ENABLED=false
+    
+    # Enable AI with custom settings
+    export AI_METADATA_ENABLED=true
+    export MY_OPENAI_API_KEY="sk-your-key-here"
+    export OPENAI_IMAGE_METADATA_MODEL="gpt-4o"
+    export OPENAI_IMAGE_METADATA_TEMPERATURE="0.8"
+    export OPENAI_IMAGE_METADATA_MAX_TOKENS="800"
 ```
 
 
