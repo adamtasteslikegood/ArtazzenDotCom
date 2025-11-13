@@ -44,7 +44,7 @@
           </div>
           <div class="col-md-6">
             <label for="ai-tokens" class="form-label">Max Output Tokens</label>
-            <input type="number" min="1" class="form-control" id="ai-tokens" value="600">
+            <input type="number" min="1" class="form-control" id="ai-tokens" value="800">
           </div>
         </div>
 
@@ -240,5 +240,5 @@
 {% block scripts %}
   {{ super() }}
   <script id="admin-state" type="application/json">{{ admin_data | tojson }}</script>
-  <script src="{{ url_for('static', path='js/review.js') }}"></script>
+  <script src="{{ url_for('static', path='js/review.js') }}" defer></script>
 {% endblock %}

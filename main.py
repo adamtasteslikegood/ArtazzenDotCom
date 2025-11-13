@@ -12,6 +12,7 @@ import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from dotenv import load_dotenv
 
 from fastapi import (
     FastAPI,
@@ -39,6 +40,14 @@ except Exception:  # pragma: no cover - e.g., Windows
 # --- Configuration ---
 # Get the directory where this script is located
 BASE_DIR = Path(__file__).resolve().parent
+_ENV_FILE = BASE_DIR / ".env"
+# Load environment variables from .env at repo root if present (non-destructive)
+try:
+    if _ENV_FILE.exists():
+        load_dotenv(dotenv_path=str(_ENV_FILE), override=False)
+except Exception:
+    # Proceed without .env if loading fails
+    pass
 # Define directories relative to the base directory
 # Use the on-disk directory name with the expected capitalization.
 # Static files are served from the URL path `/static`, but the folder in
@@ -225,7 +234,7 @@ def _default_ai_config_from_env() -> Dict[str, Any]:
         "enabled": _parse_bool_env(os.getenv("AI_METADATA_ENABLED"), True),
         "model": os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL),
         "temperature": _parse_float_env(os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE"), 0.6),
-        "max_output_tokens": _parse_int_env(os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600),
+        "max_output_tokens": _parse_int_env(os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 800),
         "startup_enrichment_enabled": _parse_bool_env(os.getenv("AI_METADATA_AT_STARTUP_ENABLED"), True),
         "startup_sidecar_enabled": _parse_bool_env(os.getenv("AI_SIDECAR_AT_STARTUP_ENABLED"), True),
         "max_workers_create_sidecars": max(1, _parse_int_env(os.getenv("AI_SIDECAR_MAX_WORKERS"), 2)),
@@ -727,68 +736,7 @@ def _request_openai_metadata(
         details["error"] = "Unable to prepare image for OpenAI request."
         return {"title": "", "description": "", "details": details}
 
-    user_content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
-    if image_payload:
-        user_content.append(
-            {
-                "type": "input_image",
-                "image_url": {
-                    "url": image_payload,
-                    "detail": "high",
-                },
-            }
-        )
-
-    request_body = {
-        "model": model,
-        "input": [
-            {
-                "role": "system",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "You create concise, visitor-friendly metadata for artwork images. "
-                            "Always respond with valid JSON only."
-                        ),
-                    }
-                ],
-            },
-            {
-                "role": "user",
-                "content": user_content,
-            },
-        ],
-        "max_output_tokens": ai_cfg["max_output_tokens"],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "image_metadata",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string"},
-                        "description": {"type": "string"},
-                        "caption": {"type": "string"},
-                        "author": {"type": "string"},
-                        "tags": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "minItems": 1,
-                            "maxItems": 12,
-                        },
-                    },
-                    "required": ["title", "description", "caption", "author", "tags"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-    }
-    # Note: The Responses API infers modalities from supplied content; no need for explicit flag.
-    if not str(model).startswith("gpt-5"):
-        request_body["temperature"] = ai_cfg["temperature"]
-    else:
-        request_body["reasoning"] = {"effort": "medium"}
+    request_body = _build_openai_request_body(ai_cfg, model, prompt, image_payload)
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -827,7 +775,29 @@ def _request_openai_metadata(
                 "request_preview": {
                     "keys": list(request_body.keys()),
                     "has_image": bool(image_payload),
-                    "response_format": request_body.get("response_format"),
+                    "text_format": (
+                        (request_body.get("text", {}) or {}).get("format", {})
+                        if isinstance((request_body.get("text", {}) or {}).get("format"), dict)
+                        else (request_body.get("text", {}) or {}).get("format")
+                    ),
+                    "response_format_type": (request_body.get("response_format", {}) or {}).get("type"),
+                    "has_schema": bool(
+                        # text.schema (older variant we briefly used)
+                        ((request_body.get("text", {}) or {}).get("schema"))
+                        # text.json_schema.schema (older nested variant)
+                        or (((request_body.get("text", {}) or {}).get("json_schema") or {}).get("schema"))
+                        # text.format.schema (current Responses API preferred)
+                        or (
+                            (
+                                (request_body.get("text", {}) or {}).get("format")
+                                if isinstance((request_body.get("text", {}) or {}).get("format"), dict)
+                                else {}
+                            )
+                            or {}
+                        ).get("schema")
+                        # legacy top-level response_format.json_schema
+                        or (((request_body.get("response_format", {}) or {}).get("json_schema")))
+                    ),
                 },
                 "error": details.get("error"),
                 "error_body": details.get("error_body", ""),
@@ -863,6 +833,14 @@ def _request_openai_metadata(
                         content_text += text_val
             if parsed is not None:
                 break
+    # Fallback to convenience field when present
+    if not content_text:
+        try:
+            ot = payload.get("output_text")
+            if isinstance(ot, str) and ot.strip():
+                content_text = ot
+        except Exception:
+            pass
     # Fallback for older chat-style payloads
     if parsed is None and not content_text:
         choice = next(iter(payload.get("choices", []) or []), {})
@@ -922,6 +900,7 @@ def _request_openai_metadata(
                         for it in (output or [])
                     ] if isinstance(output, list) else [],
                     "content_text": content_text,
+                    "output_text": payload.get("output_text", ""),
                     "text_excerpt": text_excerpt or content_text[:500],
                 }
                 with open(out_path, "w", encoding="utf-8") as fh:
@@ -994,6 +973,136 @@ def _request_openai_metadata(
         "tags": tags,
         "details": details,
     }
+
+
+def _build_openai_request_body(
+    ai_cfg: Dict[str, Any],
+    model: str,
+    prompt: str,
+    image_payload: Optional[str],
+) -> Dict[str, Any]:
+    """Build a Responses API request body for our image metadata task.
+
+    Note: compatibility variants are provided by _build_openai_request_body_variant().
+    """
+    user_content: List[Dict[str, Any]] = [{"type": "input_text", "text": prompt}]
+    if image_payload:
+        user_content.append(
+            {
+                "type": "input_image",
+                "image_url": image_payload,
+            }
+        )
+
+    # Default to Responses API text.format=json_schema with a strict schema.
+    schema_obj: Dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "caption": {"type": "string"},
+            "author": {"type": "string"},
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "maxItems": 12,
+            },
+        },
+        "required": ["title", "description", "caption", "author", "tags"],
+        "additionalProperties": False,
+    }
+
+    request_body: Dict[str, Any] = {
+        "model": model,
+        "input": [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "You create concise, visitor-friendly metadata for artwork images. "
+                            "Always respond with valid JSON only."
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": user_content,
+            },
+        ],
+        "max_output_tokens": ai_cfg.get("max_output_tokens", 800),
+        # Responses API expects formatting under text.format. For json_schema, the schema
+        # lives under text.format.schema with type='json_schema'.
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "image_metadata",
+                "schema": schema_obj,
+                "strict": True,
+            },
+        },
+    }
+    # Note: The Responses API infers modalities from supplied content; no need for explicit flag.
+    # Include temperature only for models that support it (exclude gpt-5 family).
+    try:
+        model_lc = str(model).strip().lower()
+    except Exception:
+        model_lc = ""
+    if not model_lc.startswith("gpt-5"):
+        request_body["temperature"] = ai_cfg.get("temperature", 0.6)
+    return request_body
+
+
+def _build_openai_request_body_variant(
+    ai_cfg: Dict[str, Any],
+    model: str,
+    prompt: str,
+    image_payload: Optional[str],
+    variant: str,
+) -> Dict[str, Any]:
+    """Build a Responses API request body for a specific variant.
+
+    Variants:
+    - 'text_schema_top': text.format={type:'json_schema', schema: {...}}
+    - 'text_schema_nested': text.format={type:'json_schema', name:'image_metadata', schema: {...}}
+    - 'response_format': legacy top-level response_format with json_schema
+    - 'text_json': text.format=json (no schema)
+    """
+    # Start from the default body
+    base = _build_openai_request_body(ai_cfg, model, prompt, image_payload)
+    # Remove any previous formatting block
+    base.pop("response_format", None)
+    base.pop("text", None)
+    schema_obj: Dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "caption": {"type": "string"},
+            "author": {"type": "string"},
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "maxItems": 12,
+            },
+        },
+        "required": ["title", "description", "caption", "author", "tags"],
+        "additionalProperties": False,
+    }
+    if variant == "text_schema_top":
+        base["text"] = {"format": {"type": "json_schema", "schema": schema_obj, "strict": True}}
+    elif variant == "text_schema_nested":
+        base["text"] = {"format": {"type": "json_schema", "name": "image_metadata", "schema": schema_obj, "strict": True}}
+    elif variant == "response_format":
+        base["response_format"] = {"type": "json_schema", "json_schema": {"name": "image_metadata", "schema": schema_obj, "strict": True}}
+    elif variant == "text_json":
+        base["text"] = {"format": "json"}
+    base["_variant"] = variant
+    return base
 
 
 def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -1548,6 +1657,181 @@ async def api_new_files(request: Request) -> JSONResponse:
 async def api_gallery_data() -> JSONResponse:
     dashboard = _gather_admin_dashboard_data()
     return JSONResponse(dashboard)
+
+
+@app.get("/admin/api/openai-payload-check", response_class=JSONResponse)
+async def api_openai_payload_check(request: Request) -> JSONResponse:
+    """Build and validate the OpenAI Responses payload without making a network call.
+
+    Optional query param 'file' selects an image filename under Static/images.
+    """
+    # Resolve image to use
+    qfile = request.query_params.get("file")
+    image_path: Optional[Path] = None
+    if qfile:
+        fname = _sanitize_filename(str(qfile))
+        cand = IMAGES_DIR / fname
+        if cand.exists() and cand.is_file() and _allowed_image(fname):
+            image_path = cand
+    if image_path is None:
+        # Pick the first valid image on disk
+        try:
+            for name in os.listdir(IMAGES_DIR):
+                if _allowed_image(name):
+                    cand = IMAGES_DIR / name
+                    if cand.is_file():
+                        image_path = cand
+                        break
+        except OSError:
+            image_path = None
+
+    # Prepare metadata + needs flags
+    if image_path is not None:
+        meta = _load_metadata(image_path)
+        title_value = (meta.get("title") or "").strip()
+        description_value = (meta.get("description") or "").strip()
+        caption_value = (meta.get("caption") or "").strip()
+        author_value = (meta.get("author") or "").strip()
+        tags_value = meta.get("tags")
+        if isinstance(tags_value, str):
+            tags_value = [t.strip() for t in tags_value.split(",") if t.strip()]
+        if not isinstance(tags_value, list):
+            tags_value = []
+        meta["tags"] = tags_value
+        needs_title = title_value == ""
+        needs_description = description_value == ""
+        needs_caption = caption_value == ""
+        needs_author = author_value == ""
+        needs_tags = len(tags_value) == 0
+    else:
+        # Fallback: simulate an image
+        meta = {}
+        needs_title = needs_description = needs_caption = needs_author = needs_tags = True
+
+    ai_cfg = _get_ai_config()
+    model = _resolve_model_choice(ai_cfg.get("model", OPENAI_DEFAULT_MODEL))
+    prompt = _build_openai_prompt(
+        image_path or Path("placeholder.png"),
+        meta,
+        needs_title,
+        needs_description,
+        needs_caption,
+        needs_author,
+        needs_tags,
+    )
+    if image_path is not None:
+        image_payload = _prepare_image_for_openai(image_path)
+    else:
+        # 1x1 transparent PNG data URL
+        tiny_png = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+        )
+        image_payload = f"data:image/png;base64,{tiny_png}"
+
+    request_body = _build_openai_request_body(ai_cfg, model, prompt, image_payload)
+
+    # Validate structure
+    errors: List[str] = []
+    try:
+        if not isinstance(request_body.get("input"), list) or len(request_body["input"]) < 2:
+            errors.append("input must be a list with system and user messages")
+        else:
+            sys_msg = request_body["input"][0]
+            usr_msg = request_body["input"][1] if len(request_body["input"]) > 1 else None
+            if not sys_msg or sys_msg.get("role") != "system":
+                errors.append("first message must be role=system")
+            if not usr_msg or usr_msg.get("role") != "user":
+                errors.append("second message must be role=user")
+            # Check content part types
+            sys_types = [p.get("type") for p in (sys_msg or {}).get("content", []) if isinstance(p, dict)]
+            usr_types = [p.get("type") for p in (usr_msg or {}).get("content", []) if isinstance(p, dict)]
+            if "input_text" not in sys_types:
+                errors.append("system content must include input_text")
+            if "input_text" not in usr_types:
+                errors.append("user content must include input_text")
+            if image_payload and "input_image" not in usr_types:
+                errors.append("user content must include input_image when image is provided")
+            # Ensure image_url is a string, not object with detail
+            for part in (usr_msg or {}).get("content", []) or []:
+                if isinstance(part, dict) and part.get("type") == "input_image":
+                    if not isinstance(part.get("image_url"), str):
+                        errors.append("input_image.image_url must be a string data URL")
+    except Exception as exc:
+        errors.append(f"validation error: {exc}")
+
+    # Validate formatting configuration: prefer text.format; fallback to response_format
+    format_source = ""
+    # Primary: text.format
+    text_cfg = request_body.get("text", {}) or {}
+    fmt = text_cfg.get("format")
+    # Accept both string and object forms for format
+    if isinstance(fmt, str):
+        if fmt in {"json_schema", "json"}:
+            format_source = "text"
+        if fmt == "json_schema":
+            schema_conf = text_cfg.get("schema") or ((text_cfg.get("json_schema") or {}).get("schema"))
+            if not isinstance(schema_conf, dict):
+                errors.append("text.format=json_schema requires a schema under text.schema or text.json_schema.schema")
+            else:
+                required = set((schema_conf or {}).get("required", []))
+                expected = {"title", "description", "caption", "author", "tags"}
+                if not expected.issubset(required):
+                    missing = sorted(list(expected - required))
+                    errors.append(f"schema.required missing: {', '.join(missing)}")
+                if (schema_conf or {}).get("additionalProperties", True) is not False:
+                    errors.append("schema.additionalProperties must be false")
+        elif fmt == "json":
+            pass
+    elif isinstance(fmt, dict):
+        fmt_type = (fmt or {}).get("type")
+        if fmt_type in {"json_schema", "json"}:
+            format_source = "text"
+        if fmt_type == "json_schema":
+            schema_conf = (fmt or {}).get("schema") or (((fmt or {}).get("json_schema") or {}).get("schema"))
+            if not isinstance(schema_conf, dict):
+                errors.append("text.format.schema must be an object for json_schema")
+            else:
+                required = set((schema_conf or {}).get("required", []))
+                expected = {"title", "description", "caption", "author", "tags"}
+                if not expected.issubset(required):
+                    missing = sorted(list(expected - required))
+                    errors.append(f"schema.required missing: {', '.join(missing)}")
+                if (schema_conf or {}).get("additionalProperties", True) is not False:
+                    errors.append("schema.additionalProperties must be false")
+    else:
+        # Fallback: legacy response_format handling
+        rf_cfg = request_body.get("response_format")
+        if isinstance(rf_cfg, dict):
+            format_source = "response_format"
+            rf_type = rf_cfg.get("type")
+            if rf_type != "json_schema":
+                errors.append("response_format.type must be 'json_schema'")
+            js = rf_cfg.get("json_schema") or {}
+            schema_conf = (js or {}).get("schema")
+            if not isinstance(schema_conf, dict):
+                errors.append("response_format.json_schema.schema must be an object")
+            else:
+                required = set((schema_conf or {}).get("required", []))
+                expected = {"title", "description", "caption", "author", "tags"}
+                if not expected.issubset(required):
+                    missing = sorted(list(expected - required))
+                    errors.append(f"schema.required missing: {', '.join(missing)}")
+                if (schema_conf or {}).get("additionalProperties", True) is not False:
+                    errors.append("schema.additionalProperties must be false")
+        else:
+            errors.append("missing text.format or response_format configuration")
+
+    return JSONResponse(
+        {
+            "ok": len(errors) == 0,
+            "errors": errors,
+            "model": model,
+            "has_image": bool(image_payload),
+            "request_body": request_body,
+            "format_source": format_source or "",
+            "notes": "This endpoint does not make a network call; it only validates structure.",
+        }
+    )
 
 
 @app.get("/admin/config", response_class=JSONResponse)

@@ -76,11 +76,11 @@ function showFeedback(message, type = 'info') {
   }, 8000);
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function initReview() {
   // Basic page setup
-  formatTimestamps();
-  initTheme();
-  bindThemeToggle();
+  try { formatTimestamps(); } catch (_) {}
+  try { initTheme(); } catch (_) {}
+  try { bindThemeToggle(); } catch (_) {}
 
   // Parse initial admin state embedded in the page (if provided)
   try {
@@ -104,7 +104,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (err) {
     console.error('Failed to bind review UI:', err);
   }
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initReview);
+} else {
+  initReview();
+}
 
 // Called once DOM and admin state is ready
 function bindReviewUI() {

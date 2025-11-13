@@ -76,8 +76,15 @@ function showFeedback(message, type = 'info') {
   }, 8000);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  formatTimestamps();
-  initTheme();
-  bindThemeToggle();
-});
+function initAdmin() {
+  try { formatTimestamps(); } catch (_) {}
+  try { initTheme(); } catch (_) {}
+  try { bindThemeToggle(); } catch (_) {}
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAdmin);
+} else {
+  // DOM is already parsed; run immediately
+  initAdmin();
+}

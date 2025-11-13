@@ -2,7 +2,7 @@ PyCharm - ArtazzenDotCom.
 ./Docs/test.md
 <br> Created at: Tuesday, 04 November 2025 21:34.19 
 
-Looking at your `main.py`, here are the environment variables that control AI metadata generation and JSON sidecar file creation:
+Looking at your `main.py`, here are the environment variables that control AI metadata generation and JSON sidecar file creation. You can set these in your shell or place them in a `.env` file at the repository root (the app auto-loads `.env` on startup):
 
 ## AI Metadata Generation
 
@@ -36,6 +36,16 @@ However, the **content** of those JSON files is affected by:
     export OPENAI_IMAGE_METADATA_MODEL="gpt-4o"
     export OPENAI_IMAGE_METADATA_TEMPERATURE="0.8"
     export OPENAI_IMAGE_METADATA_MAX_TOKENS="800"
+```
+
+### Using a .env file
+
+Create a file named `.env` in the project root with, for example:
+
+```
+MY_OPENAI_API_KEY=sk-your-key-here
+OPENAI_IMAGE_METADATA_MODEL=gpt-4o-mini
+OPENAI_TIMEOUT_SECONDS=45
 ```
 
 

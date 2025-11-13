@@ -2,7 +2,7 @@
   "enabled": true,
   "model": "gpt-5",
   "temperature": 0.6,
-  "max_output_tokens": 600,
+  "max_output_tokens": 3600,
   "startup_enrichment_enabled": true,
   "startup_sidecar_enabled": true,
   "max_workers_create_sidecars": 2
