@@ -10,7 +10,9 @@
     <div class="page-container">
         <section class="artwork-highlight" aria-labelledby="artwork-title">
             <figure class="artwork-frame">
-                <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" title="Open full-resolution image in a new tab">
+                    <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                </a>
             </figure>
             <article class="artwork-card">
                 <div class="artwork-meta">

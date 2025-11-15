@@ -76,6 +76,12 @@ function showFeedback(message, type = 'info') {
   }, 8000);
 }
 
+// Sort / filter controls shared across render helpers
+let pendingSort;
+let pendingFilter;
+let gallerySort;
+let galleryFilter;
+
 async function initReview() {
   // Basic page setup
   try { formatTimestamps(); } catch (_) {}
@@ -137,10 +143,10 @@ function bindReviewUI() {
   const regenBtn = document.getElementById('regen-selected');
   const deleteSelectedBtn = document.getElementById('delete-selected');
   const forceOverwrite = document.getElementById('force-overwrite');
-  const gallerySort = document.getElementById('gallery-sort');
-  const pendingSort = document.getElementById('pending-sort');
-  const galleryFilter = document.getElementById('gallery-filter');
-  const pendingFilter = document.getElementById('pending-filter');
+  gallerySort = document.getElementById('gallery-sort');
+  pendingSort = document.getElementById('pending-sort');
+  galleryFilter = document.getElementById('gallery-filter');
+  pendingFilter = document.getElementById('pending-filter');
   const selectAllGalleryBtn = document.getElementById('select-all-gallery');
   const deleteSelectedGalleryBtn = document.getElementById('delete-selected-gallery');
 
@@ -456,10 +462,38 @@ function renderCardList(list, type, container) {
 function sortData(data, sortValue = '') {
   const [field = 'title', direction = 'asc'] = sortValue.split(':');
   const dir = direction === 'desc' ? -1 : 1;
+
   return [...data].sort((a, b) => {
-    const aVal = (a[field] || '').toString().toLowerCase();
-    const bVal = (b[field] || '').toString().toLowerCase();
-    return aVal < bVal ? -1 * dir : aVal > bVal ? 1 * dir : 0;
+    let aVal;
+    let bVal;
+
+    switch (field) {
+      case 'detected_at': {
+        const aTime = (a.ai_details?.created || a.ai_details?.attempted_at || a.detected_at || 0);
+        const bTime = (b.ai_details?.created || b.ai_details?.attempted_at || b.detected_at || 0);
+        aVal = Number(aTime) || 0;
+        bVal = Number(bTime) || 0;
+        break;
+      }
+      case 'tag': {
+        const aTags = Array.isArray(a.tags) ? a.tags : [];
+        const bTags = Array.isArray(b.tags) ? b.tags : [];
+        aVal = (aTags[0] || '').toString().toLowerCase();
+        bVal = (bTags[0] || '').toString().toLowerCase();
+        break;
+      }
+      default:
+        aVal = (a[field] || '').toString().toLowerCase();
+        bVal = (b[field] || '').toString().toLowerCase();
+    }
+
+    if (typeof aVal === 'number' && typeof bVal === 'number') {
+      return (aVal - bVal) * dir;
+    }
+
+    if (aVal < bVal) return -1 * dir;
+    if (aVal > bVal) return 1 * dir;
+    return 0;
   });
 }
 

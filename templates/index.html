@@ -45,8 +45,11 @@
                                  onerror="this.onerror=null; this.src='https://placehold.co/250x200/EEE/CCC?text=Image+Not+Found'; this.alt='Image not found';">
                         </a>
                         <p class="artwork-title">{{ artwork.title }}</p>
+                        {% if artwork.caption %}
+                        <p class="artwork-caption">{{ artwork.caption }}</p>
+                        {% endif %}
                         {% if artwork.description %}
-                        <p class="artwork-description">{{ artwork.description }}</p>
+                        <p class="artwork-description">{{ artwork.description | truncate(220, True, '...') }}</p>
                         {% endif %}
                     </div>
                 {% endfor %}

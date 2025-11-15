@@ -158,7 +158,18 @@ main {
     font-size: .94em;
     color: color-mix(in oklab, var(--text) 65%, var(--muted) 35%);
     margin: .3rem 0 0;
-    word-wrap: break-word
+    word-wrap: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3; /* show up to ~3 lines */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Optional caption styling on public gallery */
+.artwork-caption {
+    font-style: italic;
+    color: color-mix(in oklab, var(--text) 60%, var(--muted) 40%);
+    margin: .2rem 0 0;
 }
 
 /* Empty state */

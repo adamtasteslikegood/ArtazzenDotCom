@@ -68,7 +68,6 @@
         <h2 class="h5 mb-0">Upload Files</h2>
         <div class="d-flex gap-2">
           <button type="button" id="refresh-pending" class="btn btn-outline-secondary btn-sm">Refresh Library</button>
-          <button type="button" data-theme-toggle class="btn btn-outline-secondary btn-sm" title="Toggle light/dark" aria-pressed="false">🌙 Dark</button>
         </div>
       </div>
       <form id="path-form" class="mb-3">
@@ -101,6 +100,10 @@
         <option value="title:desc">Title Z–A</option>
         <option value="name:asc">Filename A–Z</option>
         <option value="name:desc">Filename Z–A</option>
+        <option value="detected_at:desc">Newest first</option>
+        <option value="detected_at:asc">Oldest first</option>
+        <option value="tag:asc">Tag name A–Z</option>
+        <option value="tag:desc">Tag name Z–A</option>
       </select>
       <input type="search" id="pending-filter" class="form-control form-control-sm" placeholder="Filter by title, author, or tag">
       <div class="form-check ms-2">
@@ -126,7 +129,7 @@
             </a>
           </div>
           <div class="image-card__meta d-flex flex-column gap-2">
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <h5 class="fw-semibold mb-0">{{ item.title or item.name }}</h5>
               {% if item.ai_generated %}
                 <span class="badge bg-secondary">AI generated</span>
@@ -139,7 +142,7 @@
               <p class="caption fst-italic text-muted mb-0">{{ item.caption }}</p>
             {% endif %}
             {% if item.description %}
-              <p class="description">{{ item.description }}</p>
+              <p class="description">{{ item.description | truncate(260, True, '...') }}</p>
             {% else %}
               <p class="description text-muted fst-italic">No description detected yet.</p>
             {% endif %}
@@ -180,6 +183,10 @@
         <option value="title:desc">Title Z–A</option>
         <option value="name:asc">Filename A–Z</option>
         <option value="name:desc">Filename Z–A</option>
+        <option value="detected_at:desc">Newest first</option>
+        <option value="detected_at:asc">Oldest first</option>
+        <option value="tag:asc">Tag name A–Z</option>
+        <option value="tag:desc">Tag name Z–A</option>
       </select>
       <input type="search" id="gallery-filter" class="form-control form-control-sm" placeholder="Filter by title, author, or tag">
       <button type="button" id="select-all-gallery" class="btn btn-outline-secondary btn-sm">Select All</button>
@@ -200,7 +207,7 @@
             </a>
           </div>
           <div class="image-card__meta d-flex flex-column gap-2">
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <h5 class="fw-semibold mb-0">{{ item.title or item.name }}</h5>
               <span class="badge bg-secondary">Curated</span>
             </div>
@@ -209,7 +216,7 @@
               <p class="caption fst-italic text-muted mb-0">{{ item.caption }}</p>
             {% endif %}
             {% if item.description %}
-              <p class="description">{{ item.description }}</p>
+              <p class="description">{{ item.description | truncate(260, True, '...') }}</p>
             {% endif %}
             {% if item.tags %}
               <ul class="list-inline small mb-0">
@@ -240,5 +247,7 @@
 {% block scripts %}
   {{ super() }}
   <script id="admin-state" type="application/json">{{ admin_data | tojson }}</script>
-  <script src="{{ url_for('static', path='js/review.js') }}" defer></script>
+  <!-- Explicitly load admin + review JS in the same order as the legacy dashboard to ensure theme + filters work reliably -->
+  <script src="{{ url_for('static', path='js/admin.js') }}"></script>
+  <script src="{{ url_for('static', path='js/review.js') }}"></script>
 {% endblock %}

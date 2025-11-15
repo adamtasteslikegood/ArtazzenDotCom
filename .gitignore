@@ -7,6 +7,7 @@
 
 # Virtual environments
 .venv*/
+.env
 
 # Python cache
 __pycache__/
@@ -26,3 +27,7 @@ __pycache__/
 /.watcher.lock
 /.migration.lock
 /.sidecar.slot.*
+
+# Local temporary artifacts
+/.admin.html
+.admin.html
