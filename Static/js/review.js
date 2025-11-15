@@ -552,9 +552,15 @@ async function fetchDashboard() {
 }
 
 async function uploadFiles(files) {
+  const dropzone = document.getElementById('dropzone');
+  const selectFilesButton = document.getElementById('select-files');
+  const fileInput = document.getElementById('file-input');
   const formData = new FormData();
   [...files].forEach(file => formData.append('files', file));
   showBusy("Uploading...");
+  if (dropzone) dropzone.classList.add('is-disabled');
+  if (selectFilesButton) selectFilesButton.disabled = true;
+  if (fileInput) fileInput.disabled = true;
   try {
     const res = await fetch('/admin/upload', { method: 'POST', body: formData });
     const data = await res.json();
@@ -564,11 +570,26 @@ async function uploadFiles(files) {
     showFeedback('Upload failed.', 'error');
   } finally {
     hideBusy();
+    if (dropzone) dropzone.classList.remove('is-disabled');
+    if (selectFilesButton) selectFilesButton.disabled = false;
+    if (fileInput) fileInput.disabled = false;
   }
 }
 
 async function triggerRegeneration(images, force = false, fields) {
   showBusy("Regenerating metadata...");
+  const pendingList = document.getElementById('pending-list');
+  const busyCards = [];
+  if (pendingList) {
+    images.forEach((name) => {
+      const selector = `[data-image-name="${CSS.escape ? CSS.escape(name) : name}"]`;
+      const card = pendingList.querySelector(selector);
+      if (card) {
+        card.classList.add('is-busy');
+        busyCards.push(card);
+      }
+    });
+  }
   try {
     const payload = { images, force };
     if (Array.isArray(fields) && fields.length) {
@@ -591,6 +612,7 @@ async function triggerRegeneration(images, force = false, fields) {
     showFeedback('Failed to regenerate metadata.', 'error');
   } finally {
     hideBusy();
+    busyCards.forEach(card => card.classList.remove('is-busy'));
   }
 }
 

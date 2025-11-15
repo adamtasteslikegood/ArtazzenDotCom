@@ -1343,9 +1343,16 @@ def new_files_detected(
     return pending
 
 
-def _gather_admin_dashboard_data() -> Dict[str, List[Dict[str, Any]]]:
+def _gather_admin_dashboard_data(
+    *,
+    allow_ai_enrichment: bool = True,
+    allow_sidecar_creation: bool = True,
+) -> Dict[str, List[Dict[str, Any]]]:
     """Return dictionaries of pending and reviewed images for the admin UI."""
-    pending = new_files_detected()
+    pending = new_files_detected(
+        allow_ai_enrichment=allow_ai_enrichment,
+        allow_sidecar_creation=allow_sidecar_creation,
+    )
     pending_lookup = {item["name"]: item for item in pending}
     reviewed: List[Dict[str, Any]] = []
     all_items: List[Dict[str, Any]] = []
@@ -1595,7 +1602,10 @@ def get_artwork_files():
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_home(request: Request) -> HTMLResponse:
     """Render the admin review dashboard."""
-    dashboard = _gather_admin_dashboard_data()
+    dashboard = _gather_admin_dashboard_data(
+        allow_ai_enrichment=False,
+        allow_sidecar_creation=True,
+    )
     pending = dashboard["pending"]
     request.app.state.pending_images = pending
     return templates.TemplateResponse(
@@ -1613,7 +1623,10 @@ async def admin_home(request: Request) -> HTMLResponse:
 
 @app.get("/admin/review", response_class=HTMLResponse)
 async def review_added_files(request: Request) -> HTMLResponse:
-    dashboard = _gather_admin_dashboard_data()
+    dashboard = _gather_admin_dashboard_data(
+        allow_ai_enrichment=False,
+        allow_sidecar_creation=True,
+    )
     pending = dashboard["pending"]
     request.app.state.pending_images = pending
     return templates.TemplateResponse(

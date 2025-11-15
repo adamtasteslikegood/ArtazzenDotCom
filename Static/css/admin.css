@@ -97,6 +97,35 @@ body.admin-page.theme-dark .form-select::placeholder {
   gap: 0.35rem;
 }
 
+/* Busy / in-progress state for cards (e.g., during AI regeneration) */
+.image-card.card {
+  position: relative;
+}
+.image-card.is-busy {
+  opacity: 0.6;
+}
+.image-card.is-busy .btn {
+  pointer-events: none;
+}
+.image-card.is-busy::after {
+  content: "In progress\u2026";
+  position: absolute;
+  inset: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 18, 26, 0.78);
+  color: #f8fafc;
+  font-size: 0.85rem;
+  border-radius: 0.75rem;
+}
+
+/* Dropzone disabled state during active uploads */
+#dropzone.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* Busy overlay during async ops */
 .busy-overlay {
   position: fixed;
