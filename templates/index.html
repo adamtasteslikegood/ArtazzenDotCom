@@ -8,44 +8,53 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style-nasturtium-lagoon 2.css') }}">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
 </head>
-<body class="gallery-page">
+<body class="gallery-home">
 
-    <div class="page-container">
-    <header class="gallery-header">
-        <h1>{{ gallery_title }}</h1>
-        <p class="gallery-subtitle">A living collection of luminous works, inked stories, and chromatic experiments.</p>
-        <section class="hero-panel" aria-label="Gallery introduction">
-            <div>
-                <p class="hero-tagline">Discover pieces that celebrate bold gestures, quiet textures, and the rhythm of color.</p>
-                <p class="hero-description">
-                    Each canvas in this gallery carries the character of its maker—layered hues, unexpected silhouettes, and the
-                    kind of light that lingers. Wander through and let the highlights lead you into their own narratives.
-                </p>
+    {% set hero_artwork = artwork_files[0] if artwork_files else None %}
+
+    <header class="hero" {% if hero_artwork %}style="--hero-image: url('{{ hero_artwork.url }}')"{% endif %}>
+        <div class="hero__content">
+            <p class="hero__eyebrow">Artazzen Gallery</p>
+            <h1 class="hero__title">{{ gallery_title }}</h1>
+            <p class="hero__lead">Discover luminous experiments in colour, light, and gesture. Each canvas in the collection is
+                paired with the artist's notes to invite you deeper into their process.</p>
+            {% if hero_artwork %}
+            <p class="hero__caption">Currently featuring: {{ hero_artwork.title }}</p>
+            {% endif %}
+            <div class="hero__actions">
+                <a class="button" href="#gallery">Enter the collection</a>
+                <a class="button secondary" href="/admin">Curate new work</a>
             </div>
-            <div class="hero-hints">
-                <span>✨ Curated moments</span>
-                <span>🎨 Mixed media focus</span>
-                <span>🌓 Dreamlike palettes</span>
+        </div>
+        {% if artwork_files %}
+        <div class="hero__preview" aria-hidden="true">
+            {% for artwork in artwork_files[:3] %}
+            <div class="hero-preview-card" style="--preview-image: url('{{ artwork.url }}')">
+                <span class="hero-preview-card__title">{{ artwork.title }}</span>
             </div>
-        </section>
+            {% endfor %}
+        </div>
+        {% endif %}
     </header>
 
-    <main class="gallery-main">
+    <main id="gallery">
         {% if artwork_files %}
             <div class="gallery-grid">
                 {% for artwork in artwork_files %}
-                    <div class="artwork-item">
+                    <article class="artwork-item">
                         <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
                             <img src="{{ artwork.url }}"
                                  alt="{{ artwork.title }}"
                                  loading="lazy"
                                  onerror="this.onerror=null; this.src='https://placehold.co/250x200/EEE/CCC?text=Image+Not+Found'; this.alt='Image not found';">
                         </a>
-                        <p class="artwork-title">{{ artwork.title }}</p>
-                        {% if artwork.description %}
-                        <p class="artwork-description">{{ artwork.description }}</p>
-                        {% endif %}
-                    </div>
+                        <div class="artwork-meta">
+                            <h2 class="artwork-title">{{ artwork.title }}</h2>
+                            {% if artwork.description %}
+                            <p class="artwork-description">{{ artwork.description }}</p>
+                            {% endif %}
+                        </div>
+                    </article>
                 {% endfor %}
             </div>
         {% else %}

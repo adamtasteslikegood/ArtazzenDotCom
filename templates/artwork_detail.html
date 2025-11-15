@@ -4,25 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ artwork.title }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+    <link rel="stylesheet" href="/static/css/styles.css">
 </head>
-<body class="artwork-page">
-    <div class="page-container">
-        <section class="artwork-highlight" aria-labelledby="artwork-title">
-            <figure class="artwork-frame">
+<body class="artwork-detail-page" {% if artwork.image_url %}style="--artwork-image: url('{{ artwork.image_url }}')"{% endif %}>
+    <main>
+        <article class="artwork-detail-shell">
+            <figure class="artwork-figure">
                 <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                <figcaption>From the Artazzen collection</figcaption>
             </figure>
-            <article class="artwork-card">
-                <div class="artwork-meta">
-                    <span>Featured highlight</span>
-                    <span>Immersive texture study</span>
-                    <span>Color-forward composition</span>
+            <section class="artwork-story">
+                <p class="artwork-story__kicker">Artwork spotlight</p>
+                <h1>{{ artwork.title }}</h1>
+                {% if artwork.description %}
+                <p>{{ artwork.description }}</p>
+                {% else %}
+                <p>This piece is awaiting a description from the studio.</p>
+                {% endif %}
+                <div class="artwork-actions">
+                    <a href="/" class="back-button">← Back to Gallery</a>
+                    <a href="/admin" class="button secondary">Curate more work</a>
                 </div>
-                <h1 id="artwork-title" class="artwork-title">{{ artwork.title }}</h1>
-                <p class="artwork-description">{{ artwork.description or 'This piece invites you to explore the nuances of the artist’s palette—follow the gradients, the soft light, and the hidden gestures that reveal themselves slowly.' }}</p>
-                <a href="/" class="back-link" aria-label="Return to gallery">⟵ Back to Gallery</a>
-            </article>
-        </section>
-    </div>
+            </section>
+        </article>
+    </main>
 </body>
 </html>
