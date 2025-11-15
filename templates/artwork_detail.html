@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ artwork.title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+</head>
+<body class="artwork-page">
+    <div class="page-container">
+        <section class="artwork-highlight" aria-labelledby="artwork-title">
+            <figure class="artwork-frame">
+                <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" title="Open full-resolution image in a new tab">
+                    <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                </a>
+            </figure>
+            <article class="artwork-card">
+                <div class="artwork-meta">
+                    <span>Featured highlight</span>
+                    <span>Immersive texture study</span>
+                    <span>Color-forward composition</span>
+                </div>
+                <h1 id="artwork-title" class="artwork-title">{{ artwork.title }}</h1>
+                <p class="artwork-description">{{ artwork.description or 'This piece invites you to explore the nuances of the artist’s palette—follow the gradients, the soft light, and the hidden gestures that reveal themselves slowly.' }}</p>
+                <a href="/" class="back-link" aria-label="Return to gallery">⟵ Back to Gallery</a>
+            </article>
+        </section>
+    </div>
+</body>
+</html>

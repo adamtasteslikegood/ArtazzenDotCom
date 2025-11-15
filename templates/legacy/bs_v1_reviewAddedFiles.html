@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Artwork Admin Review</title>
+  
+  <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  
+</head>
+<body class="admin-page bg-light text-dark">
+
+  <header class="container-fluid py-4 border-bottom">
+    <div class="row align-items-end justify-content-between">
+      <div class="col-md">
+        <h1 class="h3 mb-0">Artwork Administration</h1>
+        <p class="text-muted small mb-0">Upload, curate, and describe every image that appears in your public gallery.</p>
+      </div>
+      <div class="col-auto d-flex gap-2 flex-wrap justify-content-end mt-3 mt-md-0">
+        <a href="/" class="btn btn-secondary">View Public Gallery</a>
+        <button type="button" id="refresh-pending" class="btn btn-secondary">Refresh Library</button>
+        <button type="button" data-theme-toggle class="btn btn-secondary" title="Toggle light/dark" aria-pressed="false">🌙 Dark</button>
+        <a href="/admin/advanced" class="btn btn-secondary">Advanced Settings</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container-fluid my-4">
+    <div class="row g-4">
+      
+      <!-- Settings Panel -->
+      <div class="col-12 col-lg-6">
+        <div class="card p-4 shadow-sm">
+          <h2 class="h5 mb-3">AI Metadata Settings</h2>
+          <p class="text-muted">Control automatic title, description, and caption generation for new or unreviewed images.</p>
+          <ul class="small text-muted">
+            <li><strong>Enable AI</strong>: Master switch to allow AI to fill missing fields.</li>
+            <li><strong>Startup enrichment</strong>: Runs once at boot for items missing metadata.</li>
+            <li><strong>Startup sidecars</strong>: Creates JSON sidecars if missing during initial scan.</li>
+          </ul>
+
+          <form id="ai-config-form" class="vstack gap-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="ai-enabled">
+              <label class="form-check-label" for="ai-enabled">
+                Enable AI metadata generation
+              </label>
+            </div>
+
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="ai-startup-enabled">
+              <label class="form-check-label" for="ai-startup-enabled">
+                Run AI enrichment during startup scan
+              </label>
+            </div>
+
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="sidecar-startup-enabled">
+              <label class="form-check-label" for="sidecar-startup-enabled">
+                Create JSON sidecars during startup scan
+              </label>
+            </div>
+
+            <div>
+              <label class="form-label" for="sidecar-max-workers">Max workers creating sidecars</label>
+              <input class="form-control" type="number" id="sidecar-max-workers" min="1" max="64" step="1" value="2">
+            </div>
+
+            <div>
+              <label class="form-label" for="ai-model">Model</label>
+              <select class="form-select" id="ai-model">
+                {% for option in model_options %}
+                <option value="{{ option }}">{{ option }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div>
+              <label class="form-label" for="ai-temp">Temperature</label>
+              <input class="form-control" type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
+            </div>
+
+            <div>
+              <label class="form-label" for="ai-tokens">Max output tokens</label>
+              <input class="form-control" type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap">
+              <button type="submit" class="btn btn-dark">Save settings</button>
+              <button type="button" id="reset-ai-config" class="btn btn-outline-secondary">Reset to defaults</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Upload Panel -->
+      <div class="col-12 col-lg-6">
+        <div class="card p-4 shadow-sm">
+          <h2 class="h5 mb-3">Upload new artwork</h2>
+          <p class="text-muted">Drag and drop images or click below to upload. JSON sidecars are supported for bulk imports.</p>
+
+          <div class="border border-secondary-subtle rounded-3 p-4 text-center mb-4" id="dropzone">
+            <p class="fw-semibold mb-2">Drop files here</p>
+            <button type="button" id="select-files" class="btn btn-primary mb-2">Choose files</button>
+            <input type="file" id="file-input" name="files" accept="image/*,.json" multiple hidden>
+            <p class="text-muted small">Supported formats: {{ allowed_extensions | join(', ') }} and JSON sidecars.</p>
+          </div>
+
+          <form id="path-form">
+            <label for="path-input" class="form-label">Import from server path</label>
+            <div class="d-flex gap-2 flex-wrap">
+              <input type="text" class="form-control flex-fill" id="path-input" name="path" placeholder="/home/user/photos" required>
+              <button type="submit" class="btn btn-dark">Import</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Pending Review Panel -->
+      <div class="col-12">
+        <div class="card p-4 shadow-sm">
+          <div class="d-flex justify-content-between align-items-start flex-wrap mb-3">
+            <div>
+              <h2 class="h5 mb-0">Needs review <span id="pending-count" class="badge text-bg-secondary">{{ pending_images | length }}</span></h2>
+              <p class="text-muted small mb-0">Review each image to confirm or edit the metadata before it appears publicly.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3 mt-md-0">
+              <select id="pending-sort" class="form-select form-select-sm w-auto">
+                <option value="detected_at:desc">Newest first</option>
+                <option value="detected_at:asc">Oldest first</option>
+                <option value="title:asc">Title A–Z</option>
+                <option value="title:desc">Title Z–A</option>
+              </select>
+              <input type="search" id="pending-filter" class="form-control form-control-sm" placeholder="Filter">
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="force-overwrite">
+                <label class="form-check-label" for="force-overwrite">Force overwrite</label>
+              </div>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all">Select all</button>
+              <button type="button" class="btn btn-dark btn-sm" id="regen-selected">Re-run AI</button>
+              <button type="button" class="btn btn-danger btn-sm" id="delete-selected">Delete selected</button>
+            </div>
+          </div>
+
+          <div id="pending-list" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+            <!-- Injected pending image cards -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Reviewed Gallery Panel -->
+      <div class="col-12">
+        <div class="card p-4 shadow-sm">
+          <div class="d-flex justify-content-between align-items-start flex-wrap mb-3">
+            <div>
+              <h2 class="h5 mb-0">Curated gallery <span id="gallery-count" class="badge text-bg-secondary">{{ reviewed_images | length }}</span></h2>
+              <p class="text-muted small mb-0">Browse, sort, or update the artwork that is already visible to visitors.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3 mt-md-0">
+              <select id="gallery-sort" class="form-select form-select-sm w-auto">
+                <option value="detected_at:desc">Newest first</option>
+                <option value="detected_at:asc">Oldest first</option>
+                <option value="title:asc">Title A–Z</option>
+                <option value="title:desc">Title Z–A</option>
+              </select>
+              <input type="search" id="gallery-filter" class="form-control form-control-sm" placeholder="Filter">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="select-all-gallery">Select all</button>
+              <button type="button" class="btn btn-danger btn-sm" id="delete-selected-gallery">Delete selected</button>
+            </div>
+          </div>
+
+          <div id="reviewed-list" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+            <!-- Injected reviewed image cards -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="text-center py-4 text-muted small border-top">
+    Artwork Gallery Administration
+  </footer>
+   <!-- Java Script -->
+   <script id="admin-state" type="application/json">{{ admin_data | tojson }}</script>
+    <script>
+    function showBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','false'); }
+    function hideBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','true'); }
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const selectFilesButton = document.getElementById('select-files');
+    const feedback = document.getElementById('feedback');
+    const pendingList = document.getElementById('pending-list');
+    const pendingCount = document.getElementById('pending-count');
+    const galleryList = document.getElementById('reviewed-list');
+    const galleryCount = document.getElementById('gallery-count');
+    const refreshButton = document.getElementById('refresh-pending');
+    const pathForm = document.getElementById('path-form');
+    const aiForm = document.getElementById('ai-config-form');
+    const aiEnabled = document.getElementById('ai-enabled');
+    const aiStartupEnabled = document.getElementById('ai-startup-enabled');
+    const sidecarStartupEnabled = document.getElementById('sidecar-startup-enabled');
+    const aiModel = document.getElementById('ai-model');
+    const aiTemp = document.getElementById('ai-temp');
+    const aiTokens = document.getElementById('ai-tokens');
+    const sidecarMaxWorkers = document.getElementById('sidecar-max-workers');
+    const resetAiButton = document.getElementById('reset-ai-config');
+    const selectAllBtn = document.getElementById('select-all');
+    const regenBtn = document.getElementById('regen-selected');
+    const deleteSelectedBtn = document.getElementById('delete-selected');
+    const forceOverwrite = document.getElementById('force-overwrite');
+    const gallerySort = document.getElementById('gallery-sort');
+    const pendingSort = document.getElementById('pending-sort');
+    const galleryFilter = document.getElementById('gallery-filter');
+    const pendingFilter = document.getElementById('pending-filter');
+    const selectAllGalleryBtn = document.getElementById('select-all-gallery');
+    const deleteSelectedGalleryBtn = document.getElementById('delete-selected-gallery');
+    const adminState = document.getElementById('admin-state');
+    const themeToggle = document.getElementById('theme-toggle');
+    const reviewUrlTemplate = "{{ url_for('preview_image_metadata', image_name='__IMAGE__') }}";
+
+    let dashboardData = { pending: [], reviewed: [], all: [] };
+    if (adminState) {
+        try {
+            dashboardData = JSON.parse(adminState.textContent) || dashboardData;
+        } catch (err) {
+            console.error('Failed to parse initial admin state', err);
+        }
+    }
+
+    let pendingData = dashboardData.pending || [];
+    let reviewedData = dashboardData.reviewed || [];
+
+    // Theme: init from storage or system preference
+    (function initTheme() {
+        try {
+            const saved = localStorage.getItem('adminTheme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = (saved === 'light' || saved === 'dark') ? saved : (prefersDark ? 'dark' : 'light');
+            applyTheme(theme);
+        } catch (_) {}
+    })();
+
+    function applyTheme(theme) {
+        const body = document.body;
+        body.classList.remove('theme-light', 'theme-dark');
+        body.classList.add(theme === 'dark' ? 'theme-dark' : 'theme-light');
+        if (themeToggle) {
+            themeToggle.textContent = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+            themeToggle.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+        }
+        try { localStorage.setItem('adminTheme', theme); } catch (_) {}
+    }
+
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const isDark = document.body.classList.contains('theme-dark');
+            applyTheme(isDark ? 'light' : 'dark');
+        });
+    }
+
+    function showFeedback(message, type = 'info') {
+        feedback.textContent = message;
+        feedback.classList.remove('error', 'success');
+        feedback.classList.add(type === 'error' ? 'error' : 'success');
+        feedback.hidden = false;
+        window.setTimeout(() => {
+            feedback.hidden = true;
+        }, 8000);
+    }
+
+    function formatTimestamp(ts) {
+        if (!ts) return '';
+        return new Date(ts * 1000).toLocaleString();
+    }
+
+    function buildTagList(tags) {
+        const list = document.createElement('ul');
+        list.className = 'tag-list';
+        (tags || []).forEach((tag) => {
+            if (!tag) return;
+            const item = document.createElement('li');
+            item.textContent = tag;
+            list.appendChild(item);
+        });
+        return list;
+    }
+
+    function createCardActions(item, type) {
+        const actions = document.createElement('div');
+        actions.className = 'image-card__actions';
+        if (type === 'reviewed') {
+            const editLink = document.createElement('a');
+            editLink.className = 'button tertiary';
+            editLink.href = reviewUrlTemplate.replace('__IMAGE__', encodeURIComponent(item.name));
+            editLink.textContent = 'Edit';
+            actions.appendChild(editLink);
+
+            const regenBtnSingle = document.createElement('button');
+            regenBtnSingle.type = 'button';
+            regenBtnSingle.className = 'button secondary';
+            regenBtnSingle.dataset.action = 'regen-single';
+            regenBtnSingle.textContent = 'Regenerate';
+            actions.appendChild(regenBtnSingle);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'button danger';
+            deleteBtn.dataset.action = 'delete-image';
+            deleteBtn.textContent = 'Delete';
+            actions.appendChild(deleteBtn);
+        } else {
+            const reviewLink = document.createElement('a');
+            reviewLink.className = 'button tertiary';
+            reviewLink.href = reviewUrlTemplate.replace('__IMAGE__', encodeURIComponent(item.name));
+            reviewLink.textContent = 'Review details';
+            actions.appendChild(reviewLink);
+        }
+        return actions;
+    }
+
+    function renderPendingList(pending) {
+        pendingData = pending || [];
+        pendingList.innerHTML = '';
+        pendingCount.textContent = pendingData.length;
+        if (!pendingData.length) {
+            const emptyMessage = document.createElement('p');
+            emptyMessage.className = 'empty-state';
+            emptyMessage.textContent = 'No new files waiting for review. Upload artwork to begin curating descriptions.';
+            pendingList.appendChild(emptyMessage);
+            return;
+        }
+
+        pendingData.forEach((item) => {
+            const card = document.createElement('article');
+            card.className = 'image-card image-card--pending';
+            card.dataset.imageName = item.name;
+
+            const selectCol = document.createElement('div');
+            selectCol.className = 'image-card__select';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'item-select';
+            checkbox.setAttribute('aria-label', `Select ${item.name}`);
+            selectCol.appendChild(checkbox);
+            card.appendChild(selectCol);
+
+            const preview = document.createElement('div');
+            preview.className = 'image-card__preview';
+            const link = document.createElement('a');
+            link.href = reviewUrlTemplate.replace('__IMAGE__', encodeURIComponent(item.name));
+            link.title = 'Open details';
+            const img = document.createElement('img');
+            img.src = item.url;
+            img.alt = `Preview of ${item.title || item.name}`;
+            img.loading = 'lazy';
+            link.appendChild(img);
+            preview.appendChild(link);
+            card.appendChild(preview);
+
+            const meta = document.createElement('div');
+            meta.className = 'image-card__meta';
+
+            const header = document.createElement('div');
+            header.className = 'image-card__header';
+            const title = document.createElement('h3');
+            title.textContent = item.title || item.name;
+            header.appendChild(title);
+            const badge = document.createElement('span');
+            badge.className = item.ai_generated ? 'badge' : 'badge secondary';
+            badge.textContent = item.ai_generated ? 'AI generated' : 'Needs text';
+            header.appendChild(badge);
+            meta.appendChild(header);
+
+            const filename = document.createElement('p');
+            filename.className = 'filename';
+            filename.textContent = item.name;
+            meta.appendChild(filename);
+
+            if (item.caption) {
+                const caption = document.createElement('p');
+                caption.className = 'caption';
+                caption.textContent = item.caption;
+                meta.appendChild(caption);
+            }
+
+            const description = document.createElement('p');
+            description.className = item.description ? 'description' : 'description empty';
+            description.textContent = item.description || 'No description detected yet.';
+            meta.appendChild(description);
+
+            if (item.tags && item.tags.length) {
+                meta.appendChild(buildTagList(item.tags));
+            }
+
+            const footer = document.createElement('div');
+            footer.className = 'image-card__footer';
+            if (item.ai_details) {
+                const ts = item.ai_details.created || item.ai_details.attempted_at || item.detected_at;
+                if (ts) {
+                    const time = document.createElement('span');
+                    time.className = 'timestamp';
+                    time.textContent = formatTimestamp(ts);
+                    footer.appendChild(time);
+                }
+            }
+            footer.appendChild(createCardActions(item, 'pending'));
+            meta.appendChild(footer);
+
+            card.appendChild(meta);
+            pendingList.appendChild(card);
+        });
+    }
+
+    function applyGalleryView(list) {
+        galleryList.innerHTML = '';
+        galleryCount.textContent = list.length;
+        if (!list.length) {
+            const emptyMessage = document.createElement('p');
+            emptyMessage.className = 'empty-state';
+            emptyMessage.textContent = 'No curated artwork yet. Approve images to populate the public gallery.';
+            galleryList.appendChild(emptyMessage);
+            return;
+        }
+        list.forEach((item) => {
+            const card = document.createElement('article');
+            card.className = 'image-card image-card--reviewed';
+            card.dataset.imageName = item.name;
+
+            const preview = document.createElement('div');
+            preview.className = 'image-card__preview';
+            const selectOverlay = document.createElement('div');
+            selectOverlay.className = 'image-card__select image-card__select--overlay';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'item-select';
+            checkbox.setAttribute('aria-label', `Select ${item.name}`);
+            selectOverlay.appendChild(checkbox);
+            preview.appendChild(selectOverlay);
+            const img = document.createElement('img');
+            img.src = item.url;
+            img.alt = item.title || item.name;
+            img.loading = 'lazy';
+            preview.appendChild(img);
+            card.appendChild(preview);
+
+            const meta = document.createElement('div');
+            meta.className = 'image-card__meta';
+
+            const header = document.createElement('div');
+            header.className = 'image-card__header';
+            const title = document.createElement('h3');
+            title.textContent = item.title || item.name;
+            header.appendChild(title);
+            meta.appendChild(header);
+
+            if (item.caption) {
+                const caption = document.createElement('p');
+                caption.className = 'caption';
+                caption.textContent = item.caption;
+                meta.appendChild(caption);
+            }
+
+            if (item.author) {
+                const author = document.createElement('p');
+                author.className = 'author';
+                author.textContent = `By ${item.author}`;
+                meta.appendChild(author);
+            }
+
+            if (item.description) {
+                const description = document.createElement('p');
+                description.className = 'description';
+                description.textContent = item.description;
+                meta.appendChild(description);
+            }
+
+            if (item.tags && item.tags.length) {
+                meta.appendChild(buildTagList(item.tags));
+            }
+
+            const footer = document.createElement('div');
+            footer.className = 'image-card__footer';
+            const filename = document.createElement('span');
+            filename.className = 'filename';
+            filename.textContent = item.name;
+            footer.appendChild(filename);
+            footer.appendChild(createCardActions(item, 'reviewed'));
+            meta.appendChild(footer);
+
+            card.appendChild(meta);
+            galleryList.appendChild(card);
+        });
+    }
+
+    function sortGalleryData(sortValue) {
+        const [field, direction] = sortValue.split(':');
+        const multiplier = direction === 'desc' ? -1 : 1;
+        const sorted = [...reviewedData].sort((a, b) => {
+            const valA = (a[field] || '').toString().toLowerCase();
+            const valB = (b[field] || '').toString().toLowerCase();
+            if (field === 'detected_at') {
+                return ((a.detected_at || 0) - (b.detected_at || 0)) * multiplier;
+            }
+            if (valA < valB) return -1 * multiplier;
+            if (valA > valB) return 1 * multiplier;
+            return 0;
+        });
+        return sorted;
+    }
+
+    function sortPendingData(sortValue) {
+        const [field, direction] = sortValue.split(':');
+        const multiplier = direction === 'desc' ? -1 : 1;
+        const sorted = [...pendingData].sort((a, b) => {
+            if (field === 'detected_at') {
+                return ((a.detected_at || 0) - (b.detected_at || 0)) * multiplier;
+            }
+            const av = (a[field] || a.title || a.name || '').toString().toLowerCase();
+            const bv = (b[field] || b.title || b.name || '').toString().toLowerCase();
+            if (av < bv) return -1 * multiplier;
+            if (av > bv) return 1 * multiplier;
+            return 0;
+        });
+        return sorted;
+    }
+
+    function filterPendingData(list, query) {
+        if (!query) return list;
+        const term = query.toLowerCase();
+        return list.filter((item) => {
+            const tags = (item.tags || []).join(' ').toLowerCase();
+            return (
+                (item.title || item.name || '').toLowerCase().includes(term) ||
+                (item.author || '').toLowerCase().includes(term) ||
+                tags.includes(term)
+            );
+        });
+    }
+
+    function filterGalleryData(list, query) {
+        if (!query) {
+            return list;
+        }
+        const term = query.toLowerCase();
+        return list.filter((item) => {
+            const tags = (item.tags || []).join(' ').toLowerCase();
+            return (
+                (item.title || '').toLowerCase().includes(term) ||
+                (item.author || '').toLowerCase().includes(term) ||
+                tags.includes(term)
+            );
+        });
+    }
+
+    function updateGalleryView() {
+        const sorted = sortGalleryData(gallerySort.value);
+        const filtered = filterGalleryData(sorted, galleryFilter.value.trim());
+        applyGalleryView(filtered);
+    }
+
+    function updatePendingView() {
+        const sorted = sortPendingData(pendingSort.value);
+        const filtered = filterPendingData(sorted, (pendingFilter?.value || '').trim());
+        renderPendingList(filtered);
+    }
+
+    function refreshCounts() {
+        pendingCount.textContent = pendingData.length;
+        galleryCount.textContent = reviewedData.length;
+    }
+
+    function renderDashboard(data) {
+        pendingData = data.pending || [];
+        reviewedData = data.reviewed || [];
+        updatePendingView();
+        updateGalleryView();
+        refreshCounts();
+    }
+
+    function collectSelectedFrom(container) {
+        return Array.from(container.querySelectorAll('.item-select:checked'))
+            .map((checkbox) => checkbox.closest('.image-card'))
+            .filter(Boolean)
+            .map((card) => card.dataset.imageName)
+            .filter(Boolean);
+    }
+
+    async function fetchDashboard() {
+        const response = await fetch('/admin/api/gallery');
+        if (!response.ok) {
+            throw new Error('Failed to load dashboard data');
+        }
+        return response.json();
+    }
+
+    async function triggerRegeneration(images, force = false) {
+        if (!images.length) {
+            showFeedback('Select at least one image to regenerate.', 'error');
+            return;
+        }
+        showBusy();
+        try {
+            const response = await fetch('/admin/ai/regenerate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ images, force }),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to regenerate metadata');
+            }
+            const data = await response.json();
+            if (data.errors && data.errors.length) {
+                const details = data.errors.map((err) => `${err.name}: ${err.error}`).join(', ');
+                showFeedback(`Some items failed to regenerate: ${details}`, 'error');
+            } else {
+                showFeedback('AI metadata refreshed successfully.');
+            }
+            renderDashboard(data);
+        } catch (error) {
+            console.error(error);
+            showFeedback('Unable to contact the AI regeneration endpoint.', 'error');
+        } finally {
+            hideBusy();
+        }
+    }
+
+    async function deleteImage(name) {
+        showBusy();
+        try {
+            const response = await fetch(`/admin/image/${encodeURIComponent(name)}`, {
+                method: 'DELETE',
+            });
+            if (!response.ok) {
+                throw new Error('Failed to delete image');
+            }
+            const data = await response.json();
+            showFeedback(data.message || 'Image removed.');
+            renderDashboard(data);
+        } catch (error) {
+            console.error(error);
+            showFeedback('Unable to delete the selected image.', 'error');
+        } finally {
+            hideBusy();
+        }
+    }
+
+    // Initialize from saved config
+    async function loadAdminConfig() {
+        try {
+            const response = await fetch('/admin/config');
+            if (!response.ok) {
+                throw new Error('Failed to fetch config');
+            }
+            const data = await response.json();
+            const ai = data.ai || {};
+            aiEnabled.checked = !!ai.enabled;
+            aiStartupEnabled.checked = !!ai.startup_enrichment_enabled;
+            sidecarStartupEnabled.checked = !!ai.startup_sidecar_enabled;
+            sidecarMaxWorkers.value = ai.max_workers_create_sidecars ?? 2;
+            if (ai.model && Array.from(aiModel.options).some((opt) => opt.value === ai.model)) {
+                aiModel.value = ai.model;
+            } else {
+                aiModel.value = aiModel.options[0].value;
+            }
+            aiTemp.value = ai.temperature ?? 0.6;
+            aiTokens.value = ai.max_output_tokens ?? 600;
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    renderDashboard(dashboardData);
+    loadAdminConfig();
+
+    dropzone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        dropzone.classList.add('is-dragover');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('is-dragover');
+    });
+
+    dropzone.addEventListener('drop', async (event) => {
+        event.preventDefault();
+        dropzone.classList.remove('is-dragover');
+        const files = event.dataTransfer.files;
+        if (!files.length) return;
+        await uploadFiles(files);
+    });
+
+    selectFilesButton.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (event) => {
+        if (!event.target.files.length) return;
+        await uploadFiles(event.target.files);
+        event.target.value = '';
+    });
+
+    async function uploadFiles(files) {
+        const formData = new FormData();
+        Array.from(files).forEach((file) => formData.append('files', file));
+        showBusy();
+        try {
+            const response = await fetch('/admin/upload', {
+                method: 'POST',
+                body: formData,
+            });
+            if (!response.ok) {
+                throw new Error('Failed to upload files');
+            }
+            const data = await response.json();
+            showFeedback(data.message || 'Upload complete.');
+            renderDashboard(data);
+        } catch (error) {
+            console.error(error);
+            showFeedback('Upload failed. Please try again.', 'error');
+        } finally {
+            hideBusy();
+        }
+    }
+
+    pathForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const formData = new FormData(pathForm);
+        showBusy();
+        try {
+            const response = await fetch('/admin/import-path', {
+                method: 'POST',
+                body: formData,
+            });
+            if (!response.ok) {
+                throw new Error('Failed to import path');
+            }
+            const data = await response.json();
+            showFeedback(`Imported ${data.copied.length} items.`);
+            renderDashboard(data);
+            pathForm.reset();
+        } catch (error) {
+            console.error(error);
+            showFeedback('Import failed. Verify the path and try again.', 'error');
+        } finally {
+            hideBusy();
+        }
+    });
+
+    aiForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const payload = {
+            ai: {
+                enabled: aiEnabled.checked,
+                startup_enrichment_enabled: aiStartupEnabled.checked,
+                startup_sidecar_enabled: sidecarStartupEnabled.checked,
+                max_workers_create_sidecars: parseInt(sidecarMaxWorkers.value || '2', 10),
+                model: aiModel.value,
+                temperature: parseFloat(aiTemp.value || '0.6'),
+                max_output_tokens: parseInt(aiTokens.value || '600', 10),
+            },
+        };
+        try {
+            showBusy();
+            const response = await fetch('/admin/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to save config');
+            }
+            await response.json();
+            showFeedback('AI settings saved.');
+        } catch (error) {
+            console.error(error);
+            showFeedback('Unable to save AI configuration.', 'error');
+        } finally {
+            hideBusy();
+        }
+    });
+
+    resetAiButton.addEventListener('click', async () => {
+        try {
+            showBusy();
+            const response = await fetch('/admin/config/reset', { method: 'POST' });
+            if (!response.ok) {
+                throw new Error('Failed to reset configuration');
+            }
+            const data = await response.json();
+            const ai = data.ai || {};
+            aiEnabled.checked = !!ai.enabled;
+            aiStartupEnabled.checked = !!ai.startup_enrichment_enabled;
+            sidecarStartupEnabled.checked = !!ai.startup_sidecar_enabled;
+            sidecarMaxWorkers.value = ai.max_workers_create_sidecars ?? 2;
+            aiModel.value = ai.model && Array.from(aiModel.options).some((opt) => opt.value === ai.model)
+                ? ai.model
+                : aiModel.options[0].value;
+            aiTemp.value = ai.temperature ?? 0.6;
+            aiTokens.value = ai.max_output_tokens ?? 600;
+            showFeedback('AI settings reset to defaults.');
+        } catch (error) {
+            console.error(error);
+            showFeedback('Unable to reset AI configuration.', 'error');
+        } finally {
+            hideBusy();
+        }
+    });
+
+    selectAllBtn.addEventListener('click', () => {
+        const checkboxes = pendingList.querySelectorAll('.item-select');
+        const shouldSelectAll = Array.from(checkboxes).some((box) => !box.checked);
+        checkboxes.forEach((box) => {
+            box.checked = shouldSelectAll;
+        });
+    });
+
+    regenBtn.addEventListener('click', () => {
+        const selected = collectSelectedFrom(pendingList);
+        triggerRegeneration(selected, forceOverwrite.checked);
+    });
+
+    refreshButton.addEventListener('click', async () => {
+        try {
+            const data = await fetchDashboard();
+            renderDashboard(data);
+            showFeedback('Gallery refreshed.');
+        } catch (error) {
+            console.error(error);
+            showFeedback('Unable to refresh gallery.', 'error');
+        }
+    });
+
+    gallerySort.addEventListener('change', updateGalleryView);
+    pendingSort.addEventListener('change', updatePendingView);
+    galleryFilter.addEventListener('input', updateGalleryView);
+    if (pendingFilter) { pendingFilter.addEventListener('input', updatePendingView); }
+
+    if (deleteSelectedBtn) {
+        deleteSelectedBtn.addEventListener('click', async () => {
+            const names = collectSelectedFrom(pendingList);
+            if (!names.length) { showFeedback('Select at least one item to delete.', 'error'); return; }
+            if (!window.confirm(`Delete ${names.length} selected item(s)? This cannot be undone.`)) return;
+            showBusy();
+            try {
+                await Promise.all(names.map((n) => fetch(`/admin/image/${encodeURIComponent(n)}`, { method: 'DELETE' })));
+                const data = await fetchDashboard();
+                renderDashboard(data);
+                showFeedback('Selected items deleted.');
+            } catch (err) {
+                console.error(err);
+                showFeedback('Failed to delete one or more items.', 'error');
+            } finally {
+                hideBusy();
+            }
+        });
+    }
+
+    if (selectAllGalleryBtn) {
+        selectAllGalleryBtn.addEventListener('click', () => {
+            const boxes = galleryList.querySelectorAll('.item-select');
+            const shouldSelectAll = Array.from(boxes).some((b) => !b.checked);
+            boxes.forEach((b) => b.checked = shouldSelectAll);
+        });
+    }
+    if (deleteSelectedGalleryBtn) {
+        deleteSelectedGalleryBtn.addEventListener('click', async () => {
+            const names = collectSelectedFrom(galleryList);
+            if (!names.length) { showFeedback('Select at least one item to delete.', 'error'); return; }
+            if (!window.confirm(`Delete ${names.length} curated item(s)? This cannot be undone.`)) return;
+            showBusy();
+            try {
+                await Promise.all(names.map((n) => fetch(`/admin/image/${encodeURIComponent(n)}`, { method: 'DELETE' })));
+                const data = await fetchDashboard();
+                renderDashboard(data);
+                showFeedback('Selected curated items deleted.');
+            } catch (err) {
+                console.error(err);
+                showFeedback('Failed to delete one or more curated items.', 'error');
+            } finally {
+                hideBusy();
+            }
+        });
+    }
+
+    galleryList.addEventListener('click', (event) => {
+        const action = event.target.dataset.action;
+        if (!action) return;
+        const card = event.target.closest('.image-card');
+        if (!card) return;
+        const name = card.dataset.imageName;
+        if (!name) return;
+
+        if (action === 'regen-single') {
+            triggerRegeneration([name], forceOverwrite.checked);
+        }
+        if (action === 'delete-image') {
+            if (window.confirm(`Delete ${name}? This cannot be undone.`)) {
+                deleteImage(name);
+            }
+        }
+    });
+    </script>
+</body>
+</html>

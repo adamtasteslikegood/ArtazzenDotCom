@@ -1,0 +1,24 @@
+:root {
+  --bg-deep: #0b1026;
+  --bg-soft: #131c3f;
+  --bg-panel: rgba(16, 24, 56, 0.82);
+  --bg-panel-strong: rgba(13, 19, 46, 0.95);
+  --text-primary: #f7f3ec;
+  --text-secondary: #bfc5dd;
+  --accent: #ff9d3d;
+  --accent-soft: rgba(255, 157, 61, 0.2);
+  --border-soft: rgba(255, 255, 255, 0.12);
+  --shadow-soft: 0 24px 60px rgba(2, 6, 23, 0.35);
+  --transition-snappy: 220ms ease;
+}
+
+/* Optional text color helpers */
+.text-primary-soft {
+  color: var(--text-primary) !important;
+}
+.text-secondary-soft {
+  color: var(--text-secondary) !important;
+}
+.bg-panel {
+  background-color: var(--bg-panel) !important;
+}

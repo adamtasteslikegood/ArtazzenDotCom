@@ -1,0 +1,173 @@
+:root {
+  --bg-soft: #131c3f;
+  --text-primary: #f7f3ec;
+  --text-secondary: #bfc5dd;
+  --accent: #ff9d3d;
+  --shadow-soft: 0 24px 60px rgba(2, 6, 23, 0.35);
+}
+
+/* Light Theme */
+body.admin-page {
+  background-color: #f8f9fa;
+  color: #212529;
+}
+
+/* Dark Theme */
+body.admin-page.theme-dark {
+  background-color: #0f121a;
+  color: #e2e8f0;
+}
+
+body.admin-page.theme-dark .card {
+  background-color: #181c26;
+  color: #e2e8f0;
+  border-color: #2a303c;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+body.admin-page.theme-dark .form-control,
+body.admin-page.theme-dark .form-select {
+  background-color: #151924;
+  color: #e2e8f0;
+  border-color: #343b49;
+}
+
+/* Override common light utility classes under dark theme */
+body.admin-page.theme-dark .bg-light {
+  background-color: #151924 !important;
+  color: #e2e8f0 !important;
+}
+body.admin-page.theme-dark .text-dark {
+  color: #e2e8f0 !important;
+}
+body.admin-page.theme-dark .border {
+  border-color: #343b49 !important;
+}
+body.admin-page.theme-dark .badge.bg-light.text-dark {
+  background-color: #151924 !important;
+  color: #e2e8f0 !important;
+  border-color: #343b49 !important;
+}
+
+/* Dark theme: improve text contrast for metadata details */
+body.admin-page.theme-dark .caption,
+body.admin-page.theme-dark .description {
+  color: #e4e9ff;
+}
+body.admin-page.theme-dark .filename,
+body.admin-page.theme-dark .timestamp {
+  color: #9ca4c4;
+}
+body.admin-page.theme-dark .text-muted {
+  color: #9ca4c4 !important;
+}
+body.admin-page.theme-dark .form-control::placeholder,
+body.admin-page.theme-dark .form-select::placeholder {
+  color: #7c89a8;
+}
+
+/* Image cards: keep thumbnails contained and tidy text */
+.image-card__preview {
+  overflow: hidden;
+}
+.image-card__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Clamp long captions/descriptions for consistent card height */
+.image-card .caption,
+.image-card .description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.image-card .caption {
+  -webkit-line-clamp: 2; /* up to ~2 lines */
+}
+.image-card .description {
+  -webkit-line-clamp: 4; /* up to ~4 lines */
+}
+
+/* Keep status badges from hanging off card edges on narrow columns */
+.image-card .image-card__meta > .d-flex {
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Busy / in-progress state for cards (e.g., during AI regeneration) */
+.image-card.card {
+  position: relative;
+}
+.image-card.is-busy {
+  opacity: 0.6;
+}
+.image-card.is-busy .btn {
+  pointer-events: none;
+}
+.image-card.is-busy::after {
+  content: "In progress\u2026";
+  position: absolute;
+  inset: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 18, 26, 0.78);
+  color: #f8fafc;
+  font-size: 0.85rem;
+  border-radius: 0.75rem;
+}
+
+/* Dropzone disabled state during active uploads */
+#dropzone.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Busy overlay during async ops */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 9999;
+}
+
+.busy-overlay[aria-hidden="false"] {
+  display: flex;
+}
+
+.busy-indicator {
+  background: #fff;
+  color: #333;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  font-weight: 600;
+}
+
+/* Optional semantic helpers */
+.caption {
+  font-style: italic;
+  color: #495057;
+}
+
+.author {
+  font-weight: 600;
+  color: #495057;
+}
+
+.filename {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.timestamp {
+  font-size: 0.85rem;
+  color: #6c757d;
+}
