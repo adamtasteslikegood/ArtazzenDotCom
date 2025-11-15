@@ -52,7 +52,7 @@ body.admin-page.theme-dark .badge.bg-light.text-dark {
 /* Dark theme: improve text contrast for metadata details */
 body.admin-page.theme-dark .caption,
 body.admin-page.theme-dark .description {
-  color: #cbd5f5;
+  color: #e4e9ff;
 }
 body.admin-page.theme-dark .filename,
 body.admin-page.theme-dark .timestamp {
@@ -135,10 +135,10 @@ body.admin-page.theme-dark .form-select::placeholder {
 .filename {
   font-family: monospace;
   font-size: 0.9rem;
-  color: #868e96;
+  color: #6c757d;
 }
 
 .timestamp {
   font-size: 0.85rem;
-  color: #868e96;
+  color: #6c757d;
 }

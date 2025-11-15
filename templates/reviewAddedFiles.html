@@ -247,7 +247,14 @@
 {% block scripts %}
   {{ super() }}
   <script id="admin-state" type="application/json">{{ admin_data | tojson }}</script>
-  <!-- Explicitly load admin + review JS in the same order as the legacy dashboard to ensure theme + filters work reliably -->
-  <script src="{{ url_for('static', path='js/admin.js') }}"></script>
-  <script src="{{ url_for('static', path='js/review.js') }}"></script>
+  <!-- Load dashboard behaviour (upload, sort, filter, bulk actions) -->
+  <script src="{{ url_for('static', path='js/review.js') }}" defer></script>
+  <!-- Safety net: ensure initReview runs once even if script timing changes -->
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      if (typeof window.initReview === 'function') {
+        window.initReview();
+      }
+    });
+  </script>
 {% endblock %}

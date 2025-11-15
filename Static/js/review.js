@@ -81,8 +81,12 @@ let pendingSort;
 let pendingFilter;
 let gallerySort;
 let galleryFilter;
+let reviewInitStarted = false;
 
 async function initReview() {
+  if (reviewInitStarted) return;
+  reviewInitStarted = true;
+
   // Basic page setup
   try { formatTimestamps(); } catch (_) {}
   try { initTheme(); } catch (_) {}
