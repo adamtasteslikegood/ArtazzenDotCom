@@ -228,7 +228,7 @@
         const forceToggle = document.getElementById('detail-force');
         const feedback = document.getElementById('detail-feedback');
         const imageName = {{ image_name | tojson }};
-        const reviewUrl = {{ review_url | tojson }};
+        const reviewUrl = {{ review_url | string | tojson }};
 
         const titleInput = document.getElementById('title');
         const descriptionInput = document.getElementById('description');
