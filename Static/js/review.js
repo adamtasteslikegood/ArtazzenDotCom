@@ -421,7 +421,8 @@ function renderCardList(list, type, container) {
     const preview = document.createElement('div');
     preview.className = 'image-card__preview ratio ratio-4x3 mb-3';
     const link = document.createElement('a');
-    link.href = `/admin/image/${encodeURIComponent(item.name)}`;
+    // Link thumbnail to the same review page used by the toolbar buttons
+    link.href = `/admin/review/${encodeURIComponent(item.name)}`;
     const img = document.createElement('img');
     img.src = item.url;
     img.alt = item.title || item.name;
