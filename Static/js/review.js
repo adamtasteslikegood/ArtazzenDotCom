@@ -81,6 +81,9 @@ let pendingSort;
 let pendingFilter;
 let gallerySort;
 let galleryFilter;
+// Dashboard data state (must be defined before initReview/renderDashboard use them)
+let pendingData = [];
+let reviewedData = [];
 let reviewInitStarted = false;
 
 async function initReview() {
@@ -144,6 +147,7 @@ function bindReviewUI() {
   const sidecarMaxWorkers = document.getElementById('sidecar-max-workers');
   const resetAiButton = document.getElementById('reset-ai-config');
   const selectAllBtn = document.getElementById('select-all');
+  const acceptSelectedBtn = document.getElementById('accept-selected');
   const regenBtn = document.getElementById('regen-selected');
   const deleteSelectedBtn = document.getElementById('delete-selected');
   const forceOverwrite = document.getElementById('force-overwrite');
@@ -247,6 +251,12 @@ function bindReviewUI() {
     boxes.forEach(b => (b.checked = shouldCheck));
   });
 
+  acceptSelectedBtn?.addEventListener('click', () => {
+    const names = collectSelectedFrom(pendingList);
+    if (!names.length) return showFeedback('No images selected.', 'error');
+    acceptImages(names);
+  });
+
   selectAllGalleryBtn?.addEventListener('click', () => {
     const boxes = galleryList.querySelectorAll('.item-select');
     const shouldCheck = [...boxes].some(b => !b.checked);
@@ -256,7 +266,11 @@ function bindReviewUI() {
   regenBtn?.addEventListener('click', () => {
     const names = collectSelectedFrom(pendingList);
     if (!names.length) return showFeedback('No images selected.', 'error');
-    triggerRegeneration(names, forceOverwrite?.checked);
+    const fieldCheckboxes = document.querySelectorAll('.bulk-regen-field:checked');
+    const fields = Array.from(fieldCheckboxes)
+      .map(el => el.dataset.field)
+      .filter(Boolean);
+    triggerRegeneration(names, !!forceOverwrite?.checked, fields);
   });
 
   deleteSelectedBtn?.addEventListener('click', () => {
@@ -287,11 +301,20 @@ function bindReviewUI() {
   pendingSort?.addEventListener('change', updatePendingView);
   galleryFilter?.addEventListener('input', updateGalleryView);
   pendingFilter?.addEventListener('input', updatePendingView);
-}
 
-// --- Data State ---
-let pendingData = [];
-let reviewedData = [];
+  // Per-card OK button using event delegation so dynamic cards work too
+  pendingList?.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest('[data-action="accept-single"]');
+    if (!button) return;
+    const card = button.closest('.image-card');
+    if (!card) return;
+    const name = card.dataset.imageName;
+    if (!name) return;
+    acceptImages([name]);
+  });
+}
 
 // --- Reusable Helpers ---
 function collectSelectedFrom(container) {
@@ -328,6 +351,15 @@ function createCardActions(item, type) {
   link.className = 'btn btn-outline-primary btn-sm';
   link.textContent = type === 'reviewed' ? 'Edit' : 'Review details';
   actions.appendChild(link);
+
+  if (type === 'pending') {
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'btn btn-success btn-sm';
+    okBtn.textContent = 'OK';
+    okBtn.setAttribute('data-action', 'accept-single');
+    actions.insertBefore(okBtn, link);
+  }
 
   return actions;
 }
@@ -534,13 +566,17 @@ async function uploadFiles(files) {
   }
 }
 
-async function triggerRegeneration(images, force = false) {
+async function triggerRegeneration(images, force = false, fields) {
   showBusy("Regenerating metadata...");
   try {
+    const payload = { images, force };
+    if (Array.isArray(fields) && fields.length) {
+      payload.fields = fields;
+    }
     const res = await fetch('/admin/ai/regenerate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images, force })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (data.errors?.length) {
@@ -552,6 +588,29 @@ async function triggerRegeneration(images, force = false) {
     renderDashboard(data);
   } catch {
     showFeedback('Failed to regenerate metadata.', 'error');
+  } finally {
+    hideBusy();
+  }
+}
+
+async function acceptImages(names) {
+  showBusy("Accepting images...");
+  try {
+    const res = await fetch('/admin/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images: names })
+    });
+    const data = await res.json();
+    if (data.errors?.length) {
+      const details = data.errors.map(e => `${e.name}: ${e.error}`).join(', ');
+      showFeedback(`Some images were not accepted: ${details}`, 'error');
+    } else {
+      showFeedback(`Accepted ${names.length} image(s).`);
+    }
+    renderDashboard(data);
+  } catch {
+    showFeedback('Failed to accept images.', 'error');
   } finally {
     hideBusy();
   }

@@ -190,10 +190,11 @@
         </div>
 
         <!-- Form Actions -->
-        <div class="d-flex flex-wrap gap-2">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
           <button type="submit" name="action" value="save" class="btn btn-dark">OK</button>
           <button type="submit" name="action" value="cancel" class="btn btn-outline-secondary">Cancel</button>
           <button type="submit" name="action" value="mark_unreviewed" class="btn btn-outline-warning">Mark as pending</button>
+          <button type="button" id="delete-image" class="btn btn-outline-danger ms-auto">Delete from gallery</button>
         </div>
 
         <!-- Feedback -->
@@ -208,7 +209,7 @@
   </footer>
 
   <!-- Optional script injection -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-9NDLq1/3rBoYf1m4R6h5rXj3S1Y+9HqGZp0s6v3n3s1qOmkZKq0Zl9t9gU9m6F2x" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
   <script src="{{ url_for('static', path='js/admin.js') }}" defer></script>
   <script>
     // Your original JS for timestamps, busy overlay, form handling remains here
@@ -227,6 +228,7 @@
         const forceToggle = document.getElementById('detail-force');
         const feedback = document.getElementById('detail-feedback');
         const imageName = {{ image_name | tojson }};
+        const reviewUrl = {{ review_url | tojson }};
 
         const titleInput = document.getElementById('title');
         const descriptionInput = document.getElementById('description');
@@ -319,6 +321,28 @@
 
         if (regenButton) {
             regenButton.addEventListener('click', regenerateMetadata);
+        }
+
+        const deleteButton = document.getElementById('delete-image');
+        if (deleteButton) {
+            deleteButton.addEventListener('click', async () => {
+                if (!window.confirm('Delete this image from the gallery? This cannot be undone.')) {
+                    return;
+                }
+                showBusy();
+                try {
+                    const response = await fetch(`/admin/image/${encodeURIComponent(imageName)}`, { method: 'DELETE' });
+                    if (!response.ok) {
+                        throw new Error('Delete failed');
+                    }
+                    await response.json();
+                    window.location.href = reviewUrl;
+                } catch (error) {
+                    console.error(error);
+                    setFeedback('Unable to delete this image.', true);
+                    hideBusy();
+                }
+            });
         }
 
         // Show busy while submitting the form

@@ -2138,6 +2138,51 @@ async def update_image_metadata(
     )
 
 
+@app.post("/admin/accept", response_class=JSONResponse)
+async def accept_images(request: Request) -> JSONResponse:
+    """Mark one or more images as reviewed without changing their text."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    images = body.get("images") or []
+    if not isinstance(images, list) or not images:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No images provided")
+
+    accepted: List[str] = []
+    errors: List[Dict[str, str]] = []
+    for name in images:
+        fname = _sanitize_filename(str(name))
+        if not fname or not _allowed_image(fname):
+            errors.append({"name": str(name), "error": "Unsupported or invalid filename"})
+            continue
+        image_path = IMAGES_DIR / fname
+        if not image_path.exists():
+            errors.append({"name": str(name), "error": "File not found"})
+            continue
+        try:
+            metadata = _load_metadata(image_path)
+            _ensure_sidecar(image_path, metadata)
+            existing = _load_metadata(image_path)
+            existing.setdefault("title", image_path.stem)
+            existing["reviewed"] = True
+            existing["ai_generated"] = False
+            _write_sidecar(image_path, existing)
+            accepted.append(fname)
+        except Exception as exc:
+            errors.append({"name": fname, "error": str(exc)})
+
+    dashboard = _gather_admin_dashboard_data()
+    request.app.state.pending_images = dashboard["pending"]
+    return JSONResponse(
+        {
+            "accepted": accepted,
+            "errors": errors,
+            "pending": dashboard["pending"],
+            "reviewed": dashboard["reviewed"],
+        }
+    )
+
 
 @app.delete("/admin/image/{image_name}", response_class=JSONResponse)
 async def delete_image(request: Request, image_name: str) -> JSONResponse:

@@ -110,7 +110,31 @@
         <input class="form-check-input" type="checkbox" id="force-overwrite">
         <label class="form-check-label small" for="force-overwrite">Force overwrite</label>
       </div>
+      <div class="d-flex flex-wrap align-items-center gap-1 small">
+        <span class="text-muted">Fields to regen:</span>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-title" data-field="title">
+          <label class="form-check-label" for="bulk-regen-title">Title</label>
+        </div>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-description" data-field="description">
+          <label class="form-check-label" for="bulk-regen-description">Description</label>
+        </div>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-caption" data-field="caption">
+          <label class="form-check-label" for="bulk-regen-caption">Caption</label>
+        </div>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-author" data-field="author">
+          <label class="form-check-label" for="bulk-regen-author">Author</label>
+        </div>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-tags" data-field="tags">
+          <label class="form-check-label" for="bulk-regen-tags">Tags</label>
+        </div>
+      </div>
       <button type="button" id="select-all" class="btn btn-outline-secondary btn-sm">Select All</button>
+      <button type="button" id="accept-selected" class="btn btn-success btn-sm">Accept Selected</button>
       <button type="button" id="regen-selected" class="btn btn-outline-primary btn-sm">Regenerate Selected</button>
       <button type="button" id="delete-selected" class="btn btn-outline-danger btn-sm">Delete Selected</button>
     </div>
@@ -158,6 +182,7 @@
                 <span class="timestamp small text-muted" data-ts="{{ item.ai_details.created or item.ai_details.attempted_at }}"></span>
               {% endif %}
               <div class="image-card__actions d-flex gap-2 justify-content-end flex-wrap">
+                <button type="button" class="btn btn-success btn-sm" data-action="accept-single">OK</button>
                 <a class="btn btn-outline-primary btn-sm" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Review details</a>
               </div>
             </div>
