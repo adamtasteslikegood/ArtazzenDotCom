@@ -1,0 +1,40 @@
+/* 2) “Cubist Pastels” — from IMG_4993 (sky, mustard, forest, salmon, clay)
+Cubist Pastels — IMG_4993 */
+
+
+@media (prefers-color-scheme:dark){
+    :root{
+        --bg:#FCFCFA; --text:#1E1D1B; --muted:#E2E0DA; --muted-2:#F1F0EC;
+        --accent:#DE6A57; --accent-hover:#B74B3C; --mark-bg:#F1D889;
+        --code-inline-bg:#2E2D2A; --code-inline-fg:#FAFAF8; --code-block-bg:#F6F6F2;
+        --blockquote-bg:#EFEDE7; --blockquote-border:#A68C52;
+    }
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#171717; --text:#EFEFEA; --muted:#2A2A28; --muted-2:#222221;
+    --accent:#FF7E66; --accent-hover:#FFD166; --mark-bg:#FFE08A;
+    --code-inline-bg:#111111; --code-inline-fg:#EFEFEA; --code-block-bg:#0C0C0B;
+    --blockquote-bg:#1E1E1B; --blockquote-border:#6E8B5E; /* forest */
+  }
+}
+/* Base & components */
+*{box-sizing:border-box}body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;background:var(--bg);color:var(--text);line-height:1.6;margin:0 auto;padding:24px;max-width:72ch}
+h1,h2,h3,h4,h5,h6{line-height:1.25;margin:1.25em 0 .5em}p,ul,ol,pre,table,blockquote{margin:1em 0}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-hover);text-decoration:underline}
+mark{background:var(--mark-bg);border-radius:3px;padding:0 3px}
+code:not([class^="language-"]):not([class~="mermaid"]){background:var(--code-inline-bg);color:var(--code-inline-fg);border-radius:4px;padding:2px 6px;white-space:nowrap}
+pre{background:var(--code-block-bg);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--muted)}pre>code{background:transparent!important;color:inherit;padding:0;font:inherit}
+pre[class*="language-"],code[class*="language-"]{color:var(--text)}
+[class*="language-"] .token.comment{color:#8C877F}
+[class*="language-"] .token.operator{color:#DE6A57}
+[class*="language-"] .token.string{color:#A6C36F}
+[class*="language-"] .token.number,[class*="language-"] .token.boolean{color:#5DADEC}
+[class*="language-"] .token.property,[class*="language-"] .token.attr-name,[class*="language-"] .token.literal-property{color:#C9A668}
+[class*="language-"] .token.function,[class*="language-"] .token.selector,[class*="language-"] .token.class-name{color:#6E8B5E}
+blockquote{background:var(--blockquote-bg);border-left:5px solid var(--blockquote-border);padding:10px 14px;margin:16px 0;border-radius:6px}
+ table{width:100%;border-collapse:collapse;border:1px solid var(--muted);border-radius:8px;display:block;overflow:auto}
+ thead th{position:sticky;top:0;background:var(--bg);z-index:1}
+ th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--muted);border-right:1px solid var(--muted)}
+ tr td:last-of-type, tr th:last-of-type{border-right:none}
+ tbody tr:nth-child(odd) td{background:var(--muted-2)}

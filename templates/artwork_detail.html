@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ artwork.title }}</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="artwork-detail-page" {% if artwork.image_url %}style="--artwork-image: url('{{ artwork.image_url }}')"{% endif %}>
+    <main>
+        <article class="artwork-detail-shell">
+            <figure class="artwork-figure">
+                <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                <figcaption>From the Artazzen collection</figcaption>
+            </figure>
+            <section class="artwork-story">
+                <p class="artwork-story__kicker">Artwork spotlight</p>
+                <h1>{{ artwork.title }}</h1>
+                {% if artwork.description %}
+                <p>{{ artwork.description }}</p>
+                {% else %}
+                <p>This piece is awaiting a description from the studio.</p>
+                {% endif %}
+                <div class="artwork-actions">
+                    <a href="/" class="back-button">← Back to Gallery</a>
+                    <a href="/admin" class="button secondary">Curate more work</a>
+                </div>
+            </section>
+        </article>
+    </main>
+</body>
+</html>

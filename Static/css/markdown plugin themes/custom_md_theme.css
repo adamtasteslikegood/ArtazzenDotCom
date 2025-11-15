@@ -1,0 +1,42 @@
+
+body {
+  font-family: 'Monospace', monospace;
+}
+
+table th { border-bottom: 2px solid; }
+table td { border-right: 1px solid; padding: 5px 10px; }
+table tr td:last-of-type { border: none; }
+
+@media (prefers-color-scheme: dark) {
+  body { color: #f8f8f2; }
+  a { color: #a6e22e; text-decoration: none; }
+  a:hover { color: #f92672; }
+  mark { background: #e6db74; border-radius: 3px; padding: 0 3px; }
+  code:not([class^=language-]):not([class=mermaid]) { background: #cdcdcd; color: #000; border-radius: 3px; padding: 3px; }
+  kbd { background: #fd971f; color: #000; border-radius: 3px; padding: 0 3px; }
+  table th { color: #f8f8f2; }
+  table td { color: #f8f8f2; }
+  table tr:nth-child(odd) td { background: #424242; }
+  blockquote { background: #424242; border-left: 5px solid #75715e; padding: 1px 10px; margin: 16px 0; }
+  /*prism*/
+  [class^=language-] .function, [class^=language-] .function-variable { color: #a6e22e; }
+  [class^=language-] .property, [class^=language-] .literal-property { color: #e6db74; }
+  [class^=language-] .parameter { color: #fd971f; }
+  [class^=language-] .operator { color: #f92672; }
+  [class^=language-] .punctuation { color: #fff; }
+  [class^=language-] .string { color: #e6db74; }
+  [class^=language-] .boolean { color: #ae81ff; }
+  [class^=language-] .comment { color: #75715e; }
+}
+@media (prefers-color-scheme: light) {
+  body { color: #000; }
+  a { color: #0071a1; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  mark { background: #e6db74; border-radius: 3px; padding: 0 3px; }
+  code:not([class^=language-]) { background: #6d6d6d; color: #f8f8f2; border-radius: 3px; padding: 3px; }
+  kbd { background: #fd971f; color: #000; border-radius: 3px; padding: 0 3px; }
+  table th { color: #000; }
+  table td { color: #000; }
+  table tr:nth-child(odd) td { background: #efefef; }
+  blockquote { background: #e1e1e1; border-left: 5px solid #75715e; padding: 1px 10px; margin: 16px 0; }
+}
