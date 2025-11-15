@@ -1,0 +1,172 @@
+ What I changed
+
+  1. Added a guard to _populate_missing_metadata
+
+  - Updated signature to accept a force flag:
+      - main.py:1108:
+          - def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any], *, force: bool = False)
+  -> Dict[str, Any]:
+  - Normalizes ai_details and then checks whether we already have a successful run:
+      - If ai_details["status"] == "success" and force is False, it now logs:
+          - "AI enrichment already succeeded for {image}; skipping (no force)" and simply returns the current
+  metadata.
+  - Only if:
+      - force is True, or
+      - ai_details.status is not "success" and one or more fields are missing
+        will it actually log “AI enrichment starting for …” and call OpenAI again.
+
+  2. Explicit regenerate always forces a fresh AI call
+
+  - The bulk/single “Regenerate” endpoint now opts into forced enrichment:
+      - main.py:1939–1948 (regenerate_ai_metadata):
+          - After clearing fields (based on force or fields list), it now calls:
+              - meta = _populate_missing_metadata(path, meta, force=True)
+  - This means:
+      - When you click “Regenerate metadata” on the detail page, or the toolbar “Regenerate Selected”, you
+  still get a fresh AI call for those images.
+      - The sidecar is updated with the new text as before.
+
+  3. Preview page uses non-forced enrichment
+
+  - The preview route still opportunistically fills missing metadata if needed, but now relies on the new
+  guard:
+      - main.py:2059–2067 still calls _populate_missing_metadata(image_path, _load_metadata(image_path))
+  without force=True.
+  - Effect:
+      - Opening a preview for a brand-new image can trigger its first enrichment.
+      - Once an image has a successful AI pass, simply visiting its preview page again will no longer re-call
+  OpenAI unless you explicitly hit “Regenerate”.
+
+  What this changes in practice
+
+  - New uploads:
+      - They’ll be enriched either via the watcher/startup scan or the first time you preview them, as before.
+      - After a successful AI run, you should no longer see repeated “AI enrichment starting for IMG_8575.jpeg
+  …” every time the watcher scans or you re-open the preview.
+  - Manual regeneration:
+      - Using “Regenerate Selected” in the dashboard or “Regenerate metadata” on the preview page will still
+  call OpenAI again for those images (and you’ll see a new “AI enrichment starting for …” log for each such
+  request).
+  - Cost/duplication:
+      - The noisy / redundant auto-retries for already-enriched images should stop; further enrichment runs
+  should correlate directly with explicit regenerate actions.
+
+• Here’s what I’ve implemented to keep the admin page smooth and visually clear while uploads and AI work run.
+
+  1. Stop surprise re-enrichment + keep uploads snappy
+
+  - _populate_missing_metadata now has a force flag and skips OpenAI if ai_details.status == "success" and
+    force=False:
+      - main.py:1108 – avoids repeated “AI enrichment starting…” for the same image unless you explicitly
+        regenerate.
+  - Explicit regen always forces a new AI call:
+      - main.py:1931–1961 (regenerate_ai_metadata) now calls _populate_missing_metadata(path, meta,
+        force=True).
+  - Admin dashboard views no longer trigger AI; uploads return immediately and just create sidecars:
+      - _gather_admin_dashboard_data gained allow_ai_enrichment / allow_sidecar_creation params (main.py:1326–
+        1334).
+      - /admin and /admin/review use allow_ai_enrichment=False (main.py:1585–1607).
+      - /admin/upload and /admin/import-path also use allow_ai_enrichment=False when returning updated lists
+        (main.py:2015–2045, main.py:2047–2080).
+
+  2. “In progress” state for explicit AI work
+
+  - Cards show a dimmed “In progress…” overlay while regeneration runs:
+      - CSS overlay and disabled buttons added for .image-card.is-busy (Static/css/admin.css:68–84).
+      - triggerRegeneration(images, force, fields) now:
+          - Finds pending cards matching the selected filenames.
+          - Adds .is-busy before the /admin/ai/regenerate call and removes it in finally (Static/js/
+            review.js:537–555).
+  - This covers both bulk “Regenerate Selected” and any future uses of triggerRegeneration, giving you a clear
+    visual that AI is working and keeping buttons inactive until it’s done.
+
+  3. Safer, clearer upload UX
+
+  - Dropzone and upload controls are disabled while an upload is in flight:
+      - uploadFiles(files) now:
+          - Adds is-disabled to #dropzone and disables #select-files and #file-input while the POST /admin/
+            upload runs, then restores them in finally (Static/js/review.js:520–535).
+      - #dropzone.is-disabled is styled with reduced opacity and pointer-events: none (Static/css/admin.css:80–
+        84).
+  - Result: large multi-file uploads don’t invite extra drags/clicks until the server is ready again, and the
+    UI doesn’t feel “alive” while the backend is still saving files.
+
+  4. New uploads in the pending list
+
+  - Upload and import endpoints now:
+      - Ensure sidecars exist for each new image (_ensure_sidecar), but do not call AI inline.
+      - Immediately return updated pending/reviewed lists populated from sidecars (without extra enrichment).
+  - That means:
+      - Every uploaded image should appear as a card in “Needs review” right after the upload/import completes,
+        with whatever metadata is currently available.
+      - AI enrichment for new images is handled by the watcher or by explicit regen; you shouldn’t see admin
+        views blocking on OpenAI.
+
+  At this point, the admin page should stay responsive with large uploads, multiple tabs, and long-running
+  AI calls, and the visual “in progress” state is clear where the browser is actually waiting on the server
+  (regeneration and uploads).
+
+• Here’s what I’ve done to get you ready for the PR and production container.
+
+  - Dockerfile: production-ready uvicorn+uvloop container
+      - Dockerfile:1–27 now:
+          - Uses python:3.13-slim with PYTHONDONTWRITEBYTECODE=1 and PYTHONUNBUFFERED=1.
+          - Creates a non‑root app user and runs the service as that user.
+          - Installs dependencies in a cached layer via COPY requirements.txt → pip install.
+          - Runs FastAPI directly with uvicorn and multiple workers:
+              - CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --loop uvloop --http
+                httptools --workers ${UVICORN_WORKERS:-4}"]
+          - Exposes PORT and UVICORN_WORKERS as tunable environment variables (defaults: 8000 / 4 workers).
+  - README: align deployment guidance with new container
+      - Readme.md:63–70 clarifies that the Dockerfile runs uvicorn directly with uvloop/httptools.
+      - Updated production section:
+          - Readme.md:104–118 replaces the old Gunicorn command with a uvicorn example:
+
+            uvicorn main:app --host 0.0.0.0 --port 8000 --loop uvloop --http httptools --workers 4
+          - Documents how to tune the container:
+
+            docker run -p 8000:8000 -e PORT=8000 -e UVICORN_WORKERS=4 artazzen-gallery
+          - Keeps the note about using environment variables for secrets.
+  - AGENTS: updated guidance for future automation
+      - AGENTS.md:32–36 now tells agents:
+          - For production, prefer the root Dockerfile, which runs uvicorn main:app directly (no Gunicorn) with
+            uvloop/httptools, and uses UVICORN_WORKERS for concurrency.
+  - Runtime behavior recap (admin UX)
+      - Uploads:
+          - New images appear quickly in “Needs review” after upload/import; uploads don’t wait on AI anymore.
+          - While upload is active, #dropzone, “Select files”, and the file input are visibly disabled.
+      - Regeneration:
+          - Cards being regenerated show a dimmed “In progress…” overlay and have their buttons disabled until
+            the AI response is applied.
+      - AI calls:
+          - Automatic paths (watcher, preview) skip re-enrichment once ai_details.status == "success".
+          - Explicit “Regenerate” actions always trigger a fresh AI call.
+
+ I added a concise release checklist to the README that walks through configuration, data safety, image build/
+  run, and smoke tests.
+
+  - Readme updates
+      - New section ## Release Checklist (Pre‑deploy) (Readme.md:118+) covers:
+          - Config:
+              - Ensure MY_OPENAI_API_KEY (or legacy My_OpenAI_APIKey) is set.
+              - Review AI settings via /admin (model, temperature, tokens, startup flags).
+              - Review advanced settings via /admin/advanced (logging levels, default author/copyright).
+          - Data & sidecars:
+              - Back up or volume‑mount Static/images/ and sidecars.
+              - Optionally run python manage_sidecars.py validate against ImageSidecar.schema.json.
+          - Build & run:
+              - docker build -t artazzen-gallery .
+              - Example staging run with env vars:
+
+                docker run --rm -p 8000:8000 \
+                  -e PORT=8000 \
+                  -e UVICORN_WORKERS=4 \
+                  -e MY_OPENAI_API_KEY=... \
+                  artazzen-gallery
+          - Smoke tests:
+              - Hit / and /admin.
+              - Upload some images, verify pending cards, sort/filter, AI regeneration, Accept, Edit, and
+                Delete all behave without errors.
+
+  You’re set to open a PR: the Dockerfile, README, AGENTS, and admin UX now all align with a uvicorn+uvloop
+  production deployment.

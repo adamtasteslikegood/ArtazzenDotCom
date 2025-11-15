@@ -80,7 +80,7 @@ git clone <repo_url> && cd <repo_name> && python -m venv .venv && source .venv/b
 
 ## Docker
 
-For a containerized setup, you can use the provided `Dockerfile`.
+For a containerized setup, you can use the provided `Dockerfile`, which runs the app with `uvicorn` directly (no Gunicorn wrapper) using `uvloop` and `httptools` when available.
 
 ### Building the Docker Image
 ```bash
@@ -116,11 +116,49 @@ pytest
 This project is licensed under the MIT License. See the `LICENSE` file for details.
 
 ## Deployment Considerations
-For production, use a WSGI server like Gunicorn:
+For production, run `uvicorn` directly with multiple workers and `uvloop`:
 ```bash
-gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
+uvicorn main:app \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --loop uvloop \
+  --http httptools \
+  --workers 4
 ```
-**Note on Configuration:** For sensitive information like API keys, it is recommended to use environment variables instead of hardcoding them in the application.
+When using the Docker image, you can tune concurrency via environment variables:
+```bash
+docker run -p 8000:8000 \
+  -e PORT=8000 \
+  -e UVICORN_WORKERS=4 \
+  artazzen-gallery
+```
+**Note on Configuration:** For sensitive information like API keys, it is recommended to use environment variables instead of hardcoding them in the application or image.
+
+## Release Checklist (Pre‑deploy)
+
+Before cutting a release or updating your production container:
+
+- **Configuration**
+  - Set `MY_OPENAI_API_KEY` (or legacy `My_OpenAI_APIKey`) in the environment for AI enrichment.
+  - Review `ai_config.json` / `/admin` → AI settings (model, temperature, max tokens, startup enrichment).
+  - Review `advanced_config.json` / `/admin/advanced` (logging levels, default author/copyright).
+- **Data & sidecars**
+  - Ensure `Static/images/` and sidecar JSONs are backed up (or mounted as a volume in Docker).
+  - Optionally run `python manage_sidecars.py validate` to check sidecars against `ImageSidecar.schema.json`.
+- **Build & run**
+  - Build the image: `docker build -t artazzen-gallery .`
+  - Run a staging container:
+    ```bash
+    docker run --rm -p 8000:8000 \
+      -e PORT=8000 \
+      -e UVICORN_WORKERS=4 \
+      -e MY_OPENAI_API_KEY=... \
+      artazzen-gallery
+    ```
+- **Smoke tests**
+  - Visit `/` (public gallery) and `/admin` (dashboard).
+  - Exercise: upload a few images, verify cards appear in “Needs review”, sorting/filtering work, and AI regeneration behaves as expected.
+  - Confirm you can edit metadata, Accept, Regenerate, and Delete images without errors in the logs.
 
 ## Error Handling
 Error handling is implemented within `main.py` to ensure the application remains stable.
