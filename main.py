@@ -1105,8 +1105,18 @@ def _build_openai_request_body_variant(
     return base
 
 
-def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
-    """Fill missing metadata using OpenAI when configured."""
+def _populate_missing_metadata(
+    image_path: Path,
+    metadata: Dict[str, Any],
+    *,
+    force: bool = False,
+) -> Dict[str, Any]:
+    """Fill missing metadata using OpenAI when configured.
+
+    When ``force`` is False, this helper will not re-run enrichment if the last
+    recorded AI status is ``success``. Explicit regeneration calls should pass
+    ``force=True`` to override that guard.
+    """
     title_value = (metadata.get("title") or "").strip()
     description_value = (metadata.get("description") or "").strip()
     caption_value = (metadata.get("caption") or "").strip()
@@ -1125,18 +1135,28 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
     metadata.setdefault("caption", caption_value)
     metadata.setdefault("author", author_value)
     metadata.setdefault("copyright", metadata.get("copyright", ""))
-    if not (needs_title or needs_description or needs_caption or needs_author or needs_tags):
-        logger.debug("AI enrichment not needed for %s (metadata complete)", image_path.name)
-        return metadata
-    # Respect runtime toggle
-    if not _get_ai_config().get("enabled", True):
-        logger.info("AI enrichment disabled; skipping for %s", image_path.name)
-        return metadata
 
+    # Normalize ai_details for downstream use
     ai_details = metadata.get("ai_details")
     if not isinstance(ai_details, dict):
         ai_details = {}
     metadata["ai_details"] = ai_details
+
+    # If we've already had a successful AI run and the caller did not request
+    # a forced regeneration, avoid calling OpenAI again just because this helper
+    # is invoked from a watcher or preview view.
+    if not force and ai_details.get("status") == "success":
+        logger.debug("AI enrichment already succeeded for %s; skipping (no force)", image_path.name)
+        return metadata
+
+    if not (needs_title or needs_description or needs_caption or needs_author or needs_tags):
+        logger.debug("AI enrichment not needed for %s (metadata complete)", image_path.name)
+        return metadata
+
+    # Respect runtime toggle
+    if not _get_ai_config().get("enabled", True):
+        logger.info("AI enrichment disabled; skipping for %s", image_path.name)
+        return metadata
 
     if not _get_openai_api_key() and ai_details.get("status") == "skipped_no_api_key":
         return metadata
@@ -1941,7 +1961,8 @@ async def regenerate_ai_metadata(request: Request) -> JSONResponse:
                     else:
                         meta[f] = ""
                 meta["ai_generated"] = False
-            meta = _populate_missing_metadata(path, meta)
+            # Explicit regeneration always forces a fresh AI call
+            meta = _populate_missing_metadata(path, meta, force=True)
             _write_sidecar(path, meta)
             updated.append({"name": fname, "metadata": meta})
         except Exception as exc:
@@ -2062,6 +2083,8 @@ async def preview_image_metadata(request: Request, image_name: str) -> HTMLRespo
 
     metadata = _load_metadata(image_path)
     _ensure_sidecar(image_path, metadata)
+    # Let the preview page opportunistically fill in missing text once,
+    # but avoid re-calling OpenAI after a successful enrichment.
     metadata = _populate_missing_metadata(image_path, _load_metadata(image_path))
 
     return templates.TemplateResponse(
