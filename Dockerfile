@@ -17,6 +17,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy project files
 COPY . /app
 
+# Ensure application directory is owned by the non-root user so logs,
+# sidecars, and other runtime files can be written.
+RUN chown -R app:app /app
+
 # Run as non-root
 USER app
 
