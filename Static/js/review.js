@@ -157,6 +157,7 @@ function bindReviewUI() {
   pendingFilter = document.getElementById('pending-filter');
   const selectAllGalleryBtn = document.getElementById('select-all-gallery');
   const deleteSelectedGalleryBtn = document.getElementById('delete-selected-gallery');
+  const markPendingGalleryBtn = document.getElementById('mark-pending-gallery');
 
   // --- Dropzone / Upload Handling ---
   dropzone.addEventListener('dragover', e => {
@@ -285,6 +286,13 @@ function bindReviewUI() {
     if (!names.length) return showFeedback('No curated items selected.', 'error');
     if (!confirm(`Delete ${names.length} curated item(s)?`)) return;
     Promise.all(names.map(n => deleteImage(n)));
+  });
+
+  markPendingGalleryBtn?.addEventListener('click', () => {
+    const names = collectSelectedFrom(galleryList);
+    if (!names.length) return showFeedback('No curated items selected.', 'error');
+    if (!confirm(`Move ${names.length} curated item(s) back to pending?`)) return;
+    markImagesPending(names);
   });
 
   refreshButton?.addEventListener('click', async () => {
@@ -634,6 +642,29 @@ async function acceptImages(names) {
     renderDashboard(data);
   } catch {
     showFeedback('Failed to accept images.', 'error');
+  } finally {
+    hideBusy();
+  }
+}
+
+async function markImagesPending(names) {
+  showBusy("Marking items pending...");
+  try {
+    const res = await fetch('/admin/mark-pending', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images: names })
+    });
+    const data = await res.json();
+    if (data.errors?.length) {
+      const details = data.errors.map(e => `${e.name}: ${e.error}`).join(', ');
+      showFeedback(`Some items were not moved: ${details}`, 'error');
+    } else {
+      showFeedback(`Moved ${names.length} item(s) to pending.`);
+    }
+    renderDashboard(data);
+  } catch {
+    showFeedback('Failed to mark items pending.', 'error');
   } finally {
     hideBusy();
   }

@@ -117,18 +117,6 @@
           </div>
         </div>
 
-        <!-- Description -->
-        <div>
-          <label for="description" class="form-label">Description</label>
-          <div class="d-flex align-items-center gap-2">
-            <textarea class="form-control" id="description" name="description" rows="5">{{ metadata.description | e }}</textarea>
-            <div class="form-check">
-              <input class="form-check-input regen-field" type="checkbox" id="regen-description" data-field="description">
-              <label class="form-check-label small" for="regen-description">Regen</label>
-            </div>
-          </div>
-        </div>
-
         <!-- Caption -->
         <div>
           <label for="caption" class="form-label">Caption</label>
@@ -137,6 +125,18 @@
             <div class="form-check">
               <input class="form-check-input regen-field" type="checkbox" id="regen-caption" data-field="caption">
               <label class="form-check-label small" for="regen-caption">Regen</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label for="description" class="form-label">Description</label>
+          <div class="d-flex align-items-center gap-2">
+            <textarea class="form-control" id="description" name="description" rows="5">{{ metadata.description | e }}</textarea>
+            <div class="form-check">
+              <input class="form-check-input regen-field" type="checkbox" id="regen-description" data-field="description">
+              <label class="form-check-label small" for="regen-description">Regen</label>
             </div>
           </div>
         </div>
