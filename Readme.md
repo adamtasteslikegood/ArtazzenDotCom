@@ -93,6 +93,23 @@ docker run -p 8000:8000 artazzen-gallery
 ```
 The application will be accessible at `http://localhost:8000`.
 
+### Docker Compose + Caddy (reverse proxy)
+If you use the provided `docker-compose.yml` to run the app behind Caddy with TLS, pre-create the external image volume and then start the stack:
+```bash
+docker volume create artazzen_images
+docker compose up -d
+```
+The `artazzen_images` volume keeps your uploaded files and sidecars outside the container lifecycle; `docker compose down` will not remove it.
+
+Optional: seed the empty volume with your local images/sidecars before the first deploy:
+```bash
+docker run --rm \
+  -v artazzen_images:/data \
+  -v "$(pwd)/Static/images:/seed:ro" \
+  busybox sh -c "mkdir -p /data && cp -r /seed/. /data/"
+```
+This copies everything from `Static/images` into the Docker volume; future compose runs will reuse that data.
+
 ## Testing
 Run tests using pytest:
 ```bash

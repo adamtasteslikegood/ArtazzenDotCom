@@ -9,6 +9,7 @@ import time
 import textwrap
 from contextlib import suppress
 import re
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -1596,6 +1597,51 @@ def get_artwork_files():
     logger.info(f"Found {len(artwork)} artwork files.")
     return artwork
 
+# --- Collection helpers ---
+def _collection_folder(name: str) -> Path:
+    safe_name = _sanitize_filename(name)
+    return IMAGES_DIR / safe_name
+
+
+def _load_collection_images(collection_name: str) -> List[Dict[str, Any]]:
+    """Return images for a given collection (subdirectory of IMAGES_DIR)."""
+    folder = _collection_folder(collection_name)
+    if not folder.exists() or not folder.is_dir():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
+
+    items: List[Dict[str, Any]] = []
+    try:
+        for entry in sorted(folder.iterdir()):
+            if entry.is_file() and _allowed_image(entry.name):
+                metadata = _load_metadata(entry)
+                metadata.update(
+                    {
+                        "url": f"/static/images/{folder.name}/{entry.name}",
+                        "name": entry.name,
+                        "collection": folder.name,
+                    }
+                )
+                items.append(metadata)
+    except OSError as exc:
+        logger.error("Unable to read collection %s: %s", folder, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Collection unavailable",
+        )
+
+    if not items:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No images found in this collection")
+
+    items.sort(key=lambda item: item.get("detected_at") or 0, reverse=True)
+    return items
+
+
+def _pretty_collection_name(value: str) -> str:
+    cleaned = Path(_sanitize_filename(value)).stem
+    spaced = re.sub(r"[_-]+", " ", cleaned).strip()
+    return spaced.title() if spaced else cleaned
+
+
 # --- Routes ---
 
 
@@ -2299,6 +2345,36 @@ async def delete_image(request: Request, image_name: str) -> JSONResponse:
     )
 
 
+@app.get("/collections/{collection_name}", response_class=HTMLResponse)
+async def highlight_collection(request: Request, collection_name: str) -> HTMLResponse:
+    images = _load_collection_images(collection_name)
+    collection_title = _pretty_collection_name(collection_name)
+    return templates.TemplateResponse(
+        "highlight_collection_grid.html",
+        {
+            "request": request,
+            "collection_name": _sanitize_filename(collection_name),
+            "collection_title": collection_title,
+            "images": images,
+        },
+    )
+
+
+@app.get("/collections/{collection_name}/series", response_class=HTMLResponse)
+async def highlight_collection_series(request: Request, collection_name: str) -> HTMLResponse:
+    images = _load_collection_images(collection_name)
+    collection_title = _pretty_collection_name(collection_name)
+    return templates.TemplateResponse(
+        "highlight_collection_series.html",
+        {
+            "request": request,
+            "collection_name": _sanitize_filename(collection_name),
+            "collection_title": collection_title,
+            "images": images,
+        },
+    )
+
+
 @app.get("/artwork/{image_filename}", response_class=HTMLResponse)
 async def artwork_detail(request: Request, image_filename: str):
     """
@@ -2315,10 +2391,24 @@ async def artwork_detail(request: Request, image_filename: str):
     metadata = _load_metadata(image_path)
     image_url = f"/static/images/{filename}"
 
+    detected_raw = metadata.get("detected_at")
+    detected_display: Optional[str] = None
+    if isinstance(detected_raw, (int, float)):
+        try:
+            detected_display = (
+                datetime.fromtimestamp(detected_raw, tz=timezone.utc).strftime("%B %d, %Y")
+            )
+        except (OverflowError, OSError, ValueError):
+            detected_display = None
+    elif isinstance(detected_raw, str):
+        detected_display = detected_raw
+
     artwork_data = {
         "title": metadata.get("title", "Artwork"),
         "description": metadata.get("description", ""),
+        "caption": metadata.get("caption", ""),
         "image_url": image_url,
+        "detected_at": detected_display,
     }
 
     return templates.TemplateResponse(
