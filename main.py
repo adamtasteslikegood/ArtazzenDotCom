@@ -2619,13 +2619,13 @@ async def collection_artwork_detail(
             "collection_artwork_detail",
             collection_name=collection_name,
             image_name=prev_name,
-        ) + f"?view={back_view}"
+        ).include_query_params(view=back_view)
     if next_name:
         next_url = request.url_for(
             "collection_artwork_detail",
             collection_name=collection_name,
             image_name=next_name,
-        ) + f"?view={back_view}"
+        ).include_query_params(view=back_view)
 
     return templates.TemplateResponse(
         "artwork_detail.html",
