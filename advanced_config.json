@@ -1,5 +1,5 @@
 {
-  "log_level": "INFO",
+  "log_level": "DEBUG",
   "file_log": true,
   "file_log_level": "DEBUG",
   "ai_metadata_debug_dump": true,

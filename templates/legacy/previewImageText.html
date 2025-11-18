@@ -158,6 +158,12 @@
                     <button type="button" id="regen-image" class="button secondary" title="Request new AI metadata for selected fields (or all if none selected)">Regenerate metadata</button>
                 </div>
                 <div class="form-actions">
+                    {% if prev_url %}
+                        <a href="{{ prev_url }}" class="button secondary">&larr; Prev</a>
+                    {% endif %}
+                    {% if next_url %}
+                        <a href="{{ next_url }}" class="button secondary">Next &rarr;</a>
+                    {% endif %}
                     <button type="submit" name="action" value="save" class="button">OK</button>
                     <button type="submit" name="action" value="cancel" class="button secondary">Cancel</button>
                     <button type="submit" name="action" value="mark_unreviewed" class="button tertiary">Mark as pending</button>

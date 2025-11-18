@@ -10,7 +10,9 @@
 <body class="gallery-page detail-page">
     <div class="page-container">
         <header class="gallery-header detail-header">
-            <a href="/" class="detail-nav-link" aria-label="Return to gallery overview">⟵ Back to Gallery</a>
+            <a href="{{ back_url or '/' }}" class="detail-nav-link" aria-label="Return to previous view">
+                ⟵ {{ back_label or 'Back to Gallery' }}
+            </a>
             <h1 id="artwork-title">{{ artwork.title }}</h1>
             <p class="gallery-subtitle detail-subtitle">
                 {{ artwork.description or 'A closer look at the tones, gestures, and luminous textures that shape this piece.' }}
@@ -45,12 +47,22 @@
                         <span>Immersive texture study</span>
                         <span>Color-forward composition</span>
                     </div>
+                    {% if artwork.detected_at %}
+                    <p class="detail-meta-date">
+                        Detected on {{ artwork.detected_at }}
+                    </p>
+                    {% endif %}
                     <p class="detail-description">
                         {{ artwork.description or 'This piece invites you to explore the nuances of the artist’s palette—follow the gradients, the soft light, and the hidden gestures that reveal themselves slowly.' }}
                     </p>
                     <div class="detail-actions">
+                        {% if prev_url %}
+                        <a href="{{ prev_url }}" class="button secondary">⟵ Prev</a>
+                        {% endif %}
                         <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" class="button">Open full resolution</a>
-                        <a href="/" class="button secondary">Back to gallery</a>
+                        {% if next_url %}
+                        <a href="{{ next_url }}" class="button secondary">Next ⟶</a>
+                        {% endif %}
                     </div>
                 </article>
             </section>

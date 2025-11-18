@@ -1642,7 +1642,79 @@ def _pretty_collection_name(value: str) -> str:
     return spaced.title() if spaced else cleaned
 
 
+def _list_collections() -> List[Dict[str, Any]]:
+    """Return summary info for top-level collections."""
+    collections: List[Dict[str, Any]] = []
+    if IMAGES_DIR.exists() and IMAGES_DIR.is_dir():
+        try:
+            for entry in sorted(IMAGES_DIR.iterdir()):
+                if not entry.is_dir():
+                    continue
+                images = _load_collection_images(entry.name)
+                if not images:
+                    continue
+                first = images[0]
+                collections.append(
+                    {
+                        "name": entry.name,
+                        "title": _pretty_collection_name(entry.name),
+                        "count": len(images),
+                        "cover_url": first.get("url"),
+                    }
+                )
+        except HTTPException:
+            # _load_collection_images may raise HTTP errors; skip those folders here
+            pass
+        except OSError as exc:
+            logger.error("Unable to enumerate collections: %s", exc)
+
+    return collections
+
+
 # --- Routes ---
+
+
+@app.get("/collections", response_class=HTMLResponse)
+async def collections_index(request: Request) -> HTMLResponse:
+    """Public collections index."""
+    collections = _list_collections()
+    return templates.TemplateResponse(
+        "collections_index.html",
+        {
+            "request": request,
+            "collections": collections,
+            "gallery_title": "My Girlfriend's Artwork Gallery",
+        },
+    )
+
+
+@app.get("/admin/collections", response_class=HTMLResponse)
+async def admin_collections(request: Request) -> HTMLResponse:
+    """Admin view of collections."""
+    collections = _list_collections()
+    return templates.TemplateResponse(
+        "admin_collections.html",
+        {
+            "request": request,
+            "collections": collections,
+        },
+    )
+
+
+@app.get("/admin/collections/{collection_name}/manage", response_class=HTMLResponse)
+async def admin_collection_manage(request: Request, collection_name: str) -> HTMLResponse:
+    """Per-collection image management (AI + delete)."""
+    images = _load_collection_images(collection_name)
+    collection_title = _pretty_collection_name(collection_name)
+    return templates.TemplateResponse(
+        "admin_collection_manage.html",
+        {
+            "request": request,
+            "collection_name": _sanitize_filename(collection_name),
+            "collection_title": collection_title,
+            "images": images,
+        },
+    )
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -2039,6 +2111,68 @@ async def regenerate_ai_metadata(request: Request) -> JSONResponse:
     )
 
 
+@app.post("/admin/collections/{collection_name}/ai/regenerate", response_class=JSONResponse)
+async def regenerate_collection_ai_metadata(request: Request, collection_name: str) -> JSONResponse:
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    images = body.get("images") or []
+    force = bool(body.get("force", False))
+    fields = body.get("fields") or []
+    if isinstance(fields, list):
+        fields = [
+            str(f).strip().lower()
+            for f in fields
+            if str(f).strip().lower() in {"title", "description", "caption", "author", "tags"}
+        ]
+    else:
+        fields = []
+    if not isinstance(images, list) or not images:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No images provided")
+
+    folder = _collection_folder(collection_name)
+    updated: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+    for name in images:
+        fname = _sanitize_filename(str(name))
+        if not fname or not _allowed_image(fname):
+            errors.append({"name": str(name), "error": "Unsupported or invalid filename"})
+            continue
+        path = folder / fname
+        if not path.exists():
+            errors.append({"name": fname, "error": "File not found"})
+            continue
+        try:
+            meta = _load_metadata(path)
+            if force:
+                meta["title"] = ""
+                meta["description"] = ""
+                meta["caption"] = ""
+                meta["author"] = ""
+                meta["tags"] = []
+                meta["ai_generated"] = False
+            elif fields:
+                for f in fields:
+                    if f == "tags":
+                        meta["tags"] = []
+                    else:
+                        meta[f] = ""
+                meta["ai_generated"] = False
+            meta = _populate_missing_metadata(path, meta, force=True)
+            _write_sidecar(path, meta)
+            updated.append({"name": fname, "metadata": meta})
+        except Exception as exc:  # pragma: no cover - defensive
+            errors.append({"name": fname, "error": str(exc)})
+
+    return JSONResponse(
+        {
+            "updated": updated,
+            "errors": errors,
+        }
+    )
+
+
 @app.post("/admin/upload")
 async def upload_images(
     request: Request,
@@ -2146,6 +2280,36 @@ async def preview_image_metadata(request: Request, image_name: str) -> HTMLRespo
     # but avoid re-calling OpenAI after a successful enrichment.
     metadata = _populate_missing_metadata(image_path, _load_metadata(image_path))
 
+    dashboard = _gather_admin_dashboard_data(
+        allow_ai_enrichment=False,
+        allow_sidecar_creation=True,
+    )
+    pending_list = dashboard["pending"]
+    reviewed_list = dashboard["reviewed"]
+
+    def _find_neighbors(items: List[Dict[str, Any]], name: str) -> Dict[str, Optional[str]]:
+        names = [item.get("name") for item in items]
+        if name not in names:
+            return {"prev": None, "next": None}
+        idx = names.index(name)
+        prev_name = names[idx - 1] if idx > 0 else None
+        next_name = names[idx + 1] if idx < len(names) - 1 else None
+        return {"prev": prev_name, "next": next_name}
+
+    neighbors = _find_neighbors(pending_list, filename)
+    in_pending = neighbors["prev"] is not None or neighbors["next"] is not None or any(
+        item.get("name") == filename for item in pending_list
+    )
+    if not in_pending:
+        neighbors = _find_neighbors(reviewed_list, filename)
+
+    prev_url: Optional[str] = None
+    next_url: Optional[str] = None
+    if neighbors["prev"]:
+        prev_url = request.url_for("preview_image_metadata", image_name=neighbors["prev"])
+    if neighbors["next"]:
+        next_url = request.url_for("preview_image_metadata", image_name=neighbors["next"])
+
     return templates.TemplateResponse(
         "previewImageText.html",
         {
@@ -2154,6 +2318,8 @@ async def preview_image_metadata(request: Request, image_name: str) -> HTMLRespo
             "image_url": f"/static/images/{filename}",
             "metadata": metadata,
             "review_url": request.url_for("review_added_files"),
+            "prev_url": prev_url,
+            "next_url": next_url,
         },
     )
 
@@ -2345,6 +2511,39 @@ async def delete_image(request: Request, image_name: str) -> JSONResponse:
     )
 
 
+@app.delete(
+    "/admin/collections/{collection_name}/image/{image_name}",
+    response_class=JSONResponse,
+)
+async def delete_collection_image(
+    request: Request,
+    collection_name: str,
+    image_name: str,
+) -> JSONResponse:
+    filename = _sanitize_filename(image_name)
+    if not filename or not _allowed_image(filename):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+
+    folder = _collection_folder(collection_name)
+    image_path = folder / filename
+    json_path = image_path.with_suffix(".json")
+
+    if not image_path.exists() and not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+
+    try:
+        if image_path.exists():
+            image_path.unlink()
+    except OSError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+    with suppress(OSError):
+        if json_path.exists():
+            json_path.unlink()
+
+    return JSONResponse({"message": f"Removed {filename} from {collection_name}"})
+
+
 @app.get("/collections/{collection_name}", response_class=HTMLResponse)
 async def highlight_collection(request: Request, collection_name: str) -> HTMLResponse:
     images = _load_collection_images(collection_name)
@@ -2356,6 +2555,87 @@ async def highlight_collection(request: Request, collection_name: str) -> HTMLRe
             "collection_name": _sanitize_filename(collection_name),
             "collection_title": collection_title,
             "images": images,
+        },
+    )
+
+
+@app.get("/collections/{collection_name}/artwork/{image_name}", response_class=HTMLResponse)
+async def collection_artwork_detail(
+    request: Request,
+    collection_name: str,
+    image_name: str,
+) -> HTMLResponse:
+    folder = _collection_folder(collection_name)
+    filename = _sanitize_filename(image_name)
+    image_path = folder / filename
+    if not image_path.exists() or not _allowed_image(filename):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
+
+    images = _load_collection_images(collection_name)
+    current_name = filename
+    prev_name: Optional[str] = None
+    next_name: Optional[str] = None
+    names = [item.get("name") for item in images]
+    if current_name in names:
+        idx = names.index(current_name)
+        if idx > 0:
+            prev_name = names[idx - 1]
+        if idx < len(names) - 1:
+            next_name = names[idx + 1]
+
+    metadata = _load_metadata(image_path)
+    detected_raw = metadata.get("detected_at")
+    detected_display: Optional[str] = None
+    if isinstance(detected_raw, (int, float)):
+        try:
+            detected_display = (
+                datetime.fromtimestamp(detected_raw, tz=timezone.utc).strftime("%B %d, %Y")
+            )
+        except (OverflowError, OSError, ValueError):
+            detected_display = None
+    elif isinstance(detected_raw, str):
+        detected_display = detected_raw
+
+    artwork_data = {
+        "title": metadata.get("title", "Artwork"),
+        "description": metadata.get("description", ""),
+        "caption": metadata.get("caption", ""),
+        "image_url": f"/static/images/{folder.name}/{filename}",
+        "detected_at": detected_display,
+    }
+
+    back_view = request.query_params.get("view") or "grid"
+    if back_view == "series":
+        back_url = request.url_for("highlight_collection_series", collection_name=collection_name)
+        back_label = f"Back to { _pretty_collection_name(collection_name) } series"
+    else:
+        back_url = request.url_for("highlight_collection", collection_name=collection_name)
+        back_label = f"Back to { _pretty_collection_name(collection_name) }"
+
+    prev_url: Optional[str] = None
+    next_url: Optional[str] = None
+    if prev_name:
+        prev_url = request.url_for(
+            "collection_artwork_detail",
+            collection_name=collection_name,
+            image_name=prev_name,
+        ) + f"?view={back_view}"
+    if next_name:
+        next_url = request.url_for(
+            "collection_artwork_detail",
+            collection_name=collection_name,
+            image_name=next_name,
+        ) + f"?view={back_view}"
+
+    return templates.TemplateResponse(
+        "artwork_detail.html",
+        {
+            "request": request,
+            "artwork": artwork_data,
+            "back_url": back_url,
+            "back_label": back_label,
+            "prev_url": prev_url,
+            "next_url": next_url,
         },
     )
 
@@ -2411,9 +2691,30 @@ async def artwork_detail(request: Request, image_filename: str):
         "detected_at": detected_display,
     }
 
+    # Compute simple prev/next within the main gallery ordering
+    items = get_artwork_files()
+    names = [item.get("name") for item in items]
+    prev_url: Optional[str] = None
+    next_url: Optional[str] = None
+    if filename in names:
+        idx = names.index(filename)
+        if idx > 0:
+            prev_name = names[idx - 1]
+            prev_url = request.url_for("artwork_detail", image_filename=prev_name)
+        if idx < len(names) - 1:
+            next_name = names[idx + 1]
+            next_url = request.url_for("artwork_detail", image_filename=next_name)
+
     return templates.TemplateResponse(
         "artwork_detail.html",
-        {"request": request, "artwork": artwork_data},
+        {
+            "request": request,
+            "artwork": artwork_data,
+            "back_url": request.url_for("read_root"),
+            "back_label": "Back to Gallery",
+            "prev_url": prev_url,
+            "next_url": next_url,
+        },
     )
 
 

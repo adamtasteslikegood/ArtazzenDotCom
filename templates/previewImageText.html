@@ -191,7 +191,13 @@
 
         <!-- Form Actions -->
         <div class="d-flex flex-wrap gap-2 align-items-center">
-          <button type="submit" name="action" value="save" class="btn btn-dark">OK</button>
+          {% if prev_url %}
+            <a href="{{ prev_url }}" class="btn btn-outline-secondary">&larr; Prev</a>
+          {% endif %}
+          {% if next_url %}
+            <a href="{{ next_url }}" class="btn btn-outline-secondary">Next &rarr;</a>
+          {% endif %}
+          <button type="submit" name="action" value="save" class="btn btn-dark ms-auto">OK</button>
           <button type="submit" name="action" value="cancel" class="btn btn-outline-secondary">Cancel</button>
           <button type="submit" name="action" value="mark_unreviewed" class="btn btn-outline-warning">Mark as pending</button>
           <button type="button" id="delete-image" class="btn btn-outline-danger ms-auto">Delete from gallery</button>

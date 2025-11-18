@@ -15,9 +15,11 @@ A focused sequence from "{{ collection_title }}" — follow the progression one 
       <div class="series-track">
         {% for item in images %}
           <article class="series-slide" data-index="{{ loop.index0 }}">
-            <div class="frame series-frame">
-              <img src="{{ item.url }}" alt="{{ item.title or item.name }}">
-            </div>
+            <a href="{{ url_for('collection_artwork_detail', collection_name=collection_name, image_name=item.name) }}?view=series" class="frame-link">
+              <div class="frame series-frame">
+                <img src="{{ item.url }}" alt="{{ item.title or item.name }}">
+              </div>
+            </a>
             <div class="plaque series-plaque">
               <p class="plaque-title">{{ item.title or item.name }}</p>
               {% if item.caption %}

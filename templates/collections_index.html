@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Collections — {{ gallery_title or 'Artwork Gallery' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/style-nasturtium-lagoon 2.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
+</head>
+<body class="gallery-page">
+  <div class="page-container">
+    <header class="gallery-header">
+      <a href="{{ url_for('read_root') }}" class="detail-nav-link" aria-label="Return to gallery">⟵ Back to Gallery</a>
+      <h1>Collections</h1>
+      <p class="gallery-subtitle">
+        Curated sub-galleries that group works by theme, series, or mood.
+      </p>
+    </header>
+
+    <main class="gallery-main">
+      {% if collections %}
+        <div class="gallery-grid">
+          {% for coll in collections %}
+            <div class="artwork-item">
+              <a href="{{ url_for('highlight_collection', collection_name=coll.name) }}" title="Open collection: {{ coll.title }}">
+                {% if coll.cover_url %}
+                  <img src="{{ coll.cover_url }}" alt="{{ coll.title }}" loading="lazy">
+                {% else %}
+                  <img src="https://placehold.co/250x200/EEE/CCC?text=Collection" alt="{{ coll.title }}">
+                {% endif %}
+              </a>
+              <p class="artwork-title">{{ coll.title }}</p>
+              {% if coll.count %}
+                <p class="artwork-caption">{{ coll.count }} piece{{ coll.count == 1 and '' or 's' }}</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="no-artwork-message">
+          No collections detected yet. Create a subfolder inside <code>Static/images</code> and add images to see it here.
+        </p>
+      {% endif %}
+    </main>
+
+    <footer>
+      <p>Artwork Gallery · Curated collections</p>
+    </footer>
+  </div>
+</body>
+</html>
+
