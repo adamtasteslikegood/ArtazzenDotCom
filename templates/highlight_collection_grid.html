@@ -1,0 +1,35 @@
+{% extends "highlight_collection_base.html" %}
+
+{% block collection_subtitle %}
+An intimate wall of work from "{{ collection_title }}", framed for slower looking.
+{% endblock %}
+
+{% block collection_actions %}
+  <a class="collection-link" href="{{ url_for('highlight_collection_series', collection_name=collection_name) }}">View as series</a>
+{% endblock %}
+
+{% block collection_content %}
+  {% if images %}
+    <section class="collection-grid row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4" aria-label="Collection grid">
+      {% for item in images %}
+        <div class="col d-flex">
+          <article class="frame-card w-100">
+            <a href="{{ url_for('collection_artwork_detail', collection_name=collection_name, image_name=item.name) }}?view=grid" class="frame-link">
+              <div class="frame">
+                <img src="{{ item.url }}" alt="{{ item.title or item.name }}" loading="lazy">
+              </div>
+            </a>
+            <div class="plaque">
+              <p class="plaque-title">{{ item.title or item.name }}</p>
+              {% if item.caption %}
+                <p class="plaque-caption">{{ item.caption }}</p>
+              {% endif %}
+            </div>
+          </article>
+        </div>
+      {% endfor %}
+    </section>
+  {% else %}
+    <p class="no-artwork-message">No images found in this collection.</p>
+  {% endif %}
+{% endblock %}

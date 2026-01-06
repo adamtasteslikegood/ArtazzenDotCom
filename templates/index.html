@@ -4,16 +4,39 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ gallery_title }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+{#    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">#}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style-nasturtium-lagoon 2.css') }}">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
 </head>
-<body>
+<body class="gallery-page">
 
-    <header>
-        <h1>{{ gallery_title }}</h1>
+    <div class="page-container">
+    <header class="gallery-header">
+        <nav class="detail-actions" aria-label="Primary navigation" style="justify-content: flex-end; margin-bottom: 0.75rem;">
+            <a href="/collections" class="button secondary">Collections</a>
+        </nav>
+        <h1>
+            {{ gallery_title }}
+            <span class="info-tip" aria-label="Public gallery — click any artwork to view details and full text." title="Public gallery — click any artwork to view details and full text.">i</span>
+        </h1>
+        <p class="gallery-subtitle">A living collection of luminous works, inked stories, and chromatic experiments.</p>
+        <section class="hero-panel" aria-label="Gallery introduction">
+            <div>
+                <p class="hero-tagline">Discover pieces that celebrate bold gestures, quiet textures, and the rhythm of color.</p>
+                <p class="hero-description">
+                    Each canvas in this gallery carries the character of its maker—layered hues, unexpected silhouettes, and the
+                    kind of light that lingers. Wander through and let the highlights lead you into their own narratives.
+                </p>
+            </div>
+            <div class="hero-hints">
+                <span title="Highlights chosen for balance and mood">✨ Curated moments</span>
+                <span title="Includes painting, illustration, and experimental media">🎨 Mixed media focus</span>
+                <span title="Explores soft gradients, moonlit tones, and night color">🌓 Dreamlike palettes</span>
+            </div>
+        </section>
     </header>
 
-    <main>
+    <main class="gallery-main">
         {% if artwork_files %}
             <div class="gallery-grid">
                 {% for artwork in artwork_files %}
@@ -25,8 +48,11 @@
                                  onerror="this.onerror=null; this.src='https://placehold.co/250x200/EEE/CCC?text=Image+Not+Found'; this.alt='Image not found';">
                         </a>
                         <p class="artwork-title">{{ artwork.title }}</p>
+                        {% if artwork.caption %}
+                        <p class="artwork-caption">{{ artwork.caption }}</p>
+                        {% endif %}
                         {% if artwork.description %}
-                        <p class="artwork-description">{{ artwork.description }}</p>
+                        <p class="artwork-description">{{ artwork.description | truncate(220, True, '...') }}</p>
                         {% endif %}
                     </div>
                 {% endfor %}
@@ -41,8 +67,9 @@
     </main>
 
     <footer>
-        <p>Artwork Gallery</p>
+        <p>Artwork Gallery · Crafted for the curious eye</p>
     </footer>
+    </div>
 
 </body>
 </html>

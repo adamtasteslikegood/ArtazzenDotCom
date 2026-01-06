@@ -1,0 +1,14 @@
+# Public gallery
+gallery.artazzen.com {
+    reverse_proxy app:8000
+}
+
+# Admin interface
+admin.artazzen.com {
+    reverse_proxy app:8000
+}
+
+# Optional: app.artazzen.com just redirects to gallery
+app.artazzen.com {
+    redir https://gallery.artazzen.com{uri}
+}

@@ -1,0 +1,56 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Collections · Admin{% endblock %}
+{% block page_heading %}Collections{% endblock %}
+
+{% block content %}
+<section class="card p-4 shadow-sm mb-4">
+  <h2 class="h5 mb-3">Collection overview</h2>
+  <p class="text-muted mb-3">
+    These collections map to subfolders inside <code>Static/images</code>. Use the links below to open each collection in the public gallery.
+  </p>
+
+  {% if collections %}
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead>
+        <tr>
+          <th scope="col">Collection</th>
+          <th scope="col" class="text-center">Images</th>
+          <th scope="col">Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for coll in collections %}
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-3">
+                {% if coll.cover_url %}
+                  <img src="{{ coll.cover_url }}" alt="{{ coll.title }}" class="rounded border" style="width: 56px; height: 42px; object-fit: cover;">
+                {% endif %}
+                <div>
+                  <div class="fw-semibold">{{ coll.title }}</div>
+                  <div class="small text-muted">{{ coll.name }}</div>
+                </div>
+              </div>
+            </td>
+            <td class="text-center">
+              <span class="badge text-bg-secondary">{{ coll.count }}</span>
+            </td>
+            <td>
+              <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url_for('highlight_collection', collection_name=coll.name) }}" target="_blank" class="btn btn-outline-primary btn-sm">Open wall</a>
+                <a href="{{ url_for('highlight_collection_series', collection_name=coll.name) }}" target="_blank" class="btn btn-outline-secondary btn-sm">Open series</a>
+                <a href="{{ url_for('admin_collection_manage', collection_name=coll.name) }}" class="btn btn-outline-dark btn-sm">Manage</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="mb-0 text-muted">No collections found. Create a subfolder under <code>Static/images</code> and add images to see it here.</p>
+  {% endif %}
+</section>
+{% endblock %}

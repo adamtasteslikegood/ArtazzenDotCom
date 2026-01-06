@@ -1,88 +1,362 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review {{ metadata.title }} &mdash; Artwork Admin</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  
+  <title>Review {{ metadata.title }} &mdash; Artwork Admin</title>
+  
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+
+
+
+  <link rel="stylesheet" href="{{ url_for('static', path='css/variables.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}">
+  
 </head>
 <body class="admin-page">
-    <header>
-        <h1>Review metadata</h1>
-        <nav class="admin-nav">
-            <a href="{{ review_url }}" class="button secondary">Back to pending list</a>
-            <a href="/" class="button secondary">View Public Gallery</a>
-        </nav>
-    </header>
 
-    <main class="admin-container single">
-        <section class="admin-panel">
-            <h2>{{ metadata.title }}</h2>
-            <div class="preview-wrapper">
-                <img src="{{ image_url }}" alt="Preview of {{ metadata.title }}" class="preview-image">
-                <dl class="preview-meta">
-                    <div>
-                        <dt>Filename</dt>
-                        <dd>{{ image_name }}</dd>
-                    </div>
-                    <div>
-                        <dt>Image URL</dt>
-                        <dd><a href="{{ image_url }}" target="_blank" rel="noopener">{{ image_url }}</a></dd>
-                    </div>
-                    <div>
-                        <dt>AI status</dt>
-                        <dd class="ai-status">
-                            {% if metadata.get('ai_generated') %}
-                                <span class="badge">AI generated</span>
-                            {% else %}
-                                <span class="badge secondary">AI pending</span>
-                            {% endif %}
-                            {% set ai = metadata.get('ai_details') or {} %}
-                            {% set ai_time = ai.get('created') or ai.get('attempted_at') or metadata.get('detected_at') %}
-                            {% if ai_time %}
-                                <span class="timestamp" data-ts="{{ ai_time }}"></span>
-                            {% endif %}
-                        </dd>
-                    </div>
-                </dl>
+  <!-- Busy Overlay (aria-hidden based, consistent with admin pages) -->
+  <div id="busy" class="busy-overlay" aria-hidden="true">
+    <div class="busy-indicator">Working…</div>
+  </div>
+
+  <!-- Header -->
+  <header class="container py-4 border-bottom">
+    <div class="d-flex justify-content-between flex-wrap align-items-center">
+      <h1 class="h4 mb-3 mb-md-0">Review Metadata</h1>
+      <nav class="d-flex gap-2 flex-wrap">
+        <a href="{{ review_url }}" class="btn btn-outline-secondary">Back to pending list</a>
+        <a href="/" class="btn btn-outline-secondary">Public Gallery</a>
+        <a href="/admin" class="btn btn-outline-secondary">Dashboard</a>
+        <a href="/admin/advanced" class="btn btn-outline-secondary">Advanced</a>
+        <button type="button" id="theme-toggle" data-theme-toggle class="btn btn-outline-secondary" title="Toggle light/dark" aria-pressed="false">🌙 Dark</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="container my-4">
+
+    <!-- Image Preview Panel -->
+    <section class="card p-4 shadow-sm mb-4">
+      <h2 class="h5 mb-4">{{ metadata.title }}</h2>
+
+      <div class="row g-4 align-items-start">
+        <!-- Image -->
+        <div class="col-md-5">
+          <img src="{{ image_url }}" alt="Preview of {{ metadata.title }}" class="img-fluid rounded border">
+        </div>
+
+        <!-- Metadata -->
+        <div class="col-md-7">
+          <dl class="row">
+            <dt class="col-sm-4">Filename</dt>
+            <dd class="col-sm-8">{{ image_name }}</dd>
+
+            <dt class="col-sm-4">Image URL</dt>
+            <dd class="col-sm-8">
+              <a href="{{ image_url }}" target="_blank" rel="noopener">{{ image_url }}</a>
+            </dd>
+
+            <dt class="col-sm-4">AI Status</dt>
+            <dd class="col-sm-8 d-flex flex-wrap gap-2 align-items-center">
+              {% if metadata.get('ai_generated') %}
+                <span class="badge bg-secondary">AI generated</span>
+              {% else %}
+                <span class="badge bg-light text-dark border">AI pending</span>
+              {% endif %}
+              {% set ai = metadata.get('ai_details') or {} %}
+              {% set ai_time = ai.get('created') or ai.get('attempted_at') or metadata.get('detected_at') %}
+              {% if ai_time %}
+                <span class="text-muted small timestamp" data-ts="{{ ai_time }}"></span>
+              {% endif %}
+            </dd>
+
+            <dt class="col-sm-4">Caption</dt>
+            <dd class="col-sm-8" data-field="caption">{{ metadata.caption or '—' }}</dd>
+
+            <dt class="col-sm-4">Author</dt>
+            <dd class="col-sm-8" data-field="author">{{ metadata.author or '—' }}</dd>
+
+            <dt class="col-sm-4">Tags</dt>
+            <dd class="col-sm-8" data-field="tags">
+              {% if metadata.tags %}
+                {{ metadata.tags | join(', ') }}
+              {% else %}
+                —
+              {% endif %}
+            </dd>
+
+            <dt class="col-sm-4">Copyright</dt>
+            <dd class="col-sm-8" data-field="copyright">{{ metadata.copyright or '—' }}</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <!-- Metadata Form Panel -->
+    <section class="card p-4 shadow-sm">
+      <h2 class="h5 mb-3">
+        Edit text for this image
+        <span class="ms-2 text-muted small" title="Edit fields below to customize what visitors see. Saving updates the JSON sidecar.">ℹ️</span>
+      </h2>
+
+      <p class="text-muted small mb-4">Update the fields below to control what appears in the public gallery. Saving will update or create the JSON sidecar.</p>
+
+      <form class="vstack gap-4 metadata-form" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
+        <!-- Title -->
+        <div>
+          <label for="title" class="form-label">Title</label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="text" class="form-control" id="title" name="title" value="{{ metadata.title | e }}" required>
+            <div class="form-check">
+              <input class="form-check-input regen-field" type="checkbox" id="regen-title" data-field="title">
+              <label class="form-check-label small" for="regen-title">Regen</label>
             </div>
-        </section>
+          </div>
+        </div>
 
-        <section class="admin-panel">
-            <h2>Edit text for this image</h2>
-            <p class="panel-description">Update the fields below to control the title and description that accompany the artwork in the public gallery. Saving will also update or create the JSON sidecar file.</p>
-            <form class="metadata-form" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
-                <div class="form-field">
-                    <label for="title">Title</label>
-                    <input type="text" id="title" name="title" value="{{ metadata.title | e }}" required>
-                </div>
-                <div class="form-field">
-                    <label for="description">Description</label>
-                    <textarea id="description" name="description" rows="6" placeholder="Describe the story, medium, or inspiration for this piece.">{{ metadata.description | e }}</textarea>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" name="action" value="save" class="button">OK</button>
-                    <button type="submit" name="action" value="cancel" class="button secondary">Cancel</button>
-                </div>
-            </form>
-        </section>
-    </main>
+        <!-- Caption -->
+        <div>
+          <label for="caption" class="form-label">Caption</label>
+          <div class="d-flex align-items-center gap-2">
+            <textarea class="form-control" id="caption" name="caption" rows="2">{{ metadata.caption | e }}</textarea>
+            <div class="form-check">
+              <input class="form-check-input regen-field" type="checkbox" id="regen-caption" data-field="caption">
+              <label class="form-check-label small" for="regen-caption">Regen</label>
+            </div>
+          </div>
+        </div>
 
-    <footer>
-        <p>Artwork Gallery Administration</p>
-    </footer>
+        <!-- Description -->
+        <div>
+          <label for="description" class="form-label">Description</label>
+          <div class="d-flex align-items-center gap-2">
+            <textarea class="form-control" id="description" name="description" rows="5">{{ metadata.description | e }}</textarea>
+            <div class="form-check">
+              <input class="form-check-input regen-field" type="checkbox" id="regen-description" data-field="description">
+              <label class="form-check-label small" for="regen-description">Regen</label>
+            </div>
+          </div>
+        </div>
 
-    <script>
-    // Format any server-rendered timestamps on this page
+        <!-- Author -->
+        <div>
+          <label for="author" class="form-label">Author</label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="text" class="form-control" id="author" name="author" value="{{ metadata.author | e }}">
+            <div class="form-check">
+              <input class="form-check-input regen-field" type="checkbox" id="regen-author" data-field="author">
+              <label class="form-check-label small" for="regen-author">Regen</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Copyright -->
+        <div>
+          <label for="copyright" class="form-label">Copyright</label>
+          <input type="text" class="form-control" id="copyright" name="copyright"
+                 value="{{ metadata.copyright | e }}"
+                 placeholder="© 2024 Jane Doe">
+        </div>
+
+        <!-- Tags -->
+        <div>
+          <label for="tags" class="form-label">Tags</label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="text" class="form-control" id="tags" name="tags" value="{{ metadata.tags | join(', ') | e }}">
+            <div class="form-check">
+              <input class="form-check-input regen-field" type="checkbox" id="regen-tags" data-field="tags">
+              <label class="form-check-label small" for="regen-tags">Regen</label>
+            </div>
+          </div>
+          <small class="text-muted">Separate tags with commas.</small>
+        </div>
+
+        <!-- Force Overwrite -->
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="detail-force">
+          <label class="form-check-label" for="detail-force">
+            Force overwrite existing text when regenerating
+          </label>
+        </div>
+
+        <!-- Regenerate Button -->
+        <div>
+          <button type="button" id="regen-image" class="btn btn-outline-primary w-100">
+            Regenerate metadata
+          </button>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          {% if prev_url %}
+            <a href="{{ prev_url }}" class="btn btn-outline-secondary">&larr; Prev</a>
+          {% endif %}
+          {% if next_url %}
+            <a href="{{ next_url }}" class="btn btn-outline-secondary">Next &rarr;</a>
+          {% endif %}
+          <button type="submit" name="action" value="save" class="btn btn-dark ms-auto">OK</button>
+          <button type="submit" name="action" value="cancel" class="btn btn-outline-secondary">Cancel</button>
+          <button type="submit" name="action" value="mark_unreviewed" class="btn btn-outline-warning">Mark as pending</button>
+          <button type="button" id="delete-image" class="btn btn-outline-danger ms-auto">Delete from gallery</button>
+        </div>
+
+        <!-- Feedback -->
+        <p id="detail-feedback" class="text-danger small mt-3" hidden></p>
+      </form>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="text-center py-4 border-top text-muted small">
+    Artwork Gallery Administration
+  </footer>
+
+  <!-- Optional script injection -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
+  <script src="{{ url_for('static', path='js/admin.js') }}" defer></script>
+  <script>
+    // Your original JS for timestamps, busy overlay, form handling remains here
+    function showBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','false'); }
+    function hideBusy(){ const el=document.getElementById('busy'); if(el) el.setAttribute('aria-hidden','true'); }
     (function () {
-        document.querySelectorAll('.ai-status .timestamp[data-ts]')
-            .forEach((el) => {
-                const ts = parseFloat(el.getAttribute('data-ts'));
-                if (!isNaN(ts)) {
-                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+        const timestampEls = document.querySelectorAll('.timestamp[data-ts]');
+        timestampEls.forEach((el) => {
+            const ts = parseFloat(el.getAttribute('data-ts'));
+            if (!isNaN(ts)) {
+                el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+            }
+        });
+
+        const regenButton = document.getElementById('regen-image');
+        const forceToggle = document.getElementById('detail-force');
+        const feedback = document.getElementById('detail-feedback');
+        const imageName = {{ image_name | tojson }};
+        const reviewUrl = {{ review_url | string | tojson }};
+
+        const titleInput = document.getElementById('title');
+        const descriptionInput = document.getElementById('description');
+        const captionInput = document.getElementById('caption');
+        const authorInput = document.getElementById('author');
+        const copyrightInput = document.getElementById('copyright');
+        const tagsInput = document.getElementById('tags');
+
+        const detailFields = {
+            caption: document.querySelector('[data-field="caption"]'),
+            author: document.querySelector('[data-field="author"]'),
+            tags: document.querySelector('[data-field="tags"]'),
+            copyright: document.querySelector('[data-field="copyright"]'),
+        };
+
+        function setFeedback(message, isError = false) {
+            feedback.textContent = message;
+            feedback.hidden = false;
+            feedback.classList.remove('error', 'success');
+            feedback.classList.toggle('error', isError);
+            feedback.classList.toggle('success', !isError);
+        }
+
+        function updateDetailField(key, value) {
+            const target = detailFields[key];
+            if (!target) return;
+            if (Array.isArray(value)) {
+                target.textContent = value.length ? value.join(', ') : '—';
+            } else {
+                target.textContent = value ? value : '—';
+            }
+        }
+
+        async function regenerateMetadata() {
+            setFeedback('Regenerating metadata…');
+            const prevDisabled = regenButton.disabled;
+            regenButton.disabled = true;
+            showBusy();
+            try {
+                const selectedFields = Array.from(document.querySelectorAll('.regen-field:checked'))
+                    .map((el) => el.getAttribute('data-field'))
+                    .filter(Boolean);
+                const response = await fetch('/admin/ai/regenerate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ images: [imageName], force: !!forceToggle?.checked, fields: selectedFields }),
+                });
+                if (!response.ok) {
+                    throw new Error('Request failed');
+                }
+                const data = await response.json();
+                const match = (data.updated || []).find((item) => item.name === imageName);
+                if (!match || !match.metadata) {
+                    setFeedback('Regeneration finished but no metadata was returned.', true);
+                    return;
+                }
+                const meta = match.metadata;
+                if (meta.title) {
+                    titleInput.value = meta.title;
+                }
+                if (meta.description) {
+                    descriptionInput.value = meta.description;
+                }
+                if (meta.caption !== undefined) {
+                    captionInput.value = meta.caption || '';
+                    updateDetailField('caption', meta.caption || '');
+                }
+                if (meta.author !== undefined) {
+                    authorInput.value = meta.author || '';
+                    updateDetailField('author', meta.author || '');
+                }
+                if (meta.copyright !== undefined) {
+                    copyrightInput.value = meta.copyright || '';
+                    updateDetailField('copyright', meta.copyright || '');
+                }
+                if (meta.tags !== undefined) {
+                    const tags = Array.isArray(meta.tags) ? meta.tags : [];
+                    tagsInput.value = tags.join(', ');
+                    updateDetailField('tags', tags);
+                }
+                setFeedback('Metadata regenerated. Review and save to keep these changes.');
+            } catch (error) {
+                console.error(error);
+                setFeedback('Unable to regenerate metadata at this time.', true);
+            } finally {
+                regenButton.disabled = prevDisabled;
+                hideBusy();
+            }
+        }
+
+        if (regenButton) {
+            regenButton.addEventListener('click', regenerateMetadata);
+        }
+
+        const deleteButton = document.getElementById('delete-image');
+        if (deleteButton) {
+            deleteButton.addEventListener('click', async () => {
+                if (!window.confirm('Delete this image from the gallery? This cannot be undone.')) {
+                    return;
+                }
+                showBusy();
+                try {
+                    const response = await fetch(`/admin/image/${encodeURIComponent(imageName)}`, { method: 'DELETE' });
+                    if (!response.ok) {
+                        throw new Error('Delete failed');
+                    }
+                    await response.json();
+                    window.location.href = reviewUrl;
+                } catch (error) {
+                    console.error(error);
+                    setFeedback('Unable to delete this image.', true);
+                    hideBusy();
                 }
             });
+        }
+
+        // Show busy while submitting the form
+        const form = document.querySelector('.metadata-form');
+        if (form){
+            form.addEventListener('submit', ()=>{ showBusy(); });
+        }
     })();
-    </script>
+  </script>
 </body>
 </html>

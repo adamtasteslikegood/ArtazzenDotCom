@@ -1,3 +1,35 @@
+# API keys and secrets
 /my_OpenAI_APIkey.py
+
+# Image directories
 /new_app/static/images/
 /Static/images/
+
+# Virtual environments
+.venv*/
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+/logs/
+
+# IDE
+.idea/
+
+# OS files
+.DS_Store
+
+# Lock files
+/.watcher.lock
+/.migration.lock
+/.sidecar.slot.*
+
+# Local temporary artifacts
+/.admin.html
+.admin.html
+.Dockerfile.swp
+Static/.DS_Store

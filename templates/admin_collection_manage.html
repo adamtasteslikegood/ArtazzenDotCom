@@ -1,0 +1,184 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Manage {{ collection_title }} · Admin{% endblock %}
+{% block page_heading %}Manage Collection: {{ collection_title }}{% endblock %}
+
+{% block content %}
+<section class="card p-4 shadow-sm mb-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+    <div>
+      <h2 class="h5 mb-1">{{ collection_title }}</h2>
+      <p class="small text-muted mb-0">Folder: <code>{{ collection_name }}</code> · {{ images|length }} image{{ images|length == 1 and '' or 's' }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('highlight_collection', collection_name=collection_name) }}" target="_blank" class="btn btn-outline-primary btn-sm">Open wall</a>
+      <a href="{{ url_for('highlight_collection_series', collection_name=collection_name) }}" target="_blank" class="btn btn-outline-secondary btn-sm">Open series</a>
+      <a href="{{ url_for('admin_collections') }}" class="btn btn-outline-secondary btn-sm">Back to collections</a>
+    </div>
+  </div>
+
+  <div class="border rounded-3 p-3 mb-3 bg-light">
+    <div class="row g-3 align-items-center">
+      <div class="col-12 col-md-auto">
+        <span class="fw-semibold d-block mb-1">AI fields</span>
+        <div class="d-flex flex-wrap gap-2">
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input collection-regen-field" type="checkbox" id="coll-regen-title" value="title" checked>
+            <label class="form-check-label" for="coll-regen-title">Title</label>
+          </div>
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input collection-regen-field" type="checkbox" id="coll-regen-description" value="description" checked>
+            <label class="form-check-label" for="coll-regen-description">Description</label>
+          </div>
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input collection-regen-field" type="checkbox" id="coll-regen-caption" value="caption" checked>
+            <label class="form-check-label" for="coll-regen-caption">Caption</label>
+          </div>
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input collection-regen-field" type="checkbox" id="coll-regen-author" value="author">
+            <label class="form-check-label" for="coll-regen-author">Author</label>
+          </div>
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input collection-regen-field" type="checkbox" id="coll-regen-tags" value="tags">
+            <label class="form-check-label" for="coll-regen-tags">Tags</label>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-auto">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="coll-force-overwrite">
+          <label class="form-check-label" for="coll-force-overwrite">Force overwrite existing text</label>
+        </div>
+      </div>
+      <div class="col-12 col-md d-flex flex-wrap gap-2 justify-content-md-end">
+        <button type="button" id="coll-select-all" class="btn btn-outline-secondary btn-sm">Select all</button>
+        <button type="button" id="coll-regen-selected" class="btn btn-outline-primary btn-sm">Regenerate selected</button>
+        <button type="button" id="coll-delete-selected" class="btn btn-outline-danger btn-sm">Delete selected</button>
+      </div>
+    </div>
+  </div>
+
+  {% if images %}
+    <div id="coll-grid" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4">
+      {% for item in images %}
+        <div class="col">
+          <article class="card h-100 shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <div class="form-check mb-0">
+                <input class="form-check-input coll-item-select" type="checkbox" value="{{ item.name }}" id="select-{{ loop.index }}">
+                <label class="form-check-label small text-muted" for="select-{{ loop.index }}">Select</label>
+              </div>
+              <span class="badge text-bg-secondary small">{{ item.name }}</span>
+            </div>
+            <div class="card-body d-flex flex-column gap-2">
+              <a href="{{ url_for('collection_artwork_detail', collection_name=collection_name, image_name=item.name) }}?view=grid" target="_blank" class="d-block mb-2">
+                <img src="{{ item.url }}" alt="{{ item.title or item.name }}" class="img-fluid rounded border" style="object-fit: cover; width: 100%; aspect-ratio: 4/3;">
+              </a>
+              <div>
+                <div class="fw-semibold">{{ item.title or item.name }}</div>
+                {% if item.caption %}
+                  <div class="small text-muted fst-italic">{{ item.caption }}</div>
+                {% endif %}
+              </div>
+            </div>
+          </article>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="mb-0 text-muted">No images found in this collection.</p>
+  {% endif %}
+</section>
+
+<script id="coll-state" type="application/json">
+  {{ {
+    "collection_name": collection_name,
+    "images": images,
+  } | tojson }}
+</script>
+
+<script>
+  (function () {
+    const stateEl = document.getElementById('coll-state');
+    if (!stateEl || !stateEl.textContent) return;
+    let state;
+    try {
+      state = JSON.parse(stateEl.textContent);
+    } catch (_) {
+      return;
+    }
+    const collectionName = state.collection_name;
+    const selectAll = document.getElementById('coll-select-all');
+    const regenBtn = document.getElementById('coll-regen-selected');
+    const deleteBtn = document.getElementById('coll-delete-selected');
+    const forceToggle = document.getElementById('coll-force-overwrite');
+
+    function selectedNames() {
+      return Array.from(document.querySelectorAll('.coll-item-select:checked')).map(el => el.value);
+    }
+
+    function fieldSelection() {
+      return Array.from(document.querySelectorAll('.collection-regen-field:checked'))
+        .map(el => el.value)
+        .filter(Boolean);
+    }
+
+    selectAll?.addEventListener('click', () => {
+      const boxes = document.querySelectorAll('.coll-item-select');
+      const shouldCheck = Array.from(boxes).some(cb => !cb.checked);
+      boxes.forEach(cb => (cb.checked = shouldCheck));
+    });
+
+    regenBtn?.addEventListener('click', async () => {
+      const names = selectedNames();
+      if (!names.length) {
+        alert('No images selected.');
+        return;
+      }
+      const fields = fieldSelection();
+      const payload = { images: names, force: !!forceToggle?.checked };
+      if (fields.length) payload.fields = fields;
+      try {
+        const res = await fetch(`/admin/collections/${encodeURIComponent(collectionName)}/ai/regenerate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || data.errors?.length) {
+          alert('Some items failed to regenerate. Check logs for details.');
+        } else {
+          alert(`Regenerated metadata for ${names.length} image(s).`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Failed to regenerate metadata.');
+      }
+    });
+
+    deleteBtn?.addEventListener('click', async () => {
+      const names = selectedNames();
+      if (!names.length) {
+        alert('No images selected.');
+        return;
+      }
+      if (!confirm(`Delete ${names.length} image(s) from this collection? This cannot be undone.`)) return;
+      for (const name of names) {
+        try {
+          const res = await fetch(
+            `/admin/collections/${encodeURIComponent(collectionName)}/image/${encodeURIComponent(name)}`,
+            { method: 'DELETE' },
+          );
+          if (!res.ok) {
+            console.warn('Failed to delete', name, await res.text());
+          }
+        } catch (err) {
+          console.error('Delete failed for', name, err);
+        }
+      }
+      location.reload();
+    });
+  })();
+</script>
+{% endblock %}
+

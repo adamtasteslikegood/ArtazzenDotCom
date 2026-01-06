@@ -1,0 +1,85 @@
+{% extends "highlight_collection_base.html" %}
+
+{% block collection_subtitle %}
+A focused sequence from "{{ collection_title }}" — follow the progression one frame at a time.
+{% endblock %}
+
+{% block collection_actions %}
+  <a class="collection-link" href="{{ url_for('highlight_collection', collection_name=collection_name) }}">View as wall</a>
+{% endblock %}
+
+{% block collection_content %}
+  {% if images %}
+    <section class="series-viewer" aria-label="Series carousel">
+      <button class="series-nav series-nav--prev" type="button" aria-label="Previous image">⟵</button>
+      <div class="series-track">
+        {% for item in images %}
+          <article class="series-slide" data-index="{{ loop.index0 }}">
+            <a href="{{ url_for('collection_artwork_detail', collection_name=collection_name, image_name=item.name) }}?view=series" class="frame-link">
+              <div class="frame series-frame">
+                <img src="{{ item.url }}" alt="{{ item.title or item.name }}">
+              </div>
+            </a>
+            <div class="plaque series-plaque">
+              <p class="plaque-title">{{ item.title or item.name }}</p>
+              {% if item.caption %}
+                <p class="plaque-caption">{{ item.caption }}</p>
+              {% endif %}
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+      <button class="series-nav series-nav--next" type="button" aria-label="Next image">⟶</button>
+    </section>
+    <div class="series-dots" aria-hidden="true">
+      {% for item in images %}
+        <span class="series-dot{% if loop.first %} is-active{% endif %}" data-series-index="{{ loop.index0 }}"></span>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="no-artwork-message">No images found in this collection.</p>
+  {% endif %}
+{% endblock %}
+
+{% block collection_scripts %}
+  <script>
+    (() => {
+      const track = document.querySelector('.series-track');
+      const slides = Array.from(document.querySelectorAll('.series-slide'));
+      if (!track || !slides.length) return;
+
+      const prev = document.querySelector('.series-nav--prev');
+      const next = document.querySelector('.series-nav--next');
+      const dots = Array.from(document.querySelectorAll('.series-dot'));
+      let index = 0;
+
+      const update = () => {
+        track.style.transform = `translateX(-${index * 100}%)`;
+        dots.forEach((dot, i) => {
+          dot.classList.toggle('is-active', i === index);
+        });
+      };
+
+      const goTo = (i) => {
+        index = (i + slides.length) % slides.length;
+        update();
+      };
+
+      prev?.addEventListener('click', () => goTo(index - 1));
+      next?.addEventListener('click', () => goTo(index + 1));
+      dots.forEach((dot) => {
+        dot.addEventListener('click', () => {
+          const pos = Number(dot.dataset.seriesIndex);
+          if (!Number.isNaN(pos)) goTo(pos);
+        });
+      });
+
+      window.addEventListener('keyup', (event) => {
+        if (event.key === 'ArrowLeft') goTo(index - 1);
+        if (event.key === 'ArrowRight') goTo(index + 1);
+      });
+
+      update();
+    })();
+  </script>
+{% endblock %}

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ artwork.title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style-nasturtium-lagoon 2.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
+</head>
+<body class="gallery-page detail-page">
+    <div class="page-container">
+        <header class="gallery-header detail-header">
+            <a href="{{ back_url or '/' }}" class="detail-nav-link" aria-label="Return to previous view">
+                ⟵ {{ back_label or 'Back to Gallery' }}
+            </a>
+            <h1 id="artwork-title">{{ artwork.title }}</h1>
+            <p class="gallery-subtitle detail-subtitle">
+                {{ artwork.description or 'A closer look at the tones, gestures, and luminous textures that shape this piece.' }}
+            </p>
+            <section class="hero-panel detail-hero" aria-label="Artwork introduction">
+                <div>
+                    <p class="hero-tagline">Full-frame focus</p>
+                    <p class="hero-description">
+                        Let the palette breathe in a dedicated space that mirrors the gallery mood—soft gradients, gentle glow, and
+                        clear typography to spotlight the narrative of this single work.
+                    </p>
+                </div>
+                <div class="hero-hints detail-hints">
+                    <span title="Curated specifically from the gallery grid">✨ Gallery spotlight</span>
+                    <span title="Tap the image to open it in a new tab">🖼 Full-resolution view</span>
+                    <span title="Typography scales to keep long-form notes legible">📝 Readable story text</span>
+                </div>
+            </section>
+        </header>
+
+        <main class="artwork-detail-main">
+            <section class="artwork-detail-layout" aria-labelledby="artwork-title">
+                <figure class="detail-image-panel">
+                    <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" class="detail-image-link" title="Open full-resolution image in a new tab">
+                        <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                    </a>
+                    <figcaption class="detail-caption">Tap or click to open the original size in a separate tab.</figcaption>
+                </figure>
+                <article class="detail-info-panel">
+                    <div class="detail-meta">
+                        <span>Featured highlight</span>
+                        <span>Immersive texture study</span>
+                        <span>Color-forward composition</span>
+                    </div>
+                    {% if artwork.detected_at %}
+                    <p class="detail-meta-date">
+                        Detected on {{ artwork.detected_at }}
+                    </p>
+                    {% endif %}
+                    <p class="detail-description">
+                        {{ artwork.description or 'This piece invites you to explore the nuances of the artist’s palette—follow the gradients, the soft light, and the hidden gestures that reveal themselves slowly.' }}
+                    </p>
+                    <div class="detail-actions">
+                        {% if prev_url %}
+                        <a href="{{ prev_url }}" class="button secondary">⟵ Prev</a>
+                        {% endif %}
+                        <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" class="button">Open full resolution</a>
+                        {% if next_url %}
+                        <a href="{{ next_url }}" class="button secondary">Next ⟶</a>
+                        {% endif %}
+                    </div>
+                </article>
+            </section>
+        </main>
+
+        <footer>
+            <p>Artwork Gallery · Crafted for the curious eye</p>
+        </footer>
+    </div>
+</body>
+</html>
