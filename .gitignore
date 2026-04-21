@@ -2,3 +2,4 @@
 /new_app/static/images/
 /Static/images/
 __pycache__/
+.venv/

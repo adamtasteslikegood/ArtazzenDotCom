@@ -1,0 +1,35 @@
+/* 4) “Kinetic Primary” — from IMG_4957 (navy, lemon, signal red, mint pop)
+ Kinetic Primary — IMG_4957 */
+
+html{color-scheme:light dark}
+:root{
+  --bg:#FBFEFF; --text:#0A1633; --muted:#E3E8F1; --muted-2:#F0F4FA;
+  --accent:#FF3D2E; --accent-hover:#C92D25; --mark-bg:#FFF066;
+  --code-inline-bg:#0F1C3D; --code-inline-fg:#F3F7FF; --code-block-bg:#F5F9FF;
+  --blockquote-bg:#EEF3FF; --blockquote-border:#132D5E;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#0A1633; --text:#F3F7FF; --muted:#122552; --muted-2:#0E1D41;
+    --accent:#FFD000; --accent-hover:#FF3D2E; --mark-bg:#FFE34C;
+    --code-inline-bg:#08102A; --code-inline-fg:#EAF0FF; --code-block-bg:#060D22;
+    --blockquote-bg:#0D1A3A; --blockquote-border:#FFD000; /* lemon */
+  }
+}
+*{box-sizing:border-box}body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;background:var(--bg);color:var(--text);line-height:1.6;margin:0 auto;padding:24px;max-width:72ch}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-hover);text-decoration:underline}
+mark{background:var(--mark-bg);border-radius:3px;padding:0 3px}
+code:not([class^="language-"]):not([class~="mermaid"]) {background:var(--code-inline-bg);color:var(--code-inline-fg);border-radius:4px;padding:2px 6px;white-space:nowrap}
+pre{background:var(--code-block-bg);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--muted)}pre>code{background:transparent!important;color:inherit;padding:0;font:inherit}
+pre[class*="language-"],code[class*="language-"]{color:var(--text)}
+[class*="language-"] .token.comment{color:#7C8BB4}
+[class*="language-"] .token.operator{color:#FF3D2E}
+[class*="language-"] .token.string{color:#13D672} /* mint pop */
+[class*="language-"] .token.number,[class*="language-"] .token.boolean{color:#FFD000}
+[class*="language-"] .token.function,[class*="language-"] .token.selector,[class*="language-"] .token.class-name{color:#2EA0FF}
+blockquote{background:var(--blockquote-bg);border-left:5px solid var(--blockquote-border);padding:10px 14px;margin:16px 0;border-radius:6px}
+ table{width:100%;border-collapse:collapse;border:1px solid var(--muted);border-radius:8px;display:block;overflow:auto}
+ thead th{position:sticky;top:0;background:var(--bg);z-index:1}
+ th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--muted);border-right:1px solid var(--muted)}
+ tr td:last-of-type, tr th:last-of-type{border-right:none}
+ tbody tr:nth-child(odd) td{background:var(--muted-2)}

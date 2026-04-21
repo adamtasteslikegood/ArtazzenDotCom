@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ artwork.title }} &mdash; Artazzen</title>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+</head>
+<body>
+
+    <header>
+        <a href="/" style="font-family: var(--font-mono); font-size: 0.75rem; text-decoration: none; color: inherit; opacity: 0.6; text-transform: uppercase; margin-bottom: 2rem; display: inline-block;">← Back to Gallery</a>
+        <h1>{{ artwork.title }}</h1>
+    </header>
+
+    <div class="shader-bg"></div>
+
+    <main>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: start;">
+            <div>
+                <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}" style="width: 100%; height: auto; border-radius: var(--radius-sm); filter: grayscale(10%); transition: filter 0.5s ease;" onmouseover="this.style.filter='grayscale(0%)'" onmouseout="this.style.filter='grayscale(10%)'">
+            </div>
+            <div style="padding-top: 4rem;">
+                <p class="tagline" style="font-family: var(--font-mono); font-size: 0.75rem; text-transform: uppercase; opacity: 0.6; margin-bottom: 1rem;">Artifact Description</p>
+                <div style="font-size: 1.25rem; line-height: 1.6; max-width: 40ch;">
+                    {{ artwork.description }}
+                </div>
+                <div style="margin-top: 4rem; font-family: var(--font-mono); font-size: 0.75rem; opacity: 0.4;">
+                    AUTHENTICATED ARTIFACT / ART.AZZEN.COM
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>Artazzen / {{ artwork.title }}</p>
+    </footer>
+
+</body>
+</html>

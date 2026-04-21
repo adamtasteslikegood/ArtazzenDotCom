@@ -9,9 +9,6 @@ ArtazzenDotCom is a FastAPI + Jinja2 project for curating artwork with rich meta
 - Startup background watcher keeps the pending review queue fresh.
 - Optional OpenAI-powered title and description generation.
 
-## Design System
-This project uses the "Techno-Botanical" design system, which is documented in `DESIGN.md`. The design system is implemented in `Static/css/styles.css` and is used throughout the application.
-
 ## Requirements
 - Python 3.10 or newer
 - `pip` for dependency management
@@ -36,26 +33,11 @@ Then open `http://127.0.0.1:8000/` for the gallery or `http://127.0.0.1:8000/adm
 │   ├── images/                 # Artwork images and their *.json sidecars
 │   └── css/                    # Stylesheets
 ├── templates/                  # Jinja2 templates (gallery, admin flows)
-├── tests/                      # Pytest test suite
-│   └── test_main.py
-├── .venv/                      # Python virtual environment
 ├── ai_config.json              # Persisted runtime AI settings
 ├── ImageSidecar.schema.json    # Expected schema for image sidecars
 ├── manage_sidecars.py          # CLI for validating/migrating sidecars
-├── pytest.ini                  # Pytest configuration
 └── test_main.http              # Handy HTTP snippets for manual testing
 ```
-
-## Testing
-This project uses `pytest` for testing. To run the tests, first install the dependencies from `requirements.txt` into your virtual environment, then run:
-```bash
-pytest
-```
-
-## TODOS
-This project uses `TODOS.md` to track future work. The file is organized by skill/component and priority.
-
-
 
 ## Metadata Workflow
 1. Drop images into `Static/images/`. Supported formats include JPG, PNG, GIF, WEBP, SVG, BMP, and TIFF.
