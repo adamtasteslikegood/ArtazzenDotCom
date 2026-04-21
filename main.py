@@ -7,7 +7,7 @@ import shutil
 import threading
 import time
 import textwrap
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,6 +19,7 @@ from fastapi import (
     HTTPException,
     Request,
     UploadFile,
+    Depends,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -623,24 +624,26 @@ async def _watch_image_directory(app: FastAPI) -> None:
     except asyncio.CancelledError:  # pragma: no cover - clean shutdown
         logger.debug("Image directory watcher cancelled")
         raise
-
-
-@app.on_event("startup")
-async def startup_event() -> None:
-    # Initialize runtime AI config from persisted file with env fallbacks
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
     app.state.ai_config = _load_ai_config()
     _validate_and_migrate_sidecars()
     app.state.pending_images = new_files_detected()
     app.state.watcher_task = asyncio.create_task(_watch_image_directory(app))
-
-
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
+    yield
+    # Shutdown
     watcher = getattr(app.state, "watcher_task", None)
     if watcher:
         watcher.cancel()
         with suppress(asyncio.CancelledError):
             await watcher
+
+app = FastAPI(title="Artwork Gallery", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+
 
 def _load_metadata(image_path: Path) -> Dict[str, Any]:
     """Load metadata for an image, combining sidecar data and EXIF hints."""
@@ -651,8 +654,8 @@ def _load_metadata(image_path: Path) -> Dict[str, Any]:
             loaded = json.loads(json_path.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
                 data.update(loaded)
-        except json.JSONDecodeError as exc:
-            logger.warning("Invalid JSON in %s: %s", json_path, exc)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Unable to load or parse sidecar JSON in %s: %s", json_path, exc)
 
     exif_data = _extract_exif_metadata(image_path)
     if not (data.get("title") or "title" in data) and exif_data.get("title"):
@@ -768,42 +771,56 @@ def get_artwork_files():
     logger.info(f"Found {len(artwork)} artwork files.")
     return artwork
 
+
+async def get_pending_files(request: Request) -> List[Dict[str, Any]]:
+    """
+    FastAPI dependency to get the list of pending files.
+    This runs before routes that depend on it.
+    """
+    pending = new_files_detected()
+    request.app.state.pending_images = pending
+    return pending
+
 # --- Routes ---
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_home(request: Request) -> HTMLResponse:
+async def admin_home(
+    request: Request,
+    pending_images: List[Dict[str, Any]] = Depends(get_pending_files),
+) -> HTMLResponse:
     """Render the admin review dashboard."""
-    pending = new_files_detected()
-    request.app.state.pending_images = pending
     return templates.TemplateResponse(
+        request,
         "reviewAddedFiles.html",
         {
-            "request": request,
-            "pending_images": pending,
+            "pending_images": pending_images,
             "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
         },
     )
 
 
 @app.get("/admin/review", response_class=HTMLResponse)
-async def review_added_files(request: Request) -> HTMLResponse:
-    pending = new_files_detected()
-    request.app.state.pending_images = pending
+async def review_added_files(
+    request: Request,
+    pending_images: List[Dict[str, Any]] = Depends(get_pending_files),
+) -> HTMLResponse:
+    """Render the admin review dashboard. Alias for /admin."""
     return templates.TemplateResponse(
+        request,
         "reviewAddedFiles.html",
         {
-            "request": request,
-            "pending_images": pending,
+            "pending_images": pending_images,
             "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
         },
     )
 
 
 @app.get("/admin/api/new-files", response_class=JSONResponse)
-async def api_new_files(request: Request) -> JSONResponse:
-    pending = new_files_detected()
-    request.app.state.pending_images = pending
+async def api_new_files(
+    pending: List[Dict[str, Any]] = Depends(get_pending_files)
+) -> JSONResponse:
+    """Return the list of pending files as JSON."""
     return JSONResponse({"pending": pending})
 
 
@@ -855,7 +872,10 @@ async def reset_admin_config(request: Request) -> JSONResponse:
 
 
 @app.post("/admin/ai/regenerate", response_class=JSONResponse)
-async def regenerate_ai_metadata(request: Request) -> JSONResponse:
+async def regenerate_ai_metadata(
+    request: Request,
+    pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
+) -> JSONResponse:
     try:
         body = await request.json()
     except Exception:
@@ -887,15 +907,14 @@ async def regenerate_ai_metadata(request: Request) -> JSONResponse:
         except Exception as exc:
             errors.append({"name": name, "error": str(exc)})
 
-    pending = new_files_detected()
-    request.app.state.pending_images = pending
-    return JSONResponse({"updated": updated, "errors": errors, "pending": pending})
+    return JSONResponse({"updated": updated, "errors": errors, "pending": pending_dependency})
 
 
 @app.post("/admin/upload")
 async def upload_images(
     request: Request,
     files: List[UploadFile] = File(...),
+    pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
 ) -> JSONResponse:
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files uploaded")
@@ -926,14 +945,16 @@ async def upload_images(
         finally:
             upload.file.close()
 
-    pending = new_files_detected()
-    request.app.state.pending_images = pending
     message = "Uploaded files successfully" if saved else "No supported files uploaded"
-    return JSONResponse({"saved": saved, "skipped": skipped, "message": message, "pending": pending})
+    return JSONResponse({"saved": saved, "skipped": skipped, "message": message, "pending": pending_dependency})
 
 
 @app.post("/admin/import-path")
-async def import_from_path(request: Request, path: str = Form(...)) -> JSONResponse:
+async def import_from_path(
+    request: Request,
+    path: str = Form(...),
+    pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
+) -> JSONResponse:
     source_path = Path(path).expanduser()
     if not source_path.exists():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Path does not exist")
@@ -963,9 +984,7 @@ async def import_from_path(request: Request, path: str = Form(...)) -> JSONRespo
             if file_path.is_file():
                 _handle_file(file_path)
 
-    pending = new_files_detected()
-    request.app.state.pending_images = pending
-    return JSONResponse({"copied": copied, "skipped": skipped, "pending": pending})
+    return JSONResponse({"copied": copied, "skipped": skipped, "pending": pending_dependency})
 
 
 @app.get("/admin/review/{image_name}", response_class=HTMLResponse)
@@ -983,9 +1002,9 @@ async def preview_image_metadata(request: Request, image_name: str) -> HTMLRespo
     metadata = _populate_missing_metadata(image_path, _load_metadata(image_path))
 
     return templates.TemplateResponse(
+        request,
         "previewImageText.html",
         {
-            "request": request,
             "image_name": filename,
             "image_url": f"/static/images/{filename}",
             "metadata": metadata,
@@ -1001,6 +1020,7 @@ async def update_image_metadata(
     title: str = Form(""),
     description: str = Form(""),
     action: str = Form("save"),
+    pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
 ) -> RedirectResponse:
     filename = _sanitize_filename(image_name)
     if not filename or not _allowed_image(filename):
@@ -1025,9 +1045,6 @@ async def update_image_metadata(
     existing.update(clean_metadata)
     existing["reviewed"] = True
     _write_sidecar(image_path, existing)
-
-    pending = new_files_detected()
-    request.app.state.pending_images = pending
 
     return RedirectResponse(
         url=request.url_for("review_added_files"),
@@ -1059,8 +1076,9 @@ async def artwork_detail(request: Request, image_filename: str):
     }
 
     return templates.TemplateResponse(
+        request,
         "artwork_detail.html",
-        {"request": request, "artwork": artwork_data},
+        {"artwork": artwork_data},
     )
 
 
@@ -1081,7 +1099,7 @@ async def read_root(request: Request):
     }
 
     # Render the HTML template with the context data
-    return templates.TemplateResponse("index.html", context)
+    return templates.TemplateResponse(request, "index.html", context)
 
 # --- Running the App ---
 # To run this app:
