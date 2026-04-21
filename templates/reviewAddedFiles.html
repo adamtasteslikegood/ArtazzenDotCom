@@ -4,17 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Artwork Admin Review</title>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
 </head>
 <body class="admin-page">
     <header>
-        <h1>Artwork Administration</h1>
-        <p class="admin-subheading">Upload, detect, and describe the images that appear in your gallery.</p>
+        <h1>Administration</h1>
+        <p class="admin-subheading">Upload, detect, and describe artifacts</p>
         <nav class="admin-nav">
             <a href="/" class="button secondary">View Public Gallery</a>
             <button type="button" id="refresh-pending" class="button secondary">Refresh Pending List</button>
         </nav>
     </header>
+
+    <div class="shader-bg"></div>
 
     <main class="admin-container">
         <section class="admin-panel">
