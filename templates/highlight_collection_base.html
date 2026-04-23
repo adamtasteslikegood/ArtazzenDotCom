@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ collection_title }} — Collection</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/style-nasturtium-lagoon 2.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/collections.css') }}">
+</head>
+<body class="gallery-page collection-page">
+  <div class="page-container">
+    <header class="gallery-header collection-header">
+      <div class="collection-nav">
+        <a href="{{ url_for('read_root') }}" class="collection-link">⟵ Back to gallery</a>
+      </div>
+      <h1>{{ collection_title }}</h1>
+      <p class="gallery-subtitle">{% block collection_subtitle %}An intimate look at a curated set from the gallery.{% endblock %}</p>
+      <div class="collection-actions">
+        {% block collection_actions %}{% endblock %}
+      </div>
+    </header>
+
+    <main class="collection-main">
+      {% block collection_content %}{% endblock %}
+    </main>
+
+    <footer>
+      <p>Artwork Gallery · Curated collections</p>
+    </footer>
+  </div>
+  {% block collection_scripts %}{% endblock %}
+</body>
+</html>

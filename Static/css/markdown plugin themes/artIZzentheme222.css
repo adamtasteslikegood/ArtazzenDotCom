@@ -1,0 +1,141 @@
+/* Dutch Still Life — extracted from your image */
+html { color-scheme: light dark; }
+
+/* ---------- Base palette (light) ---------- */
+:root {
+  /* Surfaces & text */
+  --bg: #FAF7F2;          /* parchment paper */
+  --text: #2A1C12;        /* warm umber text */
+  --muted: #E6DAC8;       /* table/border */
+  --muted-2: #F2E6D4;     /* zebra rows */
+
+  /* Accents */
+  --accent: #a14fdc;      /* hot-rose for links */
+  --accent-hover: #B62B39;/* deeper rose on hover */
+  --mark-bg: #DBBB73;     /* marigold highlighter */
+
+  /* Code */
+  --code-inline-bg: #3B2D22;
+  --code-inline-fg: #F2EDE5;
+  --code-block-bg: #FFF9F0;
+
+  /* Components */
+  --blockquote-bg: #F1E6D7;
+  --blockquote-border: #B37638; /* burnt orange */
+}
+
+/* ---------- Dark mode mapping ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1F0F07;        /* umber canvas */
+    --text: #F2EDE5;      /* parchment ink */
+    --muted: #3A2A1D;
+    --muted-2: #28150A;
+
+    --accent: #E77156;    /* coral-rose */
+    --accent-hover: #DC4F51;
+    --mark-bg: #DBBB73;
+
+    --code-inline-bg: #23170F;
+    --code-inline-fg: #F2EDE5;
+    --code-block-bg: #140E0A;
+
+    --blockquote-bg: #24170F;
+    --blockquote-border: #A08A3D; /* olive leaf */
+  }
+}
+
+/* ---------- Layout & typography ---------- */
+* { box-sizing: border-box; }
+body {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  margin: 0 auto;
+  padding: 24px;
+  max-width: 72ch;
+}
+h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.25em 0 0.5em; }
+p, ul, ol, pre, table, blockquote { margin: 1em 0; }
+
+/* Links */
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+a:visited { opacity: 0.95; }
+
+/* Inline bits */
+mark { background: var(--mark-bg); border-radius: 3px; padding: 0 3px; }
+kbd {
+  background: #DBBB73; color: #1F0F07;
+  border-radius: 3px; padding: 0 3px; border: 1px solid rgba(0,0,0,.15);
+}
+code:not([class^="language-"]):not([class~="mermaid"]) {
+  background: var(--code-inline-bg);
+  color: var(--code-inline-fg);
+  border-radius: 4px; padding: 2px 6px; white-space: nowrap;
+}
+
+/* Code blocks */
+pre {
+  background: var(--code-block-bg);
+  padding: 14px 16px;
+  border-radius: 8px;
+  overflow: auto;
+  border: 1px solid var(--muted);
+}
+pre > code { background: transparent !important; color: inherit; padding: 0; font: inherit; }
+
+/* Prism token colors (safe to leave if you’re not using Prism) */
+pre[class*="language-"], code[class*="language-"] { color: var(--text); }
+[class*="language-"] .token.comment { color: #8E7C66; }
+[class*="language-"] .token.punctuation { color: var(--text); }
+[class*="language-"] .token.operator { color: #DC4F51; }       /* hot-rose */
+[class*="language-"] .token.string { color: #DBBB73; }         /* marigold */
+[class*="language-"] .token.number,
+[class*="language-"] .token.boolean { color: #84291C; }        /* brick from petals */
+[class*="language-"] .token.property,
+[class*="language-"] .token.attr-name,
+[class*="language-"] .token.literal-property { color: #B37638; } /* burnt orange */
+[class*="language-"] .token.function,
+[class*="language-"] .token.selector,
+[class*="language-"] .token.class-name { color: #A08A3D; }     /* olive leaf */
+
+/* Mermaid diagrams */
+.mermaid { background: transparent !important; }
+
+/* Blockquotes */
+blockquote {
+  background: var(--blockquote-bg);
+  border-left: 5px solid var(--blockquote-border);
+  padding: 10px 14px;
+  margin: 16px 0;
+  border-radius: 6px;
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--muted);
+  border-radius: 8px;
+  display: block;
+  overflow: auto;
+}
+thead th { position: sticky; top: 0; background: var(--bg); z-index: 1; }
+th, td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--muted);
+  border-right: 1px solid var(--muted);
+}
+tr td:last-of-type, tr th:last-of-type { border-right: none; }
+tbody tr:nth-child(odd) td { background: var(--muted-2); }
+
+/* Misc */
+hr { border: none; border-top: 1px solid var(--muted); margin: 2em 0; }
+img, video, canvas, svg { max-width: 100%; height: auto; }
+::selection { background: rgba(220, 79, 81, 0.35); }
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

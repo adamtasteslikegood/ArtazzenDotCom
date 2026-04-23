@@ -1,0 +1,115 @@
+diff --git a/main.py b/main.py
+index 6e38c3b99f8f0cb10e6b1da0338dffc5e9f7a74a..19d0120021be41db5742a839b2e9f1e79780bc08 100644
+--- a/main.py
++++ b/main.py
+@@ -1,36 +1,37 @@
+ # main.py
+ import os
+ import json
+ import asyncio
+ import base64
+ import shutil
+ import threading
+ import time
+ import textwrap
+ from contextlib import suppress
+ import re
++from datetime import datetime, timezone
+ from io import BytesIO
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional
+ from dotenv import load_dotenv
+ 
+ from fastapi import (
+     FastAPI,
+     File,
+     Form,
+     HTTPException,
+     Request,
+     UploadFile,
+ )
+ from fastapi.staticfiles import StaticFiles
+ from fastapi.templating import Jinja2Templates
+ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+ from starlette import status
+ from PIL import Image, ExifTags
+ from jsonschema import validate as js_validate, ValidationError
+ import httpx
+ import logging # Import logging
+ import tempfile
+ # Optional: used to coordinate a single background watcher across gunicorn workers
+ try:  # pragma: no cover - platform dependent
+     import fcntl  # type: ignore
+@@ -2247,54 +2248,69 @@ async def delete_image(request: Request, image_name: str) -> JSONResponse:
+     return JSONResponse(
+         {
+             "message": f"Removed {filename}",
+             "pending": dashboard["pending"],
+             "reviewed": dashboard["reviewed"],
+         }
+     )
+ 
+ 
+ @app.get("/artwork/{image_filename}", response_class=HTMLResponse)
+ async def artwork_detail(request: Request, image_filename: str):
+     """
+     Displays the details of a single piece of artwork.
+     """
+     filename = _sanitize_filename(image_filename)
+     if not filename or not _allowed_image(filename):
+         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
+ 
+     image_path = IMAGES_DIR / filename
+     if not image_path.exists():
+         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
+ 
+     metadata = _load_metadata(image_path)
+     image_url = f"/static/images/{filename}"
+ 
++    detected_raw = metadata.get("detected_at")
++    detected_display: Optional[str] = None
++    if isinstance(detected_raw, (int, float)):
++        try:
++            detected_display = (
++                datetime.fromtimestamp(detected_raw, tz=timezone.utc)
++                .strftime("%B %d, %Y")
++            )
++        except (OverflowError, OSError, ValueError):
++            detected_display = None
++    elif isinstance(detected_raw, str):
++        detected_display = detected_raw
++
+     artwork_data = {
+         "title": metadata.get("title", "Artwork"),
+         "description": metadata.get("description", ""),
++        "caption": metadata.get("caption", ""),
+         "image_url": image_url,
++        "detected_at": detected_display,
+     }
+ 
+     return templates.TemplateResponse(
+         "artwork_detail.html",
+         {"request": request, "artwork": artwork_data},
+     )
+ 
+ 
+ @app.get("/", response_class=HTMLResponse)
+ async def read_root(request: Request):
+     """
+     Handles requests to the root URL ('/').
+     It gets the list of artwork files and renders the index.html template.
+     """
+     logger.info("Request received for root path ('/')")
+     artwork_list = get_artwork_files()
+ 
+     # Data to pass to the HTML template
+     context = {
+         "request": request, # Required by Jinja2Templates
+         "artwork_files": artwork_list,
+         "gallery_title": "My Girlfriend's Artwork Gallery" # Customizable title
+     }
+ 
+     # Render the HTML template with the context data
+
+
+

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Inquiry: {{ artwork.title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style-nasturtium-lagoon 2.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
+    <style>
+        .order-form-container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 0.8rem;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        .form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        .success-message {
+            background: rgba(40, 167, 69, 0.2);
+            border: 1px solid #28a745;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        .artwork-preview {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .artwork-preview img {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 6px;
+        }
+        .primary-cta {
+            background: var(--button-bg, #007bff);
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: opacity 0.2s;
+        }
+        .primary-cta:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body class="gallery-page detail-page">
+    <div class="page-container">
+        <header class="gallery-header detail-header">
+            <a href="/artwork/{{ artwork.filename }}" class="detail-nav-link">⟵ Back to Detail</a>
+            <h1>Request to Buy / Order Product</h1>
+            <p class="gallery-subtitle">Bring this piece into your home. Select a product type to start an inquiry.</p>
+        </header>
+
+        <main class="order-form-container">
+            {% if success %}
+                <div class="success-message">
+                    <h3>Success!</h3>
+                    <p>{{ message }}</p>
+                    <a href="/" class="button secondary">Return to Gallery</a>
+                </div>
+            {% else %}
+                <div class="artwork-preview">
+                    <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                    <div>
+                        <h3>{{ artwork.title }}</h3>
+                        <p>{{ artwork.description|truncate(100) }}</p>
+                    </div>
+                </div>
+
+                <form action="/order/submit" method="post">
+                    <input type="hidden" name="image_filename" value="{{ artwork.filename }}">
+                    
+                    <div class="form-group">
+                        <label for="customer_name">Your Name</label>
+                        <input type="text" id="customer_name" name="customer_name" required placeholder="John Doe">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="customer_email">Your Email</label>
+                        <input type="email" id="customer_email" name="customer_email" required placeholder="john@example.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="product_type">What are you interested in?</label>
+                        <select id="product_type" name="product_type" required>
+                            <option value="" disabled selected>Select a product...</option>
+                            <option value="Original Piece">Original Piece</option>
+                            <option value="Fine Art Print">Fine Art Print</option>
+                            <option value="Mug">Custom Mug</option>
+                            <option value="Pillow">Custom Pillow</option>
+                            <option value="Poster">Poster</option>
+                            <option value="Other">Other (specify in message)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="message">Message (Optional)</label>
+                        <textarea id="message" name="message" placeholder="I'd love to know more about..."></textarea>
+                    </div>
+
+                    <button type="submit" class="primary-cta">Send Request</button>
+                </form>
+            {% endif %}
+        </main>
+
+        <footer>
+            <p>Artwork Gallery · Crafted for the curious eye</p>
+        </footer>
+    </div>
+</body>
+</html>

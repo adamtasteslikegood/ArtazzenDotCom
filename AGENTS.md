@@ -30,6 +30,7 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 - Python ≥3.10 recommended (virtual env: `python -m venv .venv` → `source .venv/bin/activate`).
 - Install dependencies with `pip install -r requirements.txt`.
 - Local server: `uvicorn main:app --reload` and visit `http://127.0.0.1:8000/`.
+- Production containers: prefer the root `Dockerfile`, which runs `uvicorn main:app` directly (no Gunicorn), with `uvloop`/`httptools` enabled and workers controlled via `UVICORN_WORKERS`.
 - Useful API probes:
   - `curl http://127.0.0.1:8000/admin/api/new-files`
   - `curl -F "files=@/path/to/image.jpg" http://127.0.0.1:8000/admin/upload`

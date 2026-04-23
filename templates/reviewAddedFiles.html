@@ -1,462 +1,286 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Artwork Admin Review</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
-</head>
-<body class="admin-page">
-    <header>
-        <h1>Artwork Administration</h1>
-        <p class="admin-subheading">Upload, detect, and describe the images that appear in your gallery.</p>
-        <nav class="admin-nav">
-            <a href="/" class="button secondary">View Public Gallery</a>
-            <button type="button" id="refresh-pending" class="button secondary">Refresh Pending List</button>
-        </nav>
-    </header>
+{% extends "admin_base.html" %}
 
-    <main class="admin-container">
-        <section class="admin-panel">
-            <h2>AI Metadata Settings</h2>
-            <p class="panel-description">Control automatic title/description generation for new or unreviewed images.</p>
-            <form id="ai-config-form" class="ai-config-form">
-                <div class="form-row">
-                    <label class="checkbox">
-                        <input type="checkbox" id="ai-enabled">
-                        <span>Enable AI metadata generation</span>
-                    </label>
-                </div>
-                <div class="form-row">
-                    <label for="ai-model">Model</label>
-                    <select id="ai-model">
-                        <option value="gpt-4o-mini">gpt-4o-mini</option>
-                        <option value="gpt-5-mini">gpt-5-mini</option>
-                    </select>
-                </div>
-                <div class="form-row">
-                    <label for="ai-temp">Temperature</label>
-                    <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
-                </div>
-                <div class="form-row">
-                    <label for="ai-tokens">Max output tokens</label>
-                    <input type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="button">Save settings</button>
-                </div>
-            </form>
-        </section>
-        <section class="admin-panel">
-            <h2>Upload new artwork</h2>
-            <p class="panel-description">Drag and drop image files or click below to open a file browser. You can also include existing JSON sidecar files.</p>
-            <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop images here or press enter to choose files">
-                <svg aria-hidden="true" focusable="false" class="dropzone-icon" viewBox="0 0 24 24">
-                    <path d="M12 2a5 5 0 0 1 5 5h3a1 1 0 1 1 0 2h-3v2h1a4 4 0 1 1 0 8H7a5 5 0 0 1-1-9.9V9H3a1 1 0 1 1 0-2h3a5 5 0 0 1 6-5Zm0 2a3 3 0 0 0-3 3v2a1 1 0 0 1-1 1H7a3 3 0 1 0 0 6h11a2 2 0 1 0 0-4h-2a1 1 0 0 1-1-1V7a3 3 0 0 0-3-3Zm0 4a1 1 0 0 1 1 1v2.585l1.293-1.293a1 1 0 1 1 1.414 1.414l-3.004 3.003a1 1 0 0 1-1.414 0l-3.004-3.003a1 1 0 0 1 1.414-1.414L11 11.585V9a1 1 0 0 1 1-1Z" fill="currentColor"/>
-                </svg>
-                <p><strong>Drop files here</strong> or use the button below.</p>
-                <button type="button" id="select-files" class="button">Choose files</button>
-                <input type="file" id="file-input" name="files" accept="image/*,.json" multiple hidden>
-                <p class="supported-formats">Supported formats: {{ allowed_extensions | join(', ') }} and JSON sidecars.</p>
+{% block title %}Review Uploaded Artwork{% endblock %}
+{% block page_heading %}Review Uploaded Artwork{% endblock %}
+
+{% block content %}
+<!-- ✅ Top admin controls: AI settings + dropzone -->
+<div class="row g-4 align-items-stretch mb-4">
+  <!-- AI Settings Panel -->
+  <div class="col-md-6">
+    <section class="card p-4 shadow-sm h-100">
+      <h2 class="h5 mb-3">AI Settings</h2>
+      <form id="ai-config-form" class="vstack gap-3">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="ai-enabled">
+          <label class="form-check-label" for="ai-enabled">Enable AI Metadata</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="ai-startup-enabled">
+          <label class="form-check-label" for="ai-startup-enabled">Enrich on Startup</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="sidecar-startup-enabled">
+          <label class="form-check-label" for="sidecar-startup-enabled">Generate Sidecars on Startup</label>
+        </div>
+
+        <div>
+          <label for="ai-model" class="form-label">AI Model</label>
+          <select id="ai-model" class="form-select">
+            {% if model_options %}
+              {% for option in model_options %}
+                <option value="{{ option }}">{{ option }}</option>
+              {% endfor %}
+            {% else %}
+              <option value="default">Default</option>
+            {% endif %}
+          </select>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="ai-temp" class="form-label">Temperature</label>
+            <input type="number" step="0.1" min="0" max="2" class="form-control" id="ai-temp" value="0.6">
+          </div>
+          <div class="col-md-6">
+            <label for="ai-tokens" class="form-label">Max Output Tokens</label>
+            <input type="number" min="1" class="form-control" id="ai-tokens" value="800">
+          </div>
+        </div>
+
+        <div>
+          <label for="sidecar-max-workers" class="form-label">Sidecar Workers</label>
+          <input type="number" min="1" class="form-control" id="sidecar-max-workers" value="2">
+        </div>
+
+        <div class="d-flex justify-content-between flex-wrap gap-2 mt-3">
+          <button type="submit" class="btn btn-dark">Save Settings</button>
+          <button type="button" class="btn btn-outline-secondary" id="reset-ai-config">Reset to Defaults</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- Upload Files (Dropzone) -->
+  <div class="col-md-6">
+    <section class="card p-4 shadow-sm h-100">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0">Upload Files</h2>
+        <div class="d-flex gap-2">
+          <button type="button" id="refresh-pending" class="btn btn-outline-secondary btn-sm">Refresh Library</button>
+        </div>
+      </div>
+      <form id="path-form" class="mb-3">
+        <label for="path" class="form-label">Import Path</label>
+        <div class="input-group">
+          <input type="text" class="form-control" name="path" placeholder="/path/to/files" required>
+          <button type="submit" class="btn btn-outline-primary">Import</button>
+        </div>
+      </form>
+      <div class="flex-grow-1 d-flex flex-column justify-content-center min-vh-30 min-vh-md-0">
+        <div id="dropzone" class="border border-dashed rounded p-4 text-center bg-light d-flex flex-column justify-content-center align-items-center h-100">
+          <p class="mb-2">Drag and drop image files here</p>
+          <button type="button" class="btn btn-secondary" id="select-files">Select Files</button>
+          <input type="file" id="file-input" class="visually-hidden" multiple accept="image/*">
+        </div>
+      </div>
+      <div id="feedback" class="mt-3 small text-success" hidden>Ready.</div>
+    </section>
+  </div>
+</div>
+
+<!-- ✅ Pending toolbar + list -->
+<section class="mb-5">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+    <h2 class="h5 mb-0">Needs review <span id="pending-count" class="badge text-bg-secondary">{{ pending_images | length }}</span></h2>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <label class="form-label me-2 mb-0" for="pending-sort">Sort</label>
+      <select id="pending-sort" class="form-select form-select-sm w-auto">
+        <option value="title:asc" selected>Title A–Z</option>
+        <option value="title:desc">Title Z–A</option>
+        <option value="name:asc">Filename A–Z</option>
+        <option value="name:desc">Filename Z–A</option>
+        <option value="detected_at:desc">Newest first</option>
+        <option value="detected_at:asc">Oldest first</option>
+        <option value="tag:asc">Tag name A–Z</option>
+        <option value="tag:desc">Tag name Z–A</option>
+      </select>
+      <input type="search" id="pending-filter" class="form-control form-control-sm" placeholder="Filter by title, author, or tag">
+      <div class="form-check ms-2">
+        <input class="form-check-input" type="checkbox" id="force-overwrite">
+        <label class="form-check-label small" for="force-overwrite">Force overwrite</label>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-1 small">
+        <span class="text-muted">Fields to regen:</span>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-title" data-field="title">
+          <label class="form-check-label" for="bulk-regen-title">Title</label>
+        </div>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-description" data-field="description">
+          <label class="form-check-label" for="bulk-regen-description">Description</label>
+        </div>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-caption" data-field="caption">
+          <label class="form-check-label" for="bulk-regen-caption">Caption</label>
+        </div>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-author" data-field="author">
+          <label class="form-check-label" for="bulk-regen-author">Author</label>
+        </div>
+        <div class="form-check form-check-inline mb-0">
+          <input class="form-check-input bulk-regen-field" type="checkbox" id="bulk-regen-tags" data-field="tags">
+          <label class="form-check-label" for="bulk-regen-tags">Tags</label>
+        </div>
+      </div>
+      <button type="button" id="select-all" class="btn btn-outline-secondary btn-sm">Select All</button>
+      <button type="button" id="accept-selected" class="btn btn-success btn-sm">Accept Selected</button>
+      <button type="button" id="regen-selected" class="btn btn-outline-primary btn-sm">Regenerate Selected</button>
+      <button type="button" id="delete-selected" class="btn btn-outline-danger btn-sm">Delete Selected</button>
+    </div>
+  </div>
+
+  <div id="pending-list" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4">
+    {% for item in pending_images %}
+      <div class="col">
+        <article class="image-card card h-100 shadow-sm p-3" data-image-name="{{ item.name }}">
+          <div class="form-check mb-2">
+            <input class="form-check-input item-select" type="checkbox" aria-label="Select {{ item.name }}">
+          </div>
+          <div class="image-card__preview ratio ratio-4x3 mb-3">
+            <a href="{{ url_for('preview_image_metadata', image_name=item.name) }}">
+              <img src="{{ item.url }}" alt="{{ item.title or item.name }}" class="img-fluid rounded border" loading="lazy">
+            </a>
+          </div>
+          <div class="image-card__meta d-flex flex-column gap-2">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <h5 class="fw-semibold mb-0">{{ item.title or item.name }}</h5>
+              {% if item.ai_generated %}
+                <span class="badge bg-secondary">AI generated</span>
+              {% else %}
+                <span class="badge bg-light text-dark border">Needs text</span>
+              {% endif %}
             </div>
-
-            <form id="path-form" class="path-form">
-                <h3>Import from server path</h3>
-                <p class="panel-description">Paste an absolute file or directory path that the server can read. Images will be copied into <code>Static/images</code>.</p>
-                <label for="path-input" class="sr-only">Absolute path on the server</label>
-                <div class="path-input-row">
-                    <input type="text" id="path-input" name="path" placeholder="/home/user/photos" required>
-                    <button type="submit" class="button">Import</button>
-                </div>
-            </form>
-        </section>
-
-        <section class="admin-panel">
-            <div class="panel-header">
-                <h2>Pending review <span id="pending-count" class="badge">{{ pending_images | length }}</span></h2>
-                <p class="panel-description">Review each image to confirm or edit the metadata that appears to visitors.</p>
-                <div class="panel-actions">
-                    <label class="checkbox" title="Overwrite existing title/description when regenerating">
-                        <input type="checkbox" id="force-overwrite">
-                        <span>Force overwrite</span>
-                    </label>
-                    <button type="button" id="select-all" class="button secondary">Select all</button>
-                    <button type="button" id="regen-selected" class="button">Re-run AI for selected</button>
-                </div>
+            <p class="filename small text-muted mb-0">{{ item.name }}</p>
+            {% if item.caption %}
+              <p class="caption fst-italic text-muted mb-0">{{ item.caption }}</p>
+            {% endif %}
+            {% if item.description %}
+              <p class="description">{{ item.description | truncate(260, True, '...') }}</p>
+            {% else %}
+              <p class="description text-muted fst-italic">No description detected yet.</p>
+            {% endif %}
+            {% if item.tags %}
+              <ul class="list-inline small mb-0">
+                {% for tag in item.tags %}
+                  <li class="list-inline-item border rounded-pill px-2 py-1 bg-light text-dark">{{ tag }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            <div class="image-card__footer d-flex justify-content-between align-items-center mt-auto flex-wrap gap-2">
+              {% if item.ai_details and (item.ai_details.created or item.ai_details.attempted_at) %}
+                <span class="timestamp small text-muted" data-ts="{{ item.ai_details.created or item.ai_details.attempted_at }}"></span>
+              {% endif %}
+              <div class="image-card__actions d-flex gap-2 justify-content-end flex-wrap">
+                <button type="button" class="btn btn-success btn-sm" data-action="accept-single">OK</button>
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Review details</a>
+              </div>
             </div>
-            <div id="pending-list" class="pending-list" aria-live="polite">
-                {% if pending_images %}
-                    {% for item in pending_images %}
-                        <article class="pending-card" data-image-name="{{ item.name }}">
-                            <div class="select-col">
-                                <input type="checkbox" class="item-select" aria-label="Select {{ item.name }}">
-                            </div>
-                            <div class="pending-thumb">
-                                <img src="{{ item.url }}" alt="Preview of {{ item.metadata.title }}" loading="lazy">
-                            </div>
-                            <div class="pending-info">
-                                <h3>{{ item.metadata.title }}</h3>
-                                <p class="filename">{{ item.name }}</p>
-                                {% if item.metadata.description %}
-                                    <p class="description">{{ item.metadata.description }}</p>
-                                {% else %}
-                                    <p class="description empty">No description detected yet.</p>
-                                {% endif %}
-                                {% set ai = item.metadata.get('ai_details') or {} %}
-                                {% set ai_time = ai.get('created') or ai.get('attempted_at') or item.metadata.get('detected_at') %}
-                                <p class="ai-status">
-                                    {% if item.metadata.get('ai_generated') %}
-                                        <span class="badge">AI generated</span>
-                                    {% else %}
-                                        <span class="badge secondary">AI pending</span>
-                                    {% endif %}
-                                    {% if ai_time %}
-                                        <span class="timestamp" data-ts="{{ ai_time }}"></span>
-                                    {% endif %}
-                                </p>
-                                <a class="button" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Review details</a>
-                            </div>
-                        </article>
-                    {% endfor %}
-                {% else %}
-                    <p class="empty-state">No new files waiting for review. Upload artwork to begin curating descriptions.</p>
-                {% endif %}
+          </div>
+        </article>
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if not pending_images %}
+    <div class="alert alert-info text-center mt-3">No new files waiting for review.</div>
+  {% endif %}
+</section>
+
+<!-- ✅ Gallery toolbar + list -->
+<section>
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+    <h2 class="h5 mb-0">Curated gallery <span id="gallery-count" class="badge text-bg-secondary">{{ reviewed_images | length }}</span></h2>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <label class="form-label me-2 mb-0" for="gallery-sort">Sort</label>
+      <select id="gallery-sort" class="form-select form-select-sm w-auto">
+        <option value="title:asc" selected>Title A–Z</option>
+        <option value="title:desc">Title Z–A</option>
+        <option value="name:asc">Filename A–Z</option>
+        <option value="name:desc">Filename Z–A</option>
+        <option value="detected_at:desc">Newest first</option>
+        <option value="detected_at:asc">Oldest first</option>
+        <option value="tag:asc">Tag name A–Z</option>
+        <option value="tag:desc">Tag name Z–A</option>
+      </select>
+      <input type="search" id="gallery-filter" class="form-control form-control-sm" placeholder="Filter by title, author, or tag">
+      <button type="button" id="select-all-gallery" class="btn btn-outline-secondary btn-sm">Select All</button>
+      <button type="button" id="mark-pending-gallery" class="btn btn-outline-warning btn-sm">Mark selected pending</button>
+      <button type="button" id="delete-selected-gallery" class="btn btn-outline-danger btn-sm">Delete Selected</button>
+    </div>
+  </div>
+
+  <div id="reviewed-list" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-4">
+    {% for item in reviewed_images %}
+      <div class="col">
+        <article class="image-card card h-100 shadow-sm p-3" data-image-name="{{ item.name }}">
+          <div class="form-check mb-2">
+            <input class="form-check-input item-select" type="checkbox" aria-label="Select {{ item.name }}">
+          </div>
+          <div class="image-card__preview ratio ratio-4x3 mb-3">
+            <a href="{{ url_for('preview_image_metadata', image_name=item.name) }}">
+              <img src="{{ item.url }}" alt="{{ item.title or item.name }}" class="img-fluid rounded border" loading="lazy">
+            </a>
+          </div>
+          <div class="image-card__meta d-flex flex-column gap-2">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <h5 class="fw-semibold mb-0">{{ item.title or item.name }}</h5>
+              <span class="badge bg-secondary">Curated</span>
             </div>
-        </section>
-    </main>
+            <p class="filename small text-muted mb-0">{{ item.name }}</p>
+            {% if item.caption %}
+              <p class="caption fst-italic text-muted mb-0">{{ item.caption }}</p>
+            {% endif %}
+            {% if item.description %}
+              <p class="description">{{ item.description | truncate(260, True, '...') }}</p>
+            {% endif %}
+            {% if item.tags %}
+              <ul class="list-inline small mb-0">
+                {% for tag in item.tags %}
+                  <li class="list-inline-item border rounded-pill px-2 py-1 bg-light text-dark">{{ tag }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            <div class="image-card__footer d-flex justify-content-between align-items-center mt-auto flex-wrap gap-2">
+              {% if item.ai_details and (item.ai_details.created or item.ai_details.attempted_at) %}
+                <span class="timestamp small text-muted" data-ts="{{ item.ai_details.created or item.ai_details.attempted_at }}"></span>
+              {% endif %}
+              <div class="image-card__actions d-flex gap-2 justify-content-end flex-wrap">
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Edit</a>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    {% endfor %}
+  </div>
+  {% if not reviewed_images %}
+    <div class="alert alert-info text-center mt-3">No curated artwork yet.</div>
+  {% endif %}
+</section>
+{% endblock %}
 
-    <section id="feedback" class="feedback" role="status" aria-live="polite" hidden></section>
-
-    <footer>
-        <p>Artwork Gallery Administration</p>
-    </footer>
-
-    <script>
-    const dropzone = document.getElementById('dropzone');
-    const fileInput = document.getElementById('file-input');
-    const selectFilesButton = document.getElementById('select-files');
-    const feedback = document.getElementById('feedback');
-    const pendingList = document.getElementById('pending-list');
-    const pendingCount = document.getElementById('pending-count');
-    const refreshButton = document.getElementById('refresh-pending');
-    const pathForm = document.getElementById('path-form');
-    const aiForm = document.getElementById('ai-config-form');
-    const aiEnabled = document.getElementById('ai-enabled');
-    const aiModel = document.getElementById('ai-model');
-    const aiTemp = document.getElementById('ai-temp');
-    const aiTokens = document.getElementById('ai-tokens');
-    const selectAllBtn = document.getElementById('select-all');
-    const regenBtn = document.getElementById('regen-selected');
-    const forceOverwrite = document.getElementById('force-overwrite');
-
-    function showFeedback(message, type = 'info') {
-        feedback.textContent = message;
-        feedback.classList.remove('error', 'success');
-        feedback.classList.add(type === 'error' ? 'error' : 'success');
-        feedback.hidden = false;
-        window.setTimeout(() => {
-            feedback.hidden = true;
-        }, 8000);
-    }
-
-    function renderPendingList(pending) {
-        pendingList.innerHTML = '';
-        if (!pending || pending.length === 0) {
-            const emptyMessage = document.createElement('p');
-            emptyMessage.className = 'empty-state';
-            emptyMessage.textContent = 'No new files waiting for review. Upload artwork to begin curating descriptions.';
-            pendingList.appendChild(emptyMessage);
-        } else {
-            pending.forEach((item) => {
-                const card = document.createElement('article');
-                card.className = 'pending-card';
-                card.dataset.imageName = item.name;
-
-                const selectCol = document.createElement('div');
-                selectCol.className = 'select-col';
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.className = 'item-select';
-                checkbox.setAttribute('aria-label', `Select ${item.name}`);
-                selectCol.appendChild(checkbox);
-                card.appendChild(selectCol);
-
-                const thumb = document.createElement('div');
-                thumb.className = 'pending-thumb';
-                const img = document.createElement('img');
-                img.src = item.url;
-                img.alt = `Preview of ${item.metadata?.title || item.name}`;
-                img.loading = 'lazy';
-                thumb.appendChild(img);
-                card.appendChild(thumb);
-
-                const info = document.createElement('div');
-                info.className = 'pending-info';
-
-                const title = document.createElement('h3');
-                title.textContent = item.metadata?.title || item.name;
-                info.appendChild(title);
-
-                const filename = document.createElement('p');
-                filename.className = 'filename';
-                filename.textContent = item.name;
-                info.appendChild(filename);
-
-                const description = document.createElement('p');
-                description.className = 'description';
-                const desc = item.metadata?.description;
-                if (desc) {
-                    description.textContent = desc;
-                } else {
-                    description.classList.add('empty');
-                    description.textContent = 'No description detected yet.';
-                }
-                info.appendChild(description);
-
-                const ai = item.metadata?.ai_details || {};
-                const aiStatus = document.createElement('p');
-                aiStatus.className = 'ai-status';
-                const badge = document.createElement('span');
-                const generated = !!item.metadata?.ai_generated;
-                badge.className = generated ? 'badge' : 'badge secondary';
-                badge.textContent = generated ? 'AI generated' : 'AI pending';
-                aiStatus.appendChild(badge);
-                const ts = ai.created || ai.attempted_at || item.metadata?.detected_at;
-                if (ts) {
-                    const tsSpan = document.createElement('span');
-                    tsSpan.className = 'timestamp';
-                    tsSpan.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
-                    aiStatus.appendChild(tsSpan);
-                }
-                info.appendChild(aiStatus);
-
-                const link = document.createElement('a');
-                link.className = 'button';
-                link.href = `/admin/review/${encodeURIComponent(item.name)}`;
-                link.textContent = 'Review details';
-                info.appendChild(link);
-
-                card.appendChild(info);
-                pendingList.appendChild(card);
-            });
-        }
-        if (pendingCount) {
-            pendingCount.textContent = pending ? pending.length : 0;
-        }
-    }
-
-    async function loadConfig() {
-        try {
-            const res = await fetch('/admin/config');
-            const data = await res.json();
-            const cfg = data.ai || {};
-            if (typeof cfg.enabled === 'boolean') aiEnabled.checked = cfg.enabled;
-            if (typeof cfg.model === 'string') aiModel.value = cfg.model;
-            if (typeof cfg.temperature === 'number') aiTemp.value = cfg.temperature;
-            if (typeof cfg.max_output_tokens === 'number') aiTokens.value = cfg.max_output_tokens;
-        } catch (e) {
-            console.error(e);
-        }
-    }
-
-    async function saveConfig(event) {
-        event?.preventDefault?.();
-        const payload = {
-            ai: {
-                enabled: !!aiEnabled.checked,
-                model: aiModel.value,
-                temperature: parseFloat(aiTemp.value),
-                max_output_tokens: parseInt(aiTokens.value, 10)
-            }
-        };
-        try {
-            const res = await fetch('/admin/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || 'Failed to save settings');
-            showFeedback('Settings saved.', 'success');
-        } catch (e) {
-            console.error(e);
-            showFeedback(e.message || 'Failed to save settings', 'error');
-        }
-    }
-
-    function selectedNames() {
-        return Array.from(document.querySelectorAll('.pending-card .item-select:checked'))
-            .map((cb) => cb.closest('.pending-card')?.dataset.imageName)
-            .filter(Boolean);
-    }
-
-    async function regenSelected() {
-        const names = selectedNames();
-        if (!names.length) {
-            showFeedback('No images selected.', 'error');
-            return;
-        }
-        try {
-            const res = await fetch('/admin/ai/regenerate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ images: names, force: !!forceOverwrite?.checked })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || 'Regeneration failed');
-            renderPendingList(data.pending || []);
-            const updated = (data.updated || []).map(x => x.name).join(', ');
-            const errs = (data.errors || []).map(x => `${x.name}: ${x.error}`).join('; ');
-            let msg = updated ? `Updated: ${updated}` : '';
-            if (errs) msg += (msg ? ' | ' : '') + `Errors: ${errs}`;
-            showFeedback(msg || 'Regeneration complete.', 'success');
-        } catch (e) {
-            console.error(e);
-            showFeedback(e.message || 'Regeneration failed', 'error');
-        }
-    }
-
-    async function uploadFiles(files) {
-        if (!files || files.length === 0) {
-            return;
-        }
-        const formData = new FormData();
-        Array.from(files).forEach((file) => formData.append('files', file));
-
-        const response = await fetch('/admin/upload', {
-            method: 'POST',
-            body: formData,
-        });
-        const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.detail || 'Upload failed');
-        }
-        renderPendingList(data.pending || []);
-        const saved = data.saved?.length ? `Saved: ${data.saved.join(', ')}` : '';
-        const skipped = data.skipped?.length ? ` Skipped: ${data.skipped.join(', ')}` : '';
-        showFeedback(`${data.message || 'Upload complete.'} ${saved}${skipped}`.trim(), 'success');
-    }
-
-    async function fetchPending(showMessage = false) {
-        const response = await fetch('/admin/api/new-files');
-        const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.detail || 'Unable to refresh pending files');
-        }
-        renderPendingList(data.pending || []);
-        if (showMessage) {
-            showFeedback('Pending list refreshed.', 'success');
-        }
-    }
-
-    if (dropzone) {
-        ['dragenter', 'dragover'].forEach((eventName) => {
-            dropzone.addEventListener(eventName, (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                dropzone.classList.add('is-dragover');
-            });
-        });
-
-        ['dragleave', 'dragend', 'drop'].forEach((eventName) => {
-            dropzone.addEventListener(eventName, (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                dropzone.classList.remove('is-dragover');
-            });
-        });
-
-        dropzone.addEventListener('drop', async (event) => {
-            try {
-                await uploadFiles(event.dataTransfer.files);
-            } catch (error) {
-                console.error(error);
-                showFeedback(error.message, 'error');
-            }
-        });
-
-        dropzone.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                fileInput?.click();
-            }
-        });
-    }
-
-    selectFilesButton?.addEventListener('click', () => fileInput?.click());
-
-    fileInput?.addEventListener('change', async (event) => {
-        try {
-            await uploadFiles(event.target.files);
-            event.target.value = '';
-        } catch (error) {
-            console.error(error);
-            showFeedback(error.message, 'error');
-        }
+{% block scripts %}
+  {{ super() }}
+  <script id="admin-state" type="application/json">{{ admin_data | tojson }}</script>
+  <!-- Load dashboard behaviour (upload, sort, filter, bulk actions) -->
+  <script src="{{ url_for('static', path='js/review.js') }}" defer></script>
+  <!-- Safety net: ensure initReview runs once even if script timing changes -->
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      if (typeof window.initReview === 'function') {
+        window.initReview();
+      }
     });
-
-    pathForm?.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const formData = new FormData(pathForm);
-        try {
-            const response = await fetch('/admin/import-path', {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.detail || 'Import failed');
-            }
-            renderPendingList(data.pending || []);
-            const copied = data.copied?.length ? `Imported: ${data.copied.join(', ')}` : '';
-            const skipped = data.skipped?.length ? ` Skipped: ${data.skipped.join(', ')}` : '';
-            showFeedback(`${copied}${skipped}`.trim() || 'Import complete.', 'success');
-            pathForm.reset();
-        } catch (error) {
-            console.error(error);
-            showFeedback(error.message, 'error');
-        }
-    });
-
-    aiForm?.addEventListener('submit', saveConfig);
-    selectAllBtn?.addEventListener('click', () => {
-        const boxes = document.querySelectorAll('.pending-card .item-select');
-        const allChecked = Array.from(boxes).every(cb => cb.checked);
-        boxes.forEach(cb => cb.checked = !allChecked);
-    });
-    regenBtn?.addEventListener('click', regenSelected);
-
-    refreshButton?.addEventListener('click', async () => {
-        try {
-            await fetchPending(true);
-        } catch (error) {
-            console.error(error);
-            showFeedback(error.message, 'error');
-        }
-    });
-
-    window.setInterval(async () => {
-        try {
-            await fetchPending(false);
-        } catch (error) {
-            console.error(error);
-        }
-    }, 15000);
-
-    // Initial load
-    loadConfig();
-
-    // Format any server-rendered timestamps
-    function formatServerTimestamps() {
-        document.querySelectorAll('.ai-status .timestamp[data-ts]')
-            .forEach((el) => {
-                const ts = parseFloat(el.getAttribute('data-ts'));
-                if (!isNaN(ts)) {
-                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
-                }
-            });
-    }
-    formatServerTimestamps();
-    </script>
-</body>
-</html>
+  </script>
+{% endblock %}

@@ -1,0 +1,19 @@
+{
+  "context": {
+    "loadMemoryFromIncludeDirectories": true,
+    "fileFiltering": {
+      "enableFuzzySearch": false
+    }
+  },
+  "security": {
+    "autoAddToPolicyByDefault": true
+  },
+  "experimental": {
+    "worktrees": true,
+    "modelSteering": true,
+    "directWebFetch": true,
+    "memoryManager": true,
+    "contextManagement": true,
+    "topicUpdateNarration": true
+  }
+}
