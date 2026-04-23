@@ -43,9 +43,9 @@ The command line (or "terminal") is a text-based interface for interacting with 
 - Python 3.13 (recommended) or 3.10+
 
 ### Setup
-1. Create virtual environment:
+1. Create virtual environment using uv (requires Python 3.13):
    ```bash
-   python -m venv .venv
+   uv venv --python 3.13
    ```
 2. Activate virtual environment:
    - macOS/Linux:
@@ -60,13 +60,13 @@ The command line (or "terminal") is a text-based interface for interacting with 
 ### Dependencies
 Install project dependencies (after activating the venv):
 ```bash
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 ### Execution
 Run the FastAPI application:
 ```bash
-uvicorn main:app --reload
+uv run uvicorn main:app --reload
 ```
 
 ### Access
@@ -75,7 +75,7 @@ uvicorn main:app --reload
 
 ## Quick Start (Experienced Users)
 ```bash
-git clone <repo_url> && cd <repo_name> && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && uvicorn main:app --reload
+git clone <repo_url> && cd <repo_name> && uv venv --python 3.13 && source .venv/bin/activate && uv pip install -r requirements.txt && uv run uvicorn main:app --reload
 ```
 
 ## Docker
@@ -119,11 +119,13 @@ pytest
 
 ## Project Structure
 - `main.py`: FastAPI application entry point.
-- `templates/`: Jinja2 HTML templates.
+- `templates/`: Jinja2 HTML templates (including `index.html`, `artwork_detail.html`, `order_form.html`).
 - `Static/`: Static assets (images, CSS).
   - `Static/images/`: Artwork images and their JSON sidecars.
   - `Static/css/`: Stylesheets.
+- `data/`: Local storage for order inquiries (`orders.jsonl`).
 - `requirements.txt`: Project dependencies.
+- `TODOS.md`: Project roadmap and technical debt tracking.
 
 ## Contribution Guidelines
 - Adhere to PEP 8 style guide.
