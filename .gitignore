@@ -33,3 +33,4 @@ __pycache__/
 .admin.html
 .Dockerfile.swp
 Static/.DS_Store
+data/

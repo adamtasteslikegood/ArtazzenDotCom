@@ -59,6 +59,8 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 CONFIG_PATH = BASE_DIR / "ai_config.json"
 ADV_CONFIG_PATH = BASE_DIR / "advanced_config.json"
+DATA_DIR = BASE_DIR / "data"
+ORDERS_PATH = DATA_DIR / "orders.jsonl"
 WATCHER_LOCK_PATH = BASE_DIR / ".watcher.lock"
 MIGRATION_LOCK_PATH = BASE_DIR / ".migration.lock"
 
@@ -98,6 +100,7 @@ except ValueError:
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "css").mkdir(parents=True, exist_ok=True) # For optional CSS
 
 def _configure_logging() -> logging.Logger:
@@ -1491,6 +1494,41 @@ def _load_metadata(image_path: Path) -> Dict[str, Any]:
     return data
 
 
+def _get_artwork_data(image_filename: str) -> Dict[str, Any]:
+    """Retrieves and formats metadata for a specific artwork filename."""
+    filename = _sanitize_filename(image_filename)
+    if not filename or not _allowed_image(filename):
+        return {}
+
+    image_path = IMAGES_DIR / filename
+    if not image_path.exists():
+        return {}
+
+    metadata = _load_metadata(image_path)
+    image_url = f"/static/images/{filename}"
+
+    detected_raw = metadata.get("detected_at")
+    detected_display: Optional[str] = None
+    if isinstance(detected_raw, (int, float)):
+        try:
+            detected_display = (
+                datetime.fromtimestamp(detected_raw, tz=timezone.utc).strftime("%B %d, %Y")
+            )
+        except (OverflowError, OSError, ValueError):
+            detected_display = None
+    elif isinstance(detected_raw, str):
+        detected_display = detected_raw
+
+    return {
+        "filename": filename,
+        "title": metadata.get("title", "Artwork"),
+        "description": metadata.get("description", ""),
+        "caption": metadata.get("caption", ""),
+        "image_url": image_url,
+        "detected_at": detected_display,
+    }
+
+
 def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
     props = schema.get("properties", {})
     required = set(schema.get("required", []))
@@ -2375,41 +2413,69 @@ async def highlight_collection_series(request: Request, collection_name: str) ->
     )
 
 
+@app.get("/order/{image_filename}", response_class=HTMLResponse)
+async def order_form(request: Request, image_filename: str):
+    """Displays the order/inquiry form for a specific artwork."""
+    artwork_data = _get_artwork_data(image_filename)
+    if not artwork_data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
+
+    return templates.TemplateResponse(
+        "order_form.html",
+        {"request": request, "artwork": artwork_data},
+    )
+
+
+@app.post("/order/submit", response_class=HTMLResponse)
+async def order_submit(
+    request: Request,
+    image_filename: str = Form(...),
+    customer_name: str = Form(...),
+    customer_email: str = Form(...),
+    product_type: str = Form(...),
+    message: str = Form(""),
+):
+    """Processes and logs the order inquiry."""
+    # Basic validation
+    if not customer_name or not customer_email:
+        raise HTTPException(status_code=400, detail="Name and email are required.")
+
+    # Log to JSONL
+    order_entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "image_filename": image_filename,
+        "customer_name": customer_name,
+        "customer_email": customer_email,
+        "product_type": product_type,
+        "message": message,
+    }
+
+    try:
+        with open(ORDERS_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(order_entry) + "\n")
+    except Exception as exc:
+        logger.error("Failed to log order: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not save order. Please try again later.")
+
+    return templates.TemplateResponse(
+        "order_form.html",
+        {
+            "request": request,
+            "artwork": _get_artwork_data(image_filename),
+            "success": True,
+            "message": f"Thank you, {customer_name}! Your request for '{product_type}' has been received. I'll get back to you at {customer_email} soon.",
+        },
+    )
+
+
 @app.get("/artwork/{image_filename}", response_class=HTMLResponse)
 async def artwork_detail(request: Request, image_filename: str):
     """
     Displays the details of a single piece of artwork.
     """
-    filename = _sanitize_filename(image_filename)
-    if not filename or not _allowed_image(filename):
+    artwork_data = _get_artwork_data(image_filename)
+    if not artwork_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
-
-    image_path = IMAGES_DIR / filename
-    if not image_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
-
-    metadata = _load_metadata(image_path)
-    image_url = f"/static/images/{filename}"
-
-    detected_raw = metadata.get("detected_at")
-    detected_display: Optional[str] = None
-    if isinstance(detected_raw, (int, float)):
-        try:
-            detected_display = (
-                datetime.fromtimestamp(detected_raw, tz=timezone.utc).strftime("%B %d, %Y")
-            )
-        except (OverflowError, OSError, ValueError):
-            detected_display = None
-    elif isinstance(detected_raw, str):
-        detected_display = detected_raw
-
-    artwork_data = {
-        "title": metadata.get("title", "Artwork"),
-        "description": metadata.get("description", ""),
-        "caption": metadata.get("caption", ""),
-        "image_url": image_url,
-        "detected_at": detected_display,
-    }
 
     return templates.TemplateResponse(
         "artwork_detail.html",

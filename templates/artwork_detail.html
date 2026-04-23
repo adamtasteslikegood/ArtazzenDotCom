@@ -49,6 +49,7 @@
                         {{ artwork.description or 'This piece invites you to explore the nuances of the artist’s palette—follow the gradients, the soft light, and the hidden gestures that reveal themselves slowly.' }}
                     </p>
                     <div class="detail-actions">
+                        <a href="{{ url_for('order_form', image_filename=artwork.filename) }}" class="button primary-cta">Request to Buy / Order Product</a>
                         <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" class="button">Open full resolution</a>
                         <a href="/" class="button secondary">Back to gallery</a>
                     </div>
