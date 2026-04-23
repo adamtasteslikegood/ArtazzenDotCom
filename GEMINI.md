@@ -32,20 +32,17 @@ To build and run the project, follow these steps:
     cd ArtazzenDotCom
     ```
 
-2.  **Create and activate a virtual environment:**
+2.  **Setup with uv:**
+    This project requires **Python 3.13** and uses **uv** for dependency management.
     ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # On Windows, use: .\.venv\Scripts\activate
+    uv venv --python 3.13
+    source .venv/bin/activate
+    uv pip install -r requirements.txt
     ```
 
-3.  **Install the dependencies:**
+3.  **Run the application:**
     ```bash
-    pip install -r requirements.txt
-    ```
-
-4.  **Run the application:**
-    ```bash
-    uvicorn main:app --reload
+    uv run uvicorn main:app --reload
     ```
 
 The application will be available at `http://127.0.0.1:8000`. The admin dashboard is at `http://127.0.0.1:8000/admin`.
