@@ -50,18 +50,18 @@ async def artwork_highlight(request: Request, filename: str):
     if not artwork:
         return HTMLResponse(content="Artwork not found", status_code=404)
         
-    return templates.TemplateResponse("artwork_highlight.html", {"request": request, "artwork": artwork})
+    return templates.TemplateResponse(request=request, name="artwork_highlight.html", context={"request": request, "artwork": artwork})
 
 
 @app.get("/", response_class=HTMLResponse)
 async def gallery(request: Request):
     artwork = get_artwork()
-    return templates.TemplateResponse("index.html", {"request": request, "artwork_files": artwork})
+    return templates.TemplateResponse(request=request, name="index.html", context={"request": request, "artwork_files": artwork})
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin(request: Request):
     artwork = get_artwork()
-    return templates.TemplateResponse("admin.html", {"request": request, "artwork_files": artwork})
+    return templates.TemplateResponse(request=request, name="admin.html", context={"request": request, "artwork_files": artwork})
 
 @app.post("/admin/upload")
 async def upload_image(files: List[UploadFile] = File(...)):

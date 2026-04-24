@@ -1693,8 +1693,9 @@ async def admin_home(request: Request) -> HTMLResponse:
     pending = dashboard["pending"]
     request.app.state.pending_images = pending
     return templates.TemplateResponse(
-            "reviewAddedFiles.html",
-            {
+            request=request,
+            name="reviewAddedFiles.html",
+            context={
                 "request": request,
                 "pending_images": pending,
                 "reviewed_images": dashboard["reviewed"],
@@ -1714,8 +1715,9 @@ async def review_added_files(request: Request) -> HTMLResponse:
     pending = dashboard["pending"]
     request.app.state.pending_images = pending
     return templates.TemplateResponse(
-            "reviewAddedFiles.html",
-            {
+            request=request,
+            name="reviewAddedFiles.html",
+            context={
                 "request": request,
                 "pending_images": pending,
                 "reviewed_images": dashboard["reviewed"],
@@ -1730,8 +1732,9 @@ async def review_added_files(request: Request) -> HTMLResponse:
 async def advanced_settings(request: Request) -> HTMLResponse:
     adv = getattr(app.state, "advanced_config", _load_advanced_config())
     return templates.TemplateResponse(
-        "advancedSettings.html",
-        {
+        request=request,
+        name="advancedSettings.html",
+        context={
             "request": request,
             "advanced": adv,
         },
@@ -2185,8 +2188,9 @@ async def preview_image_metadata(request: Request, image_name: str) -> HTMLRespo
     metadata = _populate_missing_metadata(image_path, _load_metadata(image_path))
 
     return templates.TemplateResponse(
-        "previewImageText.html",
-        {
+        request=request,
+        name="previewImageText.html",
+        context={
             "request": request,
             "image_name": filename,
             "image_url": f"/static/images/{filename}",
@@ -2388,8 +2392,9 @@ async def highlight_collection(request: Request, collection_name: str) -> HTMLRe
     images = _load_collection_images(collection_name)
     collection_title = _pretty_collection_name(collection_name)
     return templates.TemplateResponse(
-        "highlight_collection_grid.html",
-        {
+        request=request,
+        name="highlight_collection_grid.html",
+        context={
             "request": request,
             "collection_name": _sanitize_filename(collection_name),
             "collection_title": collection_title,
@@ -2403,8 +2408,9 @@ async def highlight_collection_series(request: Request, collection_name: str) ->
     images = _load_collection_images(collection_name)
     collection_title = _pretty_collection_name(collection_name)
     return templates.TemplateResponse(
-        "highlight_collection_series.html",
-        {
+        request=request,
+        name="highlight_collection_series.html",
+        context={
             "request": request,
             "collection_name": _sanitize_filename(collection_name),
             "collection_title": collection_title,
@@ -2421,8 +2427,9 @@ async def order_form(request: Request, image_filename: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
 
     return templates.TemplateResponse(
-        "order_form.html",
-        {"request": request, "artwork": artwork_data},
+        request=request,
+        name="order_form.html",
+        context={"request": request, "artwork": artwork_data},
     )
 
 
@@ -2458,8 +2465,9 @@ async def order_submit(
         raise HTTPException(status_code=500, detail="Could not save order. Please try again later.")
 
     return templates.TemplateResponse(
-        "order_form.html",
-        {
+        request=request,
+        name="order_form.html",
+        context={
             "request": request,
             "artwork": _get_artwork_data(image_filename),
             "success": True,
@@ -2478,8 +2486,9 @@ async def artwork_detail(request: Request, image_filename: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
 
     return templates.TemplateResponse(
-        "artwork_detail.html",
-        {"request": request, "artwork": artwork_data},
+        request=request,
+        name="artwork_detail.html",
+        context={"request": request, "artwork": artwork_data},
     )
 
 
@@ -2500,7 +2509,7 @@ async def read_root(request: Request):
     }
 
     # Render the HTML template with the context data
-    return templates.TemplateResponse("index.html", context)
+    return templates.TemplateResponse(request=request, name="index.html", context=context)
 
 # --- Running the App ---
 # To run this app:
