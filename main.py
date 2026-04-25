@@ -319,6 +319,7 @@ def _get_openai_api_key() -> Optional[str]:
         v = getattr(local_key, "MY_OPENAI_API_KEY", None)
         if v:
             return str(v)
+    logger.warning("OpenAI API key not found. AI metadata generation will be skipped.")
     return None
 
 

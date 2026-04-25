@@ -3,3 +3,4 @@
 /Static/images/
 __pycache__/
 .venv/
+.env*
