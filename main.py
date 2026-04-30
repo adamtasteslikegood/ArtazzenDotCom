@@ -12,6 +12,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import secrets
+
 from fastapi import (
     FastAPI,
     File,
@@ -21,10 +23,12 @@ from fastapi import (
     UploadFile,
     Depends,
 )
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette import status
+from starlette.middleware.base import BaseHTTPMiddleware
 from PIL import Image, ExifTags
 from jsonschema import validate as js_validate, ValidationError
 import httpx
@@ -49,12 +53,19 @@ ALLOWED_IMAGE_EXTENSIONS = {
     ".png",
     ".gif",
     ".webp",
-    ".svg",
     ".bmp",
     ".tiff",
 }
 
 POLL_INTERVAL_SECONDS = 5
+
+ADMIN_USERNAME_ENV = "ADMIN_USERNAME"
+ADMIN_PASSWORD_ENV = "ADMIN_PASSWORD"
+
+try:
+    MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50")) * 1024 * 1024
+except ValueError:
+    MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
 
 OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
 OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
@@ -642,6 +653,58 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Artwork Gallery", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+# --- Security ---
+
+_http_basic = HTTPBasic()
+
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security-relevant HTTP response headers to every reply."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        return response
+
+
+app.add_middleware(_SecurityHeadersMiddleware)
+
+
+def _verify_admin(
+    credentials: HTTPBasicCredentials = Depends(_http_basic),
+) -> None:
+    """FastAPI dependency that enforces HTTP Basic Auth on admin routes.
+
+    Credentials are read from env vars ``ADMIN_USERNAME`` (default: ``admin``)
+    and ``ADMIN_PASSWORD`` (required; admin access is disabled when unset).
+    """
+    expected_password = os.getenv(ADMIN_PASSWORD_ENV, "")
+    if not expected_password:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Admin interface is not configured. "
+                f"Set the {ADMIN_PASSWORD_ENV} environment variable."
+            ),
+        )
+    expected_username = os.getenv(ADMIN_USERNAME_ENV, "admin")
+    username_ok = secrets.compare_digest(
+        credentials.username.encode("utf-8"),
+        expected_username.encode("utf-8"),
+    )
+    password_ok = secrets.compare_digest(
+        credentials.password.encode("utf-8"),
+        expected_password.encode("utf-8"),
+    )
+    if not (username_ok and password_ok):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": 'Basic realm="Artwork Admin"'},
+        )
+
 
 
 
@@ -788,6 +851,7 @@ async def get_pending_files(request: Request) -> List[Dict[str, Any]]:
 async def admin_home(
     request: Request,
     pending_images: List[Dict[str, Any]] = Depends(get_pending_files),
+    _: None = Depends(_verify_admin),
 ) -> HTMLResponse:
     """Render the admin review dashboard."""
     return templates.TemplateResponse(
@@ -804,6 +868,7 @@ async def admin_home(
 async def review_added_files(
     request: Request,
     pending_images: List[Dict[str, Any]] = Depends(get_pending_files),
+    _: None = Depends(_verify_admin),
 ) -> HTMLResponse:
     """Render the admin review dashboard. Alias for /admin."""
     return templates.TemplateResponse(
@@ -818,14 +883,15 @@ async def review_added_files(
 
 @app.get("/admin/api/new-files", response_class=JSONResponse)
 async def api_new_files(
-    pending: List[Dict[str, Any]] = Depends(get_pending_files)
+    pending: List[Dict[str, Any]] = Depends(get_pending_files),
+    _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     """Return the list of pending files as JSON."""
     return JSONResponse({"pending": pending})
 
 
 @app.get("/admin/config", response_class=JSONResponse)
-async def get_admin_config() -> JSONResponse:
+async def get_admin_config(_: None = Depends(_verify_admin)) -> JSONResponse:
     cfg = _get_ai_config()
     return JSONResponse({
         "ai": cfg,
@@ -834,7 +900,10 @@ async def get_admin_config() -> JSONResponse:
 
 
 @app.post("/admin/config", response_class=JSONResponse)
-async def update_admin_config(request: Request) -> JSONResponse:
+async def update_admin_config(
+    request: Request,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
     try:
         body = await request.json()
     except Exception:
@@ -864,7 +933,10 @@ async def update_admin_config(request: Request) -> JSONResponse:
 
 
 @app.post("/admin/config/reset", response_class=JSONResponse)
-async def reset_admin_config(request: Request) -> JSONResponse:
+async def reset_admin_config(
+    request: Request,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
     cfg = _default_ai_config_from_env()
     request.app.state.ai_config = cfg
     _save_ai_config(cfg)
@@ -875,6 +947,7 @@ async def reset_admin_config(request: Request) -> JSONResponse:
 async def regenerate_ai_metadata(
     request: Request,
     pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
+    _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     try:
         body = await request.json()
@@ -915,6 +988,7 @@ async def upload_images(
     request: Request,
     files: List[UploadFile] = File(...),
     pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
+    _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files uploaded")
@@ -933,8 +1007,17 @@ async def upload_images(
 
         destination = IMAGES_DIR / filename
         try:
+            content = await upload.read(MAX_UPLOAD_SIZE_BYTES + 1)
+            if len(content) > MAX_UPLOAD_SIZE_BYTES:
+                logger.warning(
+                    "Upload rejected: %s exceeds size limit (%d MB)",
+                    filename,
+                    MAX_UPLOAD_SIZE_BYTES // (1024 * 1024),
+                )
+                skipped.append(filename)
+                continue
             with destination.open("wb") as buffer:
-                shutil.copyfileobj(upload.file, buffer)
+                buffer.write(content)
             saved.append(filename)
             if _allowed_image(filename):
                 # Ensure sidecar exists for newly uploaded images
@@ -954,6 +1037,7 @@ async def import_from_path(
     request: Request,
     path: str = Form(...),
     pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
+    _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     source_path = Path(path).expanduser()
     if not source_path.exists():
@@ -988,7 +1072,11 @@ async def import_from_path(
 
 
 @app.get("/admin/review/{image_name}", response_class=HTMLResponse)
-async def preview_image_metadata(request: Request, image_name: str) -> HTMLResponse:
+async def preview_image_metadata(
+    request: Request,
+    image_name: str,
+    _: None = Depends(_verify_admin),
+) -> HTMLResponse:
     filename = _sanitize_filename(image_name)
     if not filename or not _allowed_image(filename):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
@@ -1021,6 +1109,7 @@ async def update_image_metadata(
     description: str = Form(""),
     action: str = Form("save"),
     pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
+    _: None = Depends(_verify_admin),
 ) -> RedirectResponse:
     filename = _sanitize_filename(image_name)
     if not filename or not _allowed_image(filename):
