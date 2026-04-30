@@ -238,8 +238,7 @@ def _resolve_image_path(filename: str) -> Path:
     """Return the resolved path inside IMAGES_DIR, raising 404 if the path escapes."""
     resolved = (IMAGES_DIR / filename).resolve()
     images_resolved = IMAGES_DIR.resolve()
-    # Ensure the resolved path is strictly inside IMAGES_DIR
-    if images_resolved not in resolved.parents:
+    if not resolved.is_relative_to(images_resolved):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
     return resolved
 
@@ -1018,6 +1017,16 @@ async def upload_images(
 
         destination = _resolve_image_path(filename)
         try:
+            # Fast pre-check using Content-Length / spooled size when available
+            if upload.size is not None and upload.size > MAX_UPLOAD_SIZE_BYTES:
+                logger.warning(
+                    "Upload rejected: %s exceeds size limit (%d MB)",
+                    filename,
+                    MAX_UPLOAD_SIZE_BYTES // BYTES_PER_MB,
+                )
+                skipped.append(filename)
+                continue
+            # Read with a hard cap to guard against inaccurate Content-Length
             content = await upload.read(MAX_UPLOAD_SIZE_BYTES + 1)
             if len(content) > MAX_UPLOAD_SIZE_BYTES:
                 logger.warning(
