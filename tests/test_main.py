@@ -48,13 +48,15 @@ def setup_function(function):
 
 def teardown_function(function):
     """Remove dummy files after tests."""
-    for name in ("test_image.jpg", "test_image.json", "upload_test.png"):
+    for name in ("test_image.jpg", "test_image.json", "upload_test.png", "evil.svg"):
         p = IMAGES_DIR / name
         if p.exists():
             os.remove(p)
-        sidecar = p.with_suffix(".json")
-        if sidecar.exists():
-            os.remove(sidecar)
+        # Remove the auto-generated sidecar only for image files (not .json files)
+        if p.suffix.lower() != ".json":
+            sidecar = p.with_suffix(".json")
+            if sidecar.exists():
+                os.remove(sidecar)
 
 
 # ---------------------------------------------------------------------------

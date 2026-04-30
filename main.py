@@ -62,10 +62,11 @@ POLL_INTERVAL_SECONDS = 5
 ADMIN_USERNAME_ENV = "ADMIN_USERNAME"
 ADMIN_PASSWORD_ENV = "ADMIN_PASSWORD"
 
+BYTES_PER_MB = 1024 * 1024
 try:
-    MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50")) * 1024 * 1024
+    MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50")) * BYTES_PER_MB
 except ValueError:
-    MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
+    MAX_UPLOAD_SIZE_BYTES = 50 * BYTES_PER_MB
 
 OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
 OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
@@ -231,6 +232,16 @@ def _load_schema() -> Dict[str, Any]:
 def _sanitize_filename(filename: str) -> str:
     """Return a safe filename without directory traversal."""
     return Path(filename).name
+
+
+def _resolve_image_path(filename: str) -> Path:
+    """Return the resolved path inside IMAGES_DIR, raising 404 if the path escapes."""
+    resolved = (IMAGES_DIR / filename).resolve()
+    images_resolved = IMAGES_DIR.resolve()
+    # Ensure the resolved path is strictly inside IMAGES_DIR
+    if images_resolved not in resolved.parents:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    return resolved
 
 
 def _allowed_image(filename: str) -> bool:
@@ -965,7 +976,7 @@ async def regenerate_ai_metadata(
         if not fname or not _allowed_image(fname):
             errors.append({"name": name, "error": "Unsupported or invalid filename"})
             continue
-        path = IMAGES_DIR / fname
+        path = _resolve_image_path(fname)
         if not path.exists():
             errors.append({"name": name, "error": "File not found"})
             continue
@@ -1005,14 +1016,14 @@ async def upload_images(
             skipped.append(filename)
             continue
 
-        destination = IMAGES_DIR / filename
+        destination = _resolve_image_path(filename)
         try:
             content = await upload.read(MAX_UPLOAD_SIZE_BYTES + 1)
             if len(content) > MAX_UPLOAD_SIZE_BYTES:
                 logger.warning(
                     "Upload rejected: %s exceeds size limit (%d MB)",
                     filename,
-                    MAX_UPLOAD_SIZE_BYTES // (1024 * 1024),
+                    MAX_UPLOAD_SIZE_BYTES // BYTES_PER_MB,
                 )
                 skipped.append(filename)
                 continue
@@ -1081,7 +1092,7 @@ async def preview_image_metadata(
     if not filename or not _allowed_image(filename):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
 
-    image_path = IMAGES_DIR / filename
+    image_path = _resolve_image_path(filename)
     if not image_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
 
@@ -1121,7 +1132,7 @@ async def update_image_metadata(
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    image_path = IMAGES_DIR / filename
+    image_path = _resolve_image_path(filename)
     if not image_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
 
@@ -1151,7 +1162,7 @@ async def artwork_detail(request: Request, image_filename: str):
     if not filename or not _allowed_image(filename):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
 
-    image_path = IMAGES_DIR / filename
+    image_path = _resolve_image_path(filename)
     if not image_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
 
