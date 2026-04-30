@@ -41,7 +41,7 @@ When adding tests use `pytest` + `httpx` in `tests/test_*.py`.
 Regression-check: gallery view (`/`), admin dashboard (`/admin`), upload flow, and metadata persistence.
 
 ## Common Pitfalls
-- The background poller thread uses a module-level lock; always acquire it before mutating shared state.
+- The background watcher runs as an asyncio task, not a thread; use the module-level lock when writing shared sidecar/config state rather than for the poll loop itself.
 - Image uploads are validated against `ALLOWED_IMAGE_EXTENSIONS`; unsupported formats are rejected.
 - Sidecar writes must be atomic (`write temp → rename`) to avoid corruption during polling.
-- Do not add or remove fields from sidecar JSON that are not in `ImageSidecar.schema.json`.
+- Do not introduce extra keys beyond `ImageSidecar.schema.json`, and do not drop required keys from sidecar JSON.
