@@ -235,10 +235,15 @@ def _sanitize_filename(filename: str) -> str:
 
 
 def _resolve_image_path(filename: str) -> Path:
-    """Return the resolved path inside IMAGES_DIR, raising 404 if the path escapes."""
-    resolved = (IMAGES_DIR / filename).resolve()
-    images_resolved = IMAGES_DIR.resolve()
-    if not resolved.is_relative_to(images_resolved):
+    """Return the resolved path inside IMAGES_DIR, raising 404 if the path escapes.
+
+    Strips any directory components from *filename* before joining so that
+    traversal sequences (e.g. ``../``) are discarded at the construction site,
+    not only at the containment-check site.
+    """
+    safe_name = Path(filename).name  # strip directory components first
+    resolved = (IMAGES_DIR / safe_name).resolve()
+    if not resolved.is_relative_to(IMAGES_DIR.resolve()):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
     return resolved
 
