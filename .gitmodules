@@ -1,0 +1,6 @@
+[submodule ".gemini/skills/gemstack"]
+	path = .gemini/skills/gemstack
+	url = https://github.com/ekrishgupta/gemstack.git
+[submodule "claude-skills"]
+	path = claude-skills
+	url = https://github.com/alirezarezvani/claude-skills.git

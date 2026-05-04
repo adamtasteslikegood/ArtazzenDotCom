@@ -35,7 +35,7 @@ __pycache__/
 .Dockerfile.swp
 Static/.DS_Store
 data/
-.gemstack/
-gemstack/
+/.gemstack/
+/gemstack/
 .aa
 
