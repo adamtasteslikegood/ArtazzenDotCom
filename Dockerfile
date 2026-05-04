@@ -24,11 +24,11 @@ RUN chown -R app:app /app
 # Run as non-root
 USER app
 
-EXPOSE 8000
+EXPOSE 8080
 
 # Allow tuning via environment, defaulting to a small multi-worker setup.
 # uvloop + httptools are enabled by requirements.txt and improve prod performance.
-ENV PORT=8000 \
+ENV PORT=8080 \
     UVICORN_WORKERS=4
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --loop uvloop --http httptools --workers ${UVICORN_WORKERS:-4}"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --loop uvloop --http httptools --workers ${UVICORN_WORKERS:-4}"]

@@ -7,6 +7,7 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 - Respect the FastAPI + Jinja2 architecture centered around `main.py`.
 - Treat sidecar JSON files next to each image as the source of truth—the schema lives in `ImageSidecar.schema.json`.
 - Preserve `Static/` capitalization; FastAPI mounts it at `/static`.
+- Preserve the current product split: the public gallery (`/`, `/artwork/*`, `/collections/*`, `/order/*`) and the admin curation surface (`/admin/*`) are separate experiences and should not be merged during UI redesign work.
 
 ## Daily Workflow
 1. **Understand the request.** Confirm whether it is a code change, doc update, or review. Ask clarifying questions only when truly needed.
@@ -18,8 +19,15 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 ## Coding Standards
 - Python code follows PEP 8, uses type hints, and logs through `logging.getLogger(__name__)`.
 - Functions use `snake_case`; classes use `PascalCase`.
-- Sidecar files must only contain `title`, `description`, `reviewed`, `detected_at`.
+- Sidecar files must follow `ImageSidecar.schema.json` and currently include `title`, `description`, `caption`, `author`, `copyright`, `tags`, `ai_generated`, `ai_details`, `reviewed`, and `detected_at`.
 - Template filenames stay aligned with existing naming (`index.html`, `reviewAddedFiles.html`, etc.).
+
+## Architecture Guardrails
+- Keep `main.py` as the source of truth for application behavior; treat template and CSS work as presentation changes layered over the existing route and metadata model.
+- Do not expose admin/curation actions in the public gallery UI. The gallery is public-facing; curation remains in `/admin`, `/admin/review/*`, `/admin/config`, and `/admin/advanced`.
+- Preserve the sidecar-first workflow: uploads/imports create or update `Static/images/<image>.json`, and metadata edits or AI regeneration write back to that sidecar instead of introducing a database-backed replacement.
+- Preserve the AI-assisted curation flow. Today the app can generate missing `title`, `description`, `caption` (short summary), `author`, and `tags`, and records provenance in `ai_generated` / `ai_details`.
+- Preserve the artwork inquiry flow: `artwork_detail.html` links to `/order/{image_filename}`, and submissions append to `data/orders.jsonl`.
 
 ## Documentation & Communication
 - Write concise, actionable commit-ready descriptions even if you are not creating the commit.
@@ -40,7 +48,7 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 ## Testing & Quality
 - No formal automated suite yet—lean on manual verification via browser, `test_main.http`, or curl.
 - When adding tests, prefer `pytest` + `httpx` in `tests/test_*.py`, keeping runs fast and isolated.
-- Watch for regressions in gallery view (`/`), admin dashboard (`/admin`), upload flow, and metadata persistence.
+- Watch for regressions in gallery view (`/`), artwork detail (`/artwork/*`), order flow (`/order/*`), admin dashboard (`/admin`), upload/import flow, AI regeneration, and sidecar metadata persistence.
 
 ## Sandbox & Approvals
 - Default sandbox mode is `workspace-write`; network is restricted. Request escalation only if absolutely required and provide one-sentence justification.

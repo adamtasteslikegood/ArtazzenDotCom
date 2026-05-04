@@ -9,6 +9,14 @@ The admin dashboard allows users to:
 - Review and edit image metadata.
 - Configure and use OpenAI's API to automatically generate titles and descriptions for images.
 
+# Current Architecture Guardrails
+
+- Keep the public gallery and the admin curation surface as separate experiences. Public routes live under `/`, `/artwork/*`, `/collections/*`, and `/order/*`; admin and curation routes live under `/admin/*`.
+- UI redesigns should preserve the underlying route behavior, sidecar workflow, and metadata model in `main.py` instead of replacing them with a new app architecture.
+- JSON sidecars are the metadata source of truth. The current schema includes `title`, `description`, `caption`, `author`, `copyright`, `tags`, `ai_generated`, `ai_details`, `reviewed`, and `detected_at`.
+- AI enrichment currently fills missing `title`, `description`, `caption`, `author`, and `tags`, and records provenance in `ai_details`.
+- The artwork detail page includes an order and inquiry flow backed by `/order/{image_filename}` and `data/orders.jsonl`; preserve that behavior during design updates.
+
 # Project Structure
 
 -   `main.py`: The main FastAPI application file.
@@ -55,3 +63,4 @@ The application will be available at `http://127.0.0.1:8000`. The admin dashboar
 -   **Testing:** The project uses `pytest` and `httpx` for testing. Tests should be placed in the `tests/` directory.
 -   **Commits:** Commits should be small, imperative, and scoped (e.g., "Add admin metadata review").
 -   **Pull Requests:** Document UI changes with screenshots and verification steps in pull requests.
+-   **Behavior Preservation:** Future design work should not blend admin controls into the public gallery or bypass the sidecar-based metadata workflow.

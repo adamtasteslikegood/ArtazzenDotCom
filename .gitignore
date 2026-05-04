@@ -16,6 +16,7 @@ __pycache__/
 
 # Logs
 /logs/
+*.log*
 
 # IDE
 .idea/
@@ -36,3 +37,5 @@ Static/.DS_Store
 data/
 .gemstack/
 gemstack/
+.aa
+

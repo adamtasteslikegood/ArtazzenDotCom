@@ -26,9 +26,9 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # --- Binding / Network ---
-# DEFAULT: 0.0.0.0:8000 (so LAN devices can reach it)
-# Override: set env GUNICORN_BIND (e.g., "127.0.0.1:8000" to restrict to localhost)
-bind = os.getenv("GUNICORN_BIND", "0.0.0.0:8000")
+# DEFAULT: 0.0.0.0:8080 (so LAN devices can reach it)
+# Override: set env GUNICORN_BIND (e.g., "127.0.0.1:8080" to restrict to localhost)
+bind = os.getenv("GUNICORN_BIND", "0.0.0.0:8080")
 
 
 # --- Concurrency ---
@@ -97,4 +97,4 @@ proxy_protocol = os.getenv("GUNICORN_PROXY_PROTOCOL", "false").lower() == "true"
 
 # How to reset to defaults:
 # - Remove/ignore this file OR unset the env vars above to let Gunicorn use its own defaults.
-# - Example to revert binding to localhost: export GUNICORN_BIND=127.0.0.1:8000
+# - Example to revert binding to localhost: export GUNICORN_BIND=127.0.0.1:8080

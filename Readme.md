@@ -1,6 +1,22 @@
 # Artwork Gallery Web Application
 
-ArtazzenDotCom is a FastAPI + Jinja2 project for curating artwork with rich metadata. Images live on disk with JSON “sidecars” that describe each piece, while the app provides both a public gallery and an admin workflow for uploads, reviews, and optional AI assistance.
+ArtazzenDotCom is a FastAPI + Jinja2 project for curating artwork with rich metadata. Images live on disk with JSON “sidecars” that describe each piece, while the app provides both a public gallery and a separate admin workflow for uploads, reviews, and optional AI assistance.
+
+## Architecture Overview
+
+The current branch intentionally separates the site into two surfaces:
+
+- **Public gallery:** `/`, `/artwork/{image}`, `/collections/{collection}`, `/collections/{collection}/series`, and `/order/{image}` are visitor-facing routes.
+- **Admin curation:** `/admin`, `/admin/review/{image}`, `/admin/config`, `/admin/advanced`, and the `/admin/api/*` / `/admin/*` mutation endpoints are for upload, review, AI regeneration, and metadata curation.
+
+That separation is part of the product design and should be preserved during future UI/UX work. Think of it as a lightweight gallery app paired with a built-in curation/admin surface rather than a single blended experience.
+
+Images are still the primary content store, but metadata is sidecar-driven:
+
+- Every image in `Static/images/` gets a JSON sidecar beside it.
+- Sidecars follow `ImageSidecar.schema.json` and currently store `title`, `description`, `caption`, `author`, `copyright`, `tags`, `ai_generated`, `ai_details`, `reviewed`, and `detected_at`.
+- AI enrichment can fill missing `title`, `description`, `caption` (short summary), `author`, and `tags`, and stores provenance in `ai_details`.
+- Artwork inquiries from the detail page are appended to `data/orders.jsonl`.
 
 ## For Beginners: Getting Started with a Full-Stack Application
 
@@ -119,11 +135,12 @@ pytest
 
 ## Project Structure
 - `main.py`: FastAPI application entry point.
-- `templates/`: Jinja2 HTML templates (including `index.html`, `artwork_detail.html`, `order_form.html`).
+- `templates/`: Jinja2 HTML templates (including `index.html`, `artwork_detail.html`, `order_form.html`, `reviewAddedFiles.html`, and `previewImageText.html`).
 - `Static/`: Static assets (images, CSS).
   - `Static/images/`: Artwork images and their JSON sidecars.
   - `Static/css/`: Stylesheets.
 - `data/`: Local storage for order inquiries (`orders.jsonl`).
+- `Docs/ai_config_Readme.md`: AI metadata and sidecar behavior notes.
 - `requirements.txt`: Project dependencies.
 - `TODOS.md`: Project roadmap and technical debt tracking.
 
@@ -175,9 +192,11 @@ Before cutting a release or updating your production container:
       artazzen-gallery
     ```
 - **Smoke tests**
-  - Visit `/` (public gallery) and `/admin` (dashboard).
+  - Visit `/` (public gallery), `/artwork/<image>`, `/order/<image>`, and `/admin` (dashboard).
   - Exercise: upload a few images, verify cards appear in “Needs review”, sorting/filtering work, and AI regeneration behaves as expected.
-  - Confirm you can edit metadata, Accept, Regenerate, and Delete images without errors in the logs.
+  - Confirm the public gallery does not expose admin-only curation controls.
+  - Confirm you can edit metadata, Accept, Mark pending, Regenerate, and Delete images without errors in the logs.
+  - Submit an order inquiry from the artwork detail page and verify it appends a record to `data/orders.jsonl`.
 
 ## Error Handling
 Error handling is implemented within `main.py` to ensure the application remains stable.

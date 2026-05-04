@@ -24,6 +24,23 @@ However, the **content** of those JSON files is affected by:
 - Whether AI generation is enabled (see `AI_METADATA_ENABLED` above)
 - Whether an OpenAI API key is configured
 
+### Current sidecar payload
+
+Sidecars follow `ImageSidecar.schema.json` and currently store:
+
+- `title`
+- `description`
+- `caption` (used as a shorter summary or plaque text)
+- `author`
+- `copyright`
+- `tags`
+- `ai_generated`
+- `ai_details`
+- `reviewed`
+- `detected_at`
+
+When AI enrichment succeeds, it fills missing `title`, `description`, `caption`, `author`, and `tags`, then records request and response metadata in `ai_details`.
+
 ## Example Usage
 
 ```shell script
@@ -52,6 +69,7 @@ OPENAI_TIMEOUT_SECONDS=45
 ## Notes
 
 - JSON sidecars are **always** created at `Static/images/<filename>.json` for each image
-- If AI is disabled or no API key is provided, sidecars will contain empty/EXIF-only metadata
+- If AI is disabled or no API key is provided, sidecars will contain schema-default metadata plus any imported or existing values
 - The AI settings can also be changed at runtime via the admin dashboard at `/admin/config`
 - Runtime config changes are persisted to `ai_config.json`
+- The public gallery consumes curated sidecar data, while the admin review flow is responsible for creating, regenerating, and approving that metadata
