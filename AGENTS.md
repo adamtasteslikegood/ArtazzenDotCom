@@ -18,7 +18,7 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 ## Coding Standards
 - Python code follows PEP 8, uses type hints, and logs through `logging.getLogger(__name__)`.
 - Functions use `snake_case`; classes use `PascalCase`.
-- Sidecar files must only contain `title`, `description`, `reviewed`, `detected_at`.
+- Sidecar files must conform to `ImageSidecar.schema.json` (the authoritative source). Required fields: `title`, `description`, `ai_generated`, `ai_details`, `reviewed`, `detected_at`.
 - Template filenames stay aligned with existing naming (`index.html`, `reviewAddedFiles.html`, etc.).
 
 ## Documentation & Communication
