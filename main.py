@@ -38,7 +38,9 @@ BASE_DIR = Path(__file__).resolve().parent
 # Static files are served from the URL path `/static`, but the folder in
 # the repository is named with a capital "S".
 STATIC_DIR = BASE_DIR / "Static"
-IMAGES_DIR = STATIC_DIR / "images"
+IMAGES_DIR = Path(os.getenv("IMAGES_DIR", STATIC_DIR / "images"))
+_USING_VOLUME = IMAGES_DIR != STATIC_DIR / "images"
+IMAGES_URL_PREFIX = "/images" if _USING_VOLUME else "/static/images"
 TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 CONFIG_PATH = BASE_DIR / "ai_config.json"
@@ -603,7 +605,7 @@ def new_files_detected() -> List[Dict[str, Any]]:
             pending.append(
                 {
                     "name": filename,
-                    "url": f"/static/images/{filename}",
+                    "url": f"{IMAGES_URL_PREFIX}/{filename}",
                     "metadata": metadata,
                     "detected_at": metadata.get("detected_at"),
                     "sidecar_exists": image_path.with_suffix(".json").exists(),
@@ -641,6 +643,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Artwork Gallery", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if _USING_VOLUME:
+    app.mount("/images", StaticFiles(directory=IMAGES_DIR), name="images")
 
 
 
@@ -758,7 +762,7 @@ def get_artwork_files():
                 file_path = IMAGES_DIR / filename
                 if file_path.is_file() and _allowed_image(filename):
                     meta = _load_metadata(file_path)
-                    image_url = f"/static/images/{filename}"
+                    image_url = f"{IMAGES_URL_PREFIX}/{filename}"
                     meta.update({"url": image_url, "name": filename})
                     artwork.append(meta)
                     logger.debug(f"Loaded metadata for {filename}")
@@ -1006,7 +1010,7 @@ async def preview_image_metadata(request: Request, image_name: str) -> HTMLRespo
         "previewImageText.html",
         {
             "image_name": filename,
-            "image_url": f"/static/images/{filename}",
+            "image_url": f"{IMAGES_URL_PREFIX}/{filename}",
             "metadata": metadata,
             "review_url": request.url_for("review_added_files"),
         },
@@ -1067,7 +1071,7 @@ async def artwork_detail(request: Request, image_filename: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
 
     metadata = _load_metadata(image_path)
-    image_url = f"/static/images/{filename}"
+    image_url = f"{IMAGES_URL_PREFIX}/{filename}"
 
     artwork_data = {
         "title": metadata.get("title", "Artwork"),
