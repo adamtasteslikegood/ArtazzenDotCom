@@ -108,6 +108,23 @@ git checkout -b feature/my-thing dev
 
 Always branch from `dev`, never from `main`. PRs target `main`.
 
+### Branch Protection
+
+Direct pushes to `dev` and `main` are **blocked** by GitHub rulesets. All changes go through pull requests.
+
+- **`dev` ruleset** — requires PR, Copilot code review on push, CodeQL scanning, code quality checks. No force-push, no deletion.
+- **`main_railway_production` ruleset** — same as dev plus **required review thread resolution** (all PR comments must be resolved before merge). Targets `main`, `production`, and `prod`.
+
+### PR Lifecycle
+
+1. **Create a PR** from your feature branch targeting `main`.
+2. **Wait for automated checks** — CodeQL, Copilot review, and code quality must pass.
+3. **Request review** if needed; respond to every comment.
+4. **Read all review comments** — do not merge with unread feedback.
+5. **Fix requested changes**, push new commits, and reply to each thread.
+6. **Resolve all comment threads** (required on `main` by ruleset).
+7. **Merge** via rebase or merge commit (squash is not allowed by ruleset).
+
 ## Deployment
 
 Deployed on **Railway** via Procfile: `uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers`
