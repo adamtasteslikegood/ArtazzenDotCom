@@ -4,6 +4,7 @@ Artwork gallery and curation platform built with FastAPI + Jinja2. Public galler
 
 @AGENTS.md
 @DESIGN.md
+@BRANCHING_STRATEGY.md
 
 ## Quick Start
 
@@ -29,7 +30,7 @@ Static/                  # Mounted at /static (preserve capital S)
   css/                   # Stylesheets (Techno-Botanical design system)
   images/                # Artwork files + co-located .json sidecars
 artazzen-design-system/  # Design system spec and tokens
-data/orders.jsonl        # Order data
+scripts/ahead-behind.sh  # Branch divergence checker
 tests/test_main.py       # Pytest suite
 ```
 
@@ -106,18 +107,17 @@ git checkout dev && git pull origin dev
 git checkout -b feature/my-thing dev
 ```
 
-Always branch from `dev`, never from `main`. PRs target `main`.
+Always branch from `dev`, never from `main`. PRs target `dev`.
+
+On completion of any `feat/`, `fix/`, `docs/`, or `chore/` branch: commit, push, and open a PR targeting `dev`. Open as **draft** if work is still in progress or needs discussion; open as **ready for review** if all checks should pass and it's mergeable.
 
 ### Branch Protection
 
-Direct pushes to `dev` and `main` are **blocked** by GitHub rulesets. All changes go through pull requests.
-
-- **`dev` ruleset** — requires PR, Copilot code review on push, CodeQL scanning, code quality checks. No force-push, no deletion.
-- **`main_railway_production` ruleset** — same as dev plus **required review thread resolution** (all PR comments must be resolved before merge). Targets `main`, `production`, and `prod`.
+Direct pushes to `dev` and `main` are **blocked** by GitHub rulesets. All changes go through pull requests. See `BRANCHING_STRATEGY.md` for full ruleset details.
 
 ### PR Lifecycle
 
-1. **Create a PR** from your feature branch targeting `main`.
+1. **Create a PR** from your feature branch targeting `dev`.
 2. **Wait for automated checks** — CodeQL, Copilot review, and code quality must pass.
 3. **Request review** if needed; respond to every comment.
 4. **Read all review comments** — do not merge with unread feedback.
