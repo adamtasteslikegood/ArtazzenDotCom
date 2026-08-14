@@ -69,6 +69,7 @@ try:
     MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50")) * BYTES_PER_MB
 except ValueError:
     MAX_UPLOAD_SIZE_BYTES = 50 * BYTES_PER_MB
+UPLOAD_CHUNK_SIZE = 64 * 1024  # 64 KB streaming chunks
 
 OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
 OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
@@ -674,7 +675,7 @@ if _USING_VOLUME:
 
 # --- Security ---
 
-_http_basic = HTTPBasic()
+_http_basic = HTTPBasic(auto_error=False)
 
 
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -692,12 +693,18 @@ app.add_middleware(_SecurityHeadersMiddleware)
 
 
 def _verify_admin(
-    credentials: HTTPBasicCredentials = Depends(_http_basic),
+    request: Request,
+    credentials: Optional[HTTPBasicCredentials] = Depends(_http_basic),
 ) -> None:
     """FastAPI dependency that enforces HTTP Basic Auth on admin routes.
 
     Credentials are read from env vars ``ADMIN_USERNAME`` (default: ``admin``)
     and ``ADMIN_PASSWORD`` (required; admin access is disabled when unset).
+
+    With ``auto_error=False`` on the :class:`HTTPBasic` scheme, this function
+    receives ``None`` when the browser sends no credentials, allowing it to
+    return a 503 when the password is not configured or a 401 prompting for
+    credentials.
     """
     expected_password = os.getenv(ADMIN_PASSWORD_ENV, "")
     if not expected_password:
@@ -707,6 +714,12 @@ def _verify_admin(
                 "Admin interface is not configured. "
                 f"Set the {ADMIN_PASSWORD_ENV} environment variable."
             ),
+        )
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": 'Basic realm="Artwork Admin"'},
         )
     expected_username = os.getenv(ADMIN_USERNAME_ENV, "admin")
     username_ok = secrets.compare_digest(
@@ -1035,9 +1048,21 @@ async def upload_images(
                 )
                 skipped.append(filename)
                 continue
-            # Read with a hard cap to guard against inaccurate Content-Length
-            content = await upload.read(MAX_UPLOAD_SIZE_BYTES + 1)
-            if len(content) > MAX_UPLOAD_SIZE_BYTES:
+            # Stream to disk in chunks to avoid holding entire files in memory
+            bytes_written = 0
+            exceeded = False
+            with destination.open("wb") as buffer:
+                while True:
+                    chunk = await upload.read(UPLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    bytes_written += len(chunk)
+                    if bytes_written > MAX_UPLOAD_SIZE_BYTES:
+                        exceeded = True
+                        break
+                    buffer.write(chunk)
+            if exceeded:
+                destination.unlink(missing_ok=True)
                 logger.warning(
                     "Upload rejected: %s exceeds size limit (%d MB)",
                     filename,
@@ -1045,8 +1070,6 @@ async def upload_images(
                 )
                 skipped.append(filename)
                 continue
-            with destination.open("wb") as buffer:
-                buffer.write(content)
             saved.append(filename)
             if _allowed_image(filename):
                 # Ensure sidecar exists for newly uploaded images
