@@ -30,7 +30,7 @@ Static/                  # Mounted at /static (preserve capital S)
   css/                   # Stylesheets (Techno-Botanical design system)
   images/                # Artwork files + co-located .json sidecars
 artazzen-design-system/  # Design system spec and tokens
-data/orders.jsonl        # Order data
+scripts/ahead-behind.sh  # Branch divergence checker
 tests/test_main.py       # Pytest suite
 ```
 
