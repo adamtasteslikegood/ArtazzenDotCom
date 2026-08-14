@@ -4,3 +4,12 @@
 __pycache__/
 .venv/
 .env
+.aa
+.gemini/
+.gemstack/
+app_repro.log
+claude-skills/
+data/
+final_test.log
+logs/
+
