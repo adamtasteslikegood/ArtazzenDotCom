@@ -173,21 +173,26 @@ def test_resolve_image_path_rejects_escape_and_symlink(monkeypatch, tmp_path):
         assert exc_info.value.status_code == 404
 
 
-def test_resolve_import_path_stays_within_configured_root(monkeypatch, tmp_path):
+def test_select_import_files_uses_root_allowlist(monkeypatch, tmp_path):
     import_root = tmp_path / "imports"
     import_root.mkdir()
     nested = import_root / "batch"
     nested.mkdir()
+    safe_file = nested / "safe.jpg"
+    safe_file.touch()
     outside = tmp_path / "outside"
     outside.mkdir()
-    (import_root / "escape").symlink_to(outside, target_is_directory=True)
+    outside_file = outside / "secret.jpg"
+    outside_file.touch()
+    (import_root / "escape.jpg").symlink_to(outside_file)
     monkeypatch.setattr(gallery_app, "IMPORT_ROOT", import_root)
 
-    assert gallery_app._resolve_import_path("batch") == nested
-    assert gallery_app._resolve_import_path(str(nested)) == nested
-    for candidate in ("../outside", str(outside), "escape"):
+    assert gallery_app._select_import_files("batch") == [safe_file]
+    assert gallery_app._select_import_files("batch/safe.jpg") == [safe_file]
+    assert gallery_app._select_import_files(".") == [safe_file]
+    for candidate in ("../outside", str(outside), "escape.jpg"):
         with pytest.raises(HTTPException) as exc_info:
-            gallery_app._resolve_import_path(candidate)
+            gallery_app._select_import_files(candidate)
         assert exc_info.value.status_code == 400
 
 
@@ -244,3 +249,79 @@ def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_
         {"name": "safe.jpg", "error": "Metadata regeneration failed"}
     ]
     assert secret_detail not in response.body.decode("utf-8")
+
+
+def test_openai_http_error_details_are_not_exposed(monkeypatch, tmp_path):
+    image_path = tmp_path / "safe.jpg"
+    image_path.touch()
+    secret_detail = "/srv/private/openai-response.txt"
+
+    class FailingClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            request = gallery_app.httpx.Request("POST", "https://api.openai.com/v1/responses")
+            raise gallery_app.httpx.ConnectError(secret_detail, request=request)
+
+    monkeypatch.setattr(gallery_app, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(gallery_app, "_prepare_image_for_openai", lambda _path: "data:image/jpeg;base64,eA==")
+    monkeypatch.setattr(gallery_app.httpx, "Client", FailingClient)
+
+    result = gallery_app._request_openai_metadata(image_path, {}, True, True)
+    details = result["details"]
+
+    assert details["error"] == "OpenAI metadata request failed."
+    assert details["error_body"] == ""
+    assert secret_detail not in json.dumps(result)
+
+
+def test_openai_parse_error_details_are_not_exposed(monkeypatch, tmp_path):
+    image_path = tmp_path / "safe.jpg"
+    image_path.touch()
+    secret_detail = "/srv/private/invalid-response.txt"
+
+    class InvalidJsonResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "id": "response-id",
+                "model": "test-model",
+                "output": [
+                    {
+                        "content": [
+                            {"type": "output_text", "text": f"not-json {secret_detail}"}
+                        ]
+                    }
+                ],
+            }
+
+    class InvalidJsonClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return InvalidJsonResponse()
+
+    monkeypatch.setattr(gallery_app, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(gallery_app, "_prepare_image_for_openai", lambda _path: "data:image/jpeg;base64,eA==")
+    monkeypatch.setattr(gallery_app.httpx, "Client", InvalidJsonClient)
+
+    result = gallery_app._request_openai_metadata(image_path, {}, True, True)
+
+    assert result["details"]["error"] == "OpenAI metadata response could not be parsed."
+    assert secret_detail not in result["details"]["error"]
