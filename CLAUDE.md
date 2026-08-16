@@ -127,7 +127,14 @@ Direct pushes to `dev` and `main` are **blocked** by GitHub rulesets. All change
 
 ## Deployment
 
-Deployed on **Railway** via Procfile: `uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers`
+**Production**: https://artazzen.com — deployed on Railway, auto-deploys from `main`.
+
+### Infrastructure
+
+- **Hosting**: Railway (dedicated project), Procfile: `uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"`
+- **DNS**: Cloudflare nameservers. Apex domain (`artazzen.com`) is canonical.
+- **www redirect**: `www.artazzen.com` → `artazzen.com` via Cloudflare 301 permanent redirect rule. `www` uses a proxied DNS record that resolves through Cloudflare edge IPs.
+- **CDN/Proxy**: Cloudflare proxy enabled on apex — provides SSL termination, DDoS protection, and caching.
 
 ### Railway Volume
 
