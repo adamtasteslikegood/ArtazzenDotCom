@@ -1,23 +1,23 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [0.1.0] - 2026-04-22
+## [0.1.1.0] - 2026-04-21
 
 ### Added
-- Direct order CTA and inquiry form on artwork detail pages to capture leads.
-- Reusable `_get_artwork_data` helper in backend to consolidate metadata extraction.
-- Atomic append-only logging of order requests to `data/orders.jsonl`.
-- `TODOS.md` file for tracking future feature phases and technical debt.
-- Basic test plan artifact generation for structured QA testing.
+- Implemented the new "Techno-Botanical" design system for a unique and beautiful visual experience.
+- Added a comprehensive test suite to ensure application stability and prevent future regressions.
+- You can now manage your artwork with the new admin dashboard, which includes features for reviewing, uploading, and importing images.
+- Artwork pages now feature dynamic accent colors extracted from the art itself, creating a more immersive viewing experience.
+- Added a "Zoom & Bloom" animation for a more engaging transition when viewing artwork.
 
 ### Changed
-- Switched default runtime requirement to Python 3.13 via `uv`.
-- Refactored `artwork_detail` route to leverage unified metadata extraction.
+- Refactor admin routes to use FastAPI dependency injection
+- Refactor event handlers to use lifespan context manager
+- Update TemplateResponse calls to resolve deprecation warnings
 
-### Security
-- Excluded `data/` directory via `.gitignore` to prevent committing customer inquiry information.
+### Fixed
+- Resolve dependency conflicts with Python 3.14
+- Fix various test failures and warnings
+- Resolve merge conflict in .gitignore
+
 

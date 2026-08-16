@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Artazzen — Web UI Kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background: #F7F4EE;
+    color: #212529;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #dee2e6; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="ArtworkCard.jsx"></script>
+<script type="text/babel" src="GalleryGrid.jsx"></script>
+<script type="text/babel" src="Header.jsx"></script>
+<script type="text/babel" src="AdminDashboard.jsx"></script>
+
+<script type="text/babel">
+// ─── Sample Data ───────────────────────────────────────────────────
+const SAMPLE_ARTWORKS = [
+  { name: 'artwork-1', title: 'Boundary of Red, Blue & Form', description: 'A bold geometric landscape — flat colour fields meeting at angular horizons beneath a crimson sky.', url: '../../assets/artwork-1.jpeg', reviewed: true, ai_generated: true },
+  { name: 'artwork-2', title: 'Desert Gate at Dusk', description: 'Architectural amber planes frame a luminous sky, with lotus forms rising from the dark foreground.', url: '../../assets/artwork-2.jpeg', reviewed: true, ai_generated: true },
+  { name: 'artwork-3', title: 'Cotton Blossoms in Deep Red Field', description: 'Rounded white blooms punctuate a rich teal and crimson composition of interlocking organic curves.', url: '../../assets/artwork-3.png', reviewed: false, ai_generated: false },
+  { name: 'artwork-4', title: 'Still Valley', description: 'Horizontal colour bands evoke a quiet desert valley — ochre earth, teal foliage, and sky.', url: '../../assets/artwork-4.jpeg', reviewed: true, ai_generated: true },
+  { name: 'artwork-5', title: 'Lotus Spiral', description: 'A surreal floral abstraction — turquoise petals orbit a violet spiral against hard geometric planes.', url: '../../assets/artwork-5.png', reviewed: false, ai_generated: true },
+  { name: 'artwork-6', title: 'Lotus at the Gate', description: 'White petals against deep amber architectural planes — tension between structure and bloom.', url: '../../assets/artwork-6.jpeg', reviewed: true, ai_generated: true },
+  { name: 'artwork-7', title: 'Nocturnal Garden', description: 'Golden grid lines bisect a dark teal ground; a daisy emerges as a luminous focal point.', url: '../../assets/artwork-7.png', reviewed: false, ai_generated: true },
+  { name: 'artwork-8', title: 'Wheat & Teal', description: 'A stylised landscape of teal cactus forms amid golden wheat, rendered with graphic precision.', url: '../../assets/artwork-8.jpeg', reviewed: false, ai_generated: false },
+];
+
+const PENDING = SAMPLE_ARTWORKS.filter(a => !a.reviewed).map(a => ({ ...a }));
+
+// ─── Artwork Detail View ───────────────────────────────────────────
+const ArtworkDetail = ({ artwork, onBack, onEdit }) => {
+  const [editing, setEditing] = React.useState(false);
+  const [title, setTitle] = React.useState(artwork.title);
+  const [desc, setDesc] = React.useState(artwork.description);
+  const [saved, setSaved] = React.useState(false);
+
+  const handleSave = () => {
+    setSaved(true);
+    setEditing(false);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  const inp = { width:'100%', padding:'9px 12px', border:'1px solid #ced4da', borderRadius:6, fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', marginTop:6, boxSizing:'border-box' };
+  const btn = (bg, fg) => ({ display:'inline-flex', alignItems:'center', padding:'8px 18px', background:bg, color:fg, border:'none', borderRadius:6, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:"'DM Sans',sans-serif" });
+
+  return (
+    <main style={{ maxWidth:900, margin:'0 auto', padding:'2rem 1.5rem' }}>
+      <button onClick={onBack} style={{ ...btn('#e9ecef','#212529'), marginBottom:20 }}>← Back to gallery</button>
+
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:28, alignItems:'start' }}>
+        {/* Image */}
+        <div>
+          <img
+            src={artwork.url}
+            alt={artwork.title}
+            style={{ width:'100%', borderRadius:10, border:'1px solid #dee2e6', display:'block' }}
+            onError={e => { e.target.src='https://placehold.co/600x500/F7F4EE/adb5bd?text=Artwork'; }}
+          />
+        </div>
+
+        {/* Metadata */}
+        <div style={{ background:'#fff', border:'1px solid #dee2e6', borderRadius:8, padding:'1.5rem', boxShadow:'0 4px 10px rgba(0,0,0,.05)' }}>
+          <div style={{ display:'flex', gap:6, marginBottom:14, flexWrap:'wrap' }}>
+            {artwork.ai_generated
+              ? <span style={{ background:'#343a40', color:'#fff', borderRadius:999, padding:'3px 10px', fontSize:11, fontWeight:600 }}>AI generated</span>
+              : <span style={{ background:'#e9ecef', color:'#495057', borderRadius:999, padding:'3px 10px', fontSize:11, fontWeight:600 }}>AI pending</span>
+            }
+            {artwork.reviewed
+              ? <span style={{ background:'#d3f9d8', color:'#2b8a3e', borderRadius:999, padding:'3px 10px', fontSize:11, fontWeight:600 }}>✓ Reviewed</span>
+              : <span style={{ background:'#fff3cd', color:'#856404', borderRadius:999, padding:'3px 10px', fontSize:11, fontWeight:600 }}>○ Pending review</span>
+            }
+          </div>
+
+          {!editing ? (
+            <>
+              <h2 style={{ fontFamily:"'DM Serif Display',Georgia,serif", fontSize:24, fontWeight:400, color:'#343a40', lineHeight:1.25, marginBottom:12 }}>{title}</h2>
+              <p style={{ fontSize:14, color:'#6c757d', lineHeight:1.7, marginBottom:20 }}>{desc}</p>
+              <div style={{ borderTop:'1px solid #dee2e6', paddingTop:14, marginBottom:16 }}>
+                <div style={{ fontFamily:'monospace', fontSize:11, color:'#adb5bd' }}>{artwork.name}</div>
+              </div>
+              <button onClick={() => setEditing(true)} style={btn('#495057','#fff')}>Edit metadata</button>
+            </>
+          ) : (
+            <>
+              <label style={{ fontSize:12, fontWeight:600, color:'#495057', display:'block', marginBottom:2 }}>Title</label>
+              <input style={inp} value={title} onChange={e => setTitle(e.target.value)} />
+              <label style={{ fontSize:12, fontWeight:600, color:'#495057', display:'block', marginTop:14, marginBottom:2 }}>Description</label>
+              <textarea style={{ ...inp, minHeight:100, resize:'vertical' }} value={desc} onChange={e => setDesc(e.target.value)} />
+              <div style={{ display:'flex', gap:8, marginTop:14 }}>
+                <button onClick={handleSave} style={btn('#495057','#fff')}>OK</button>
+                <button onClick={() => setEditing(false)} style={btn('#ced4da','#212529')}>Cancel</button>
+              </div>
+            </>
+          )}
+
+          {saved && (
+            <div style={{ marginTop:12, padding:'8px 12px', background:'#d3f9d8', color:'#2b8a3e', border:'1px solid #b2f2bb', borderRadius:6, fontSize:12, fontWeight:600 }}>
+              Metadata saved successfully.
+            </div>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+};
+
+// ─── App Shell ─────────────────────────────────────────────────────
+const App = () => {
+  const stored = localStorage.getItem('artazzen-view');
+  const [view, setView] = React.useState(stored || 'gallery');
+  const [selected, setSelected] = React.useState(null);
+
+  const changeView = (v) => {
+    setView(v);
+    setSelected(null);
+    localStorage.setItem('artazzen-view', v);
+  };
+
+  const handleSelectArtwork = (artwork) => {
+    setSelected(artwork);
+    setView('artwork');
+    localStorage.setItem('artazzen-view', 'artwork');
+  };
+
+  return (
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column' }}>
+      <ArtazzenHeader
+        title="Artazzen"
+        view={view}
+        onViewChange={changeView}
+        isAdmin={view === 'admin'}
+      />
+
+      {/* Gallery */}
+      {view === 'gallery' && (
+        <main style={{ flex:1, maxWidth:1200, margin:'0 auto', padding:'2rem 1.5rem', width:'100%' }}>
+          <GalleryGrid artworks={SAMPLE_ARTWORKS} onSelect={handleSelectArtwork} />
+        </main>
+      )}
+
+      {/* Artwork detail */}
+      {view === 'artwork' && selected && (
+        <ArtworkDetail
+          artwork={selected}
+          onBack={() => changeView('gallery')}
+        />
+      )}
+      {view === 'artwork' && !selected && (
+        <main style={{ flex:1, maxWidth:1200, margin:'0 auto', padding:'2rem 1.5rem', width:'100%' }}>
+          <GalleryGrid artworks={SAMPLE_ARTWORKS} onSelect={handleSelectArtwork} />
+        </main>
+      )}
+
+      {/* Admin */}
+      {view === 'admin' && (
+        <main style={{ flex:1, maxWidth:1200, margin:'0 auto', padding:'2rem 1.5rem', width:'100%' }}>
+          <div style={{ marginBottom:20 }}>
+            <h1 style={{ fontFamily:"'DM Serif Display',Georgia,serif", fontSize:28, fontWeight:400, color:'#495057', marginBottom:4 }}>Admin Dashboard</h1>
+            <p style={{ fontSize:13, color:'#868e96' }}>Upload artwork, review AI-generated metadata, manage the gallery.</p>
+          </div>
+          <AdminDashboard pending={PENDING} onReview={handleSelectArtwork} />
+        </main>
+      )}
+
+      <footer style={{
+        textAlign:'center',
+        padding:'1.25rem 1rem',
+        fontSize:12,
+        color:'#868e96',
+        borderTop:'1px solid #dee2e6',
+        background:'#e9ecef',
+        flexShrink:0,
+      }}>
+        Artwork Gallery · Artazzen
+      </footer>
+
+      {/* Tweaks Panel */}
+      <TweaksPanel />
+    </div>
+  );
+};
+
+// ─── Tweaks ────────────────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#E8820A",
+  "headerBg": "#F7F4EE",
+  "cardRadius": 8,
+  "galleryBg": "#F7F4EE"
+}/*EDITMODE-END*/;
+
+const TweaksPanel = () => {
+  const [visible, setVisible] = React.useState(false);
+  const [vals, setVals] = React.useState(TWEAK_DEFAULTS);
+
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setVisible(true);
+      if (e.data?.type === '__deactivate_edit_mode') setVisible(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const update = (key, value) => {
+    const next = { ...vals, [key]: value };
+    setVals(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+    document.documentElement.style.setProperty('--accent', next.accentColor);
+    document.body.style.background = next.galleryBg;
+  };
+
+  if (!visible) return null;
+
+  const label = { fontFamily:"'DM Sans',sans-serif", fontSize:11, fontWeight:600, color:'#495057', display:'block', marginBottom:4 };
+  const inp = { width:'100%', padding:'5px 8px', border:'1px solid #dee2e6', borderRadius:5, fontSize:12, fontFamily:"'DM Sans',sans-serif" };
+
+  return (
+    <div style={{
+      position:'fixed', bottom:20, right:20, background:'#fff',
+      border:'1px solid #dee2e6', borderRadius:10, padding:16,
+      boxShadow:'0 8px 24px rgba(0,0,0,.12)', width:220, zIndex:9999,
+      fontFamily:"'DM Sans',sans-serif",
+    }}>
+      <div style={{ fontSize:12, fontWeight:700, color:'#343a40', marginBottom:12, letterSpacing:'.04em', textTransform:'uppercase' }}>Tweaks</div>
+
+      <div style={{ marginBottom:10 }}>
+        <label style={label}>Accent Color</label>
+        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+          <input type="color" value={vals.accentColor} onChange={e => update('accentColor', e.target.value)} style={{ width:32, height:28, border:'none', borderRadius:4, cursor:'pointer', padding:0 }} />
+          <input style={{ ...inp, flex:1 }} value={vals.accentColor} onChange={e => update('accentColor', e.target.value)} />
+        </div>
+      </div>
+
+      <div style={{ marginBottom:10 }}>
+        <label style={label}>Gallery Background</label>
+        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+          <input type="color" value={vals.galleryBg} onChange={e => update('galleryBg', e.target.value)} style={{ width:32, height:28, border:'none', borderRadius:4, cursor:'pointer', padding:0 }} />
+          <input style={{ ...inp, flex:1 }} value={vals.galleryBg} onChange={e => update('galleryBg', e.target.value)} />
+        </div>
+      </div>
+
+      <div style={{ marginBottom:4 }}>
+        <label style={label}>Card Radius — {vals.cardRadius}px</label>
+        <input type="range" min={0} max={24} step={2} value={vals.cardRadius}
+          onChange={e => {
+            const v = Number(e.target.value);
+            update('cardRadius', v);
+            document.querySelectorAll('.artazzen-card').forEach(el => el.style.borderRadius = v + 'px');
+          }}
+          style={{ width:'100%', accentColor:'#E8820A' }}
+        />
+      </div>
+
+      <div style={{ marginTop:10, display:'flex', gap:6, flexWrap:'wrap' }}>
+        {['#E8820A','#D8527D','#4A7C59','#6E3FD6','#C7231B'].map(c => (
+          <button key={c} onClick={() => update('accentColor', c)} title={c} style={{ width:22, height:22, background:c, border: vals.accentColor===c ? '2px solid #212529' : '2px solid transparent', borderRadius:999, cursor:'pointer', padding:0 }} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Mount ─────────────────────────────────────────────────────────
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #F7F4EE; padding: 20px 24px; font-family: 'DM Sans', sans-serif; display: flex; gap: 20px; }
+  .col { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #495057; margin-bottom: 5px; }
+  input, textarea { width: 100%; padding: 9px 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px; font-family: inherit; color: #212529; background: #fff; outline: none; transition: border-color .2s; }
+  input:focus, textarea:focus { border-color: #E8820A; box-shadow: 0 0 0 3px rgba(232,130,10,.15); }
+  textarea { resize: vertical; min-height: 72px; }
+  .field { }
+  .hint { font-size: 11px; color: #868e96; margin-top: 4px; }
+  .field-error input { border-color: #c92a2a; }
+  .field-error .hint { color: #c92a2a; }
+  .dropzone { border: 2px dashed #adb5bd; border-radius: 12px; padding: 20px 16px; text-align: center; background: #fdfdfe; }
+  .dropzone-text { font-size: 12px; color: #6c757d; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="col">
+    <div class="field">
+      <label>Title</label>
+      <input type="text" value="Rising Artazzen — No. 3">
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea>A bold geometric composition exploring the boundary between built form and natural landscape.</textarea>
+    </div>
+    <div class="field field-error">
+      <label>Title</label>
+      <input type="text" value="">
+      <div class="hint">Title is required.</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="dropzone">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#339af0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <div class="dropzone-text">Drop images here or <strong>browse</strong></div>
+      <div class="hint" style="margin-top:4px;">JPG, PNG, GIF, WEBP, SVG, BMP, TIFF</div>
+    </div>
+    <div class="field">
+      <label>Path (optional)</label>
+      <input type="text" placeholder="Static/images/subfolder/" style="font-family:'JetBrains Mono',monospace; font-size:12px;">
+      <div class="hint">Defaults to Static/images/</div>
+    </div>
+  </div>
+</body>
+</html>

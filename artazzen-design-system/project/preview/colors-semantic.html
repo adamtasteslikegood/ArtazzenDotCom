@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@500,600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #F9F7F2; padding: 18px 20px; font-family: 'JetBrains Mono', monospace; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .group { }
+  .group-label { font-size: 8px; font-weight: 400; letter-spacing: .14em; text-transform: uppercase; color: #9E9890; margin-bottom: 6px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .dot { width: 18px; height: 18px; border-radius: 2px; flex-shrink: 0; border: 1px solid rgba(0,0,0,.08); }
+  .token { font-size: 9px; font-weight: 400; color: #121212; }
+  .val { font-size: 9px; color: #78736C; }
+  .dark-panel { background: #121212; border-radius: 4px; padding: 10px 12px; }
+  .dark-panel .group-label { color: #54504A; }
+  .dark-panel .token { color: #F9F7F2; }
+  .dark-panel .val { color: #78736C; }
+</style>
+</head>
+<body>
+<div class="cols">
+  <div>
+    <div class="group" style="margin-bottom:12px;">
+      <div class="group-label">Light Mode — Surfaces</div>
+      <div class="row"><div class="dot" style="background:#F9F7F2;border:1px solid #DDD8CB;"></div><div><div class="token">--bg-base</div><div class="val">Parchment #F9F7F2</div></div></div>
+      <div class="row"><div class="dot" style="background:#FFFFFF;border:1px solid #DDD8CB;"></div><div><div class="token">--bg-surface</div><div class="val">White #FFFFFF</div></div></div>
+      <div class="row"><div class="dot" style="background:#EEEAE0;"></div><div><div class="token">--bg-subtle</div><div class="val">#EEEAE0</div></div></div>
+    </div>
+    <div class="group" style="margin-bottom:12px;">
+      <div class="group-label">Text</div>
+      <div class="row"><div class="dot" style="background:#121212;"></div><div><div class="token">--fg-primary</div><div class="val">Carbon #121212</div></div></div>
+      <div class="row"><div class="dot" style="background:#54504A;"></div><div><div class="token">--fg-secondary</div><div class="val">#54504A</div></div></div>
+      <div class="row"><div class="dot" style="background:#78736C;"></div><div><div class="token">--fg-muted</div><div class="val">#78736C</div></div></div>
+      <div class="row"><div class="dot" style="background:#9E9890;"></div><div><div class="token">--fg-faint</div><div class="val">#9E9890</div></div></div>
+    </div>
+    <div class="group">
+      <div class="group-label">Accent + Status</div>
+      <div class="row"><div class="dot" style="background:#E8820A;"></div><div><div class="token">--accent</div><div class="val">Orange #E8820A</div></div></div>
+      <div class="row"><div class="dot" style="background:#D8F5E4;border:1px solid #A8E6C4;"></div><div><div class="token">--success-bg</div><div class="val">#D8F5E4</div></div></div>
+      <div class="row"><div class="dot" style="background:#FAE0DF;border:1px solid #F0B8B8;"></div><div><div class="token">--error-bg</div><div class="val">#FAE0DF</div></div></div>
+    </div>
+  </div>
+  <div>
+    <div class="dark-panel">
+      <div class="group-label">Dark Mode — Surfaces</div>
+      <div class="row"><div class="dot" style="background:#121212;border:1px solid #312E2A;"></div><div><div class="token">--bg-base</div><div class="val">Carbon #121212</div></div></div>
+      <div class="row"><div class="dot" style="background:#1E1C19;border:1px solid #312E2A;"></div><div><div class="token">--bg-surface</div><div class="val">#1E1C19</div></div></div>
+      <div class="row"><div class="dot" style="background:#312E2A;border:1px solid #54504A;"></div><div><div class="token">--bg-subtle</div><div class="val">#312E2A</div></div></div>
+      <div class="group-label" style="margin-top:10px;">Text</div>
+      <div class="row"><div class="dot" style="background:#F9F7F2;border:1px solid #312E2A;"></div><div><div class="token">--fg-primary</div><div class="val">Parchment #F9F7F2</div></div></div>
+      <div class="row"><div class="dot" style="background:#DDD8CB;border:1px solid #312E2A;"></div><div><div class="token">--fg-secondary</div><div class="val">#DDD8CB</div></div></div>
+      <div class="row"><div class="dot" style="background:#9E9890;border:1px solid #312E2A;"></div><div><div class="token">--fg-muted</div><div class="val">#9E9890</div></div></div>
+      <div class="group-label" style="margin-top:10px;">Radius — architectural</div>
+      <div style="display:flex; gap:6px; margin-top:4px; align-items:flex-end;">
+        <div style="text-align:center;"><div style="width:28px;height:28px;background:#F9F7F2;border-radius:2px;border:1px solid #54504A;"></div><div class="val" style="font-size:8px;margin-top:3px;">2px</div></div>
+        <div style="text-align:center;"><div style="width:28px;height:28px;background:#F9F7F2;border-radius:4px;border:1px solid #54504A;"></div><div class="val" style="font-size:8px;margin-top:3px;">4px</div></div>
+        <div style="text-align:center;"><div style="width:28px;height:28px;background:#F9F7F2;border-radius:8px;border:1px solid #54504A;"></div><div class="val" style="font-size:8px;margin-top:3px;">8px</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

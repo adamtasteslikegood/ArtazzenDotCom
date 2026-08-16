@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #F7F4EE; padding: 20px 24px; font-family: 'DM Sans', sans-serif; display: flex; gap: 16px; }
+  .card { background: #fff; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; flex: 1; box-shadow: 0 4px 8px rgba(0,0,0,.05); }
+  .card:hover { box-shadow: 0 6px 12px rgba(0,0,0,.10); }
+  .card img { width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block; }
+  .card-body { padding: 12px; }
+  .card-title { font-size: 14px; font-weight: 600; color: #495057; margin-bottom: 4px; }
+  .card-desc { font-size: 12px; color: #6c757d; line-height: 1.55; }
+  .card-admin { border-radius: 10px; display: flex; gap: 12px; padding: 12px; align-items: flex-start; }
+  .thumb { width: 90px; height: 70px; object-fit: cover; border-radius: 6px; border: 1px solid #dee2e6; flex-shrink: 0; }
+  .admin-info { flex: 1; }
+  .filename { font-family: monospace; font-size: 10px; color: #868e96; margin-bottom: 4px; }
+  .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+  .badge-dark { background: #343a40; color: #fff; }
+  .badge-muted { background: #e9ecef; color: #495057; }
+  .hover-card { box-shadow: 0 6px 12px rgba(0,0,0,.10); transform: translateY(-5px); transition: transform .2s, box-shadow .2s; }
+</style>
+</head>
+<body>
+  <!-- Gallery card default -->
+  <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+    <div style="font-size:9px; font-weight:700; letter-spacing:.08em; color:#adb5bd; text-transform:uppercase; margin-bottom:2px;">Gallery Card — Default</div>
+    <div class="card">
+      <img src="../assets/artwork-1.jpeg" alt="artwork">
+      <div class="card-body">
+        <div class="card-title">Boundary of Red, Blue & Form</div>
+        <div class="card-desc">A bold geometric landscape — flat colour fields meeting at angular horizons.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gallery card hover -->
+  <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+    <div style="font-size:9px; font-weight:700; letter-spacing:.08em; color:#adb5bd; text-transform:uppercase; margin-bottom:2px;">Gallery Card — Hover</div>
+    <div class="card hover-card">
+      <img src="../assets/artwork-6.jpeg" alt="artwork">
+      <div class="card-body">
+        <div class="card-title">Lotus at the Gate</div>
+        <div class="card-desc">White petals against deep amber planes — architectural tension with floral calm.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin pending card -->
+  <div style="flex:1.3; display:flex; flex-direction:column; gap:6px;">
+    <div style="font-size:9px; font-weight:700; letter-spacing:.08em; color:#adb5bd; text-transform:uppercase; margin-bottom:2px;">Admin Pending Card</div>
+    <div class="card card-admin">
+      <img class="thumb" src="../assets/artwork-3.png" alt="">
+      <div class="admin-info">
+        <div class="filename">IMG_2671.PNG</div>
+        <div class="card-title" style="font-size:12px; margin-bottom:6px;">Cotton Blossoms in Deep Red Field</div>
+        <div style="display:flex; gap:4px; flex-wrap:wrap;">
+          <span class="badge badge-dark">AI generated</span>
+          <span class="badge badge-muted">Pending review</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

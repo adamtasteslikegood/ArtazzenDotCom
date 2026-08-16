@@ -91,7 +91,9 @@ def _load_schema() -> Dict[str, Any]:
 
 def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
     props = schema.get("properties", {})
-    for key, spec in props.items():
+    required = set(schema.get("required", []))
+    for key in required:
+        spec = props.get(key, {})
         if key not in data:
             if "default" in spec:
                 data[key] = spec["default"]
@@ -103,9 +105,8 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
                 data[key] = 0.0
             elif spec.get("type") == "object":
                 data[key] = {}
-            elif spec.get("type") == "array":
-                data[key] = []
-
+            else:
+                data[key] = None
     # Simple coercions
     if isinstance(data.get("reviewed"), str):
         lowered = data["reviewed"].strip().lower()

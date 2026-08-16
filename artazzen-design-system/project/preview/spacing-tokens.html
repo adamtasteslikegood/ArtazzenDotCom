@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #F7F4EE; padding: 20px 24px; display: flex; gap: 24px; }
+  .section { flex: 1; }
+  .lbl { font-family: monospace; font-size: 9px; color: #868e96; margin-bottom: 8px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .bar { background: #E8820A; border-radius: 2px; height: 12px; }
+  .meta { font-family: monospace; font-size: 9px; color: #495057; }
+  .radius-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rbox { background: white; border: 1.5px solid #dee2e6; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 52px; height: 40px; }
+  .rlbl { font-family: monospace; font-size: 8px; color: #868e96; margin-top: 4px; }
+  .shadow-row { display: flex; flex-direction: column; gap: 8px; }
+  .scard { background: white; padding: 8px 12px; font-family: monospace; font-size: 9px; color: #495057; border-radius: 6px; }
+</style>
+</head>
+<body>
+  <!-- Spacing -->
+  <div class="section">
+    <div class="lbl">Spacing Scale (base 8px)</div>
+    <div class="row"><div class="bar" style="width:4px"></div><div class="meta">--space-1 · 4px</div></div>
+    <div class="row"><div class="bar" style="width:8px"></div><div class="meta">--space-2 · 8px</div></div>
+    <div class="row"><div class="bar" style="width:12px"></div><div class="meta">--space-3 · 12px</div></div>
+    <div class="row"><div class="bar" style="width:16px"></div><div class="meta">--space-4 · 16px · card pad</div></div>
+    <div class="row"><div class="bar" style="width:24px"></div><div class="meta">--space-5 · 24px · grid gap</div></div>
+    <div class="row"><div class="bar" style="width:32px"></div><div class="meta">--space-6 · 32px</div></div>
+    <div class="row"><div class="bar" style="width:48px"></div><div class="meta">--space-7 · 48px · section</div></div>
+    <div class="row"><div class="bar" style="width:64px"></div><div class="meta">--space-8 · 64px</div></div>
+    <div class="row"><div class="bar" style="width:96px"></div><div class="meta">--space-9 · 96px · hero</div></div>
+  </div>
+
+  <!-- Radii -->
+  <div class="section">
+    <div class="lbl">Border Radius</div>
+    <div class="radius-row">
+      <div><div class="rbox" style="border-radius:4px;"></div><div class="rlbl">sm · 4px</div></div>
+      <div><div class="rbox" style="border-radius:6px;"></div><div class="rlbl">md · 6px</div></div>
+      <div><div class="rbox" style="border-radius:8px;"></div><div class="rlbl">lg · 8px</div></div>
+      <div><div class="rbox" style="border-radius:10px;"></div><div class="rlbl">xl · 10px</div></div>
+      <div><div class="rbox" style="border-radius:12px;"></div><div class="rlbl">2xl · 12px</div></div>
+      <div><div class="rbox" style="border-radius:999px;"></div><div class="rlbl">full</div></div>
+    </div>
+  </div>
+
+  <!-- Shadows -->
+  <div class="section">
+    <div class="lbl">Shadow System</div>
+    <div class="shadow-row">
+      <div class="scard" style="box-shadow:0 2px 4px rgba(0,0,0,.04);">sm · rest state</div>
+      <div class="scard" style="box-shadow:0 4px 8px rgba(0,0,0,.05);">md · card default</div>
+      <div class="scard" style="box-shadow:0 6px 12px rgba(0,0,0,.10);">lg · card hover</div>
+      <div class="scard" style="box-shadow:0 12px 24px rgba(0,0,0,.12);">xl · modal / focus</div>
+    </div>
+  </div>
+</body>
+</html>

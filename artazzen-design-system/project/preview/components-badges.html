@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #F7F4EE; padding: 20px 24px; font-family: 'DM Sans', sans-serif; }
+  .section { margin-bottom: 16px; }
+  .label { font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #adb5bd; margin-bottom: 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .feedback { padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+  <div class="section">
+    <div class="label">Badges</div>
+    <div class="row">
+      <span class="badge" style="background:#343a40; color:#fff;">AI generated</span>
+      <span class="badge" style="background:#e9ecef; color:#495057;">AI pending</span>
+      <span class="badge" style="background:#E8820A; color:#fff;">Amber</span>
+      <span class="badge" style="background:#C7231B; color:#fff;">Reviewed</span>
+      <span class="badge" style="background:#4A7C59; color:#fff;">Published</span>
+      <span class="badge" style="background:#D8527D; color:#fff;">Featured</span>
+      <span class="badge" style="background:#6E3FD6; color:#fff;">New</span>
+    </div>
+  </div>
+  <div class="section">
+    <div class="label">Feedback Banners</div>
+    <div class="feedback" style="background:#d3f9d8; color:#2b8a3e; border:1px solid #b2f2bb;">Metadata saved successfully.</div>
+    <div class="feedback" style="background:#ffe3e3; color:#c92a2a; border:1px solid #ffa8a8;">Failed to save — please try again.</div>
+  </div>
+  <div class="section">
+    <div class="label">Status Pills</div>
+    <div class="row">
+      <span style="font-family:'DM Sans',sans-serif; font-size:11px; font-weight:500; color:#2b8a3e; background:#d3f9d8; border-radius:999px; padding:2px 8px;">✓ Reviewed</span>
+      <span style="font-family:'DM Sans',sans-serif; font-size:11px; font-weight:500; color:#868e96; background:#f1f3f5; border-radius:999px; padding:2px 8px;">○ Pending</span>
+      <span style="font-family:'DM Sans',sans-serif; font-size:11px; font-weight:500; color:#c92a2a; background:#ffe3e3; border-radius:999px; padding:2px 8px;">✕ Error</span>
+    </div>
+  </div>
+</body>
+</html>

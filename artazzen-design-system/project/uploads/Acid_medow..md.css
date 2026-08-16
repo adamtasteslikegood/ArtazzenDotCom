@@ -1,0 +1,35 @@
+/* 6) “Acid Meadow” — from IMG_4958 (deep navy, neon chartreuse, hazard orange)
+Acid Meadow — IMG_4958 */
+
+html{color-scheme:light dark}
+:root{
+  --bg:#FCFFF8; --text:#07111E; --muted:#E3E8E0; --muted-2:#F0F4EE;
+  --accent:#FF6A1A; --accent-hover:#D94E00; --mark-bg:#D8FF5D;
+  --code-inline-bg:#0B1528; --code-inline-fg:#F1FFE3; --code-block-bg:#F5FFF0;
+  --blockquote-bg:#F0FFE0; --blockquote-border:#9EEA2F;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#07111E; --text:#F1FFE3; --muted:#0F1E33; --muted-2:#0B1728;
+    --accent:#FF9A33; --accent-hover:#FFDD55; --mark-bg:#C9FF3A;
+    --code-inline-bg:#040A13; --code-inline-fg:#E9FFD7; --code-block-bg:#040A12;
+    --blockquote-bg:#0D1A2F; --blockquote-border:#C9FF3A;
+  }
+}
+*{box-sizing:border-box}body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;background:var(--bg);color:var(--text);line-height:1.6;margin:0 auto;padding:24px;max-width:72ch}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-hover);text-decoration:underline}
+mark{background:var(--mark-bg);border-radius:3px;padding:0 3px}
+code:not([class^="language-"]):not([class~="mermaid"]) {background:var(--code-inline-bg);color:var(--code-inline-fg);border-radius:4px;padding:2px 6px;white-space:nowrap}
+pre{background:var(--code-block-bg);padding:14px 16px;border-radius:8px;overflow:auto;border:1px solid var(--muted)}pre>code{background:transparent!important;color:inherit;padding:0;font:inherit}
+pre[class*="language-"],code[class*="language-"]{color:var(--text)}
+[class*="language-"] .token.comment{color:#89A6B7}
+[class*="language-"] .token.operator{color:#FF9A33}
+[class*="language-"] .token.string{color:#B4FF3A}
+[class*="language-"] .token.number,[class*="language-"] .token.boolean{color:#8DD9FF}
+[class*="language-"] .token.function,[class*="language-"] .token.selector,[class*="language-"] .token.class-name{color:#FF6A1A}
+blockquote{background:var(--blockquote-bg);border-left:5px solid var(--blockquote-border);padding:10px 14px;margin:16px 0;border-radius:6px}
+ table{width:100%;border-collapse:collapse;border:1px solid var(--muted);border-radius:8px;display:block;overflow:auto}
+ thead th{position:sticky;top:0;background:var(--bg);z-index:1}
+ th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--muted);border-right:1px solid var(--muted)}
+ tr td:last-of-type, tr th:last-of-type{border-right:none}
+ tbody tr:nth-child(odd) td{background:var(--muted-2)}

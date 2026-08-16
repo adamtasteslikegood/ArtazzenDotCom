@@ -1,0 +1,326 @@
+/**
+ * Artazzen Design System — colors_and_type.css
+ * Direction: Techno-Botanical
+ * Source of truth: DESIGN.md
+ *
+ * Fonts:
+ *   Clash Grotesk    — Display/Hero (Fontshare)
+ *   Instrument Sans  — Body/UI (Google Fonts)
+ *   JetBrains Mono   — Data/Tables/Captions (Google Fonts)
+ */
+
+@import url('https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ═══════════════════════════════════════
+   PRIMITIVE PALETTE
+   Drawn from artwork + DESIGN.md
+   ═══════════════════════════════════════ */
+:root {
+  /* Core */
+  --carbon:      #121212;  /* Primary background (dark) */
+  --parchment:   #F9F7F2;  /* Primary background (light) */
+
+  /* Artwork-derived accents */
+  --accent-orange:  #E8820A;   /* Amber — most recurring in paintings */
+  --accent-violet:  #6E3FD6;   /* Violet — Neon Ember theme */
+  --accent-teal:    #1A9490;   /* Teal — botanical depths */
+  --accent-crimson: #C7231B;   /* Crimson field */
+  --accent-gold:    #F2B824;   /* Golden straw */
+  --accent-rose:    #D8527D;   /* Blossom pink */
+  --accent-mint:    #13D672;   /* Kinetic mint */
+
+  /* Neutral scale */
+  --n0:   #FFFFFF;
+  --n50:  #F9F7F2;   /* parchment */
+  --n100: #EEEAE0;
+  --n200: #DDD8CB;
+  --n300: #C4BFB2;
+  --n400: #9E9890;
+  --n500: #78736C;
+  --n600: #54504A;
+  --n700: #312E2A;
+  --n800: #1E1C19;
+  --n900: #121212;   /* carbon */
+}
+
+/* ═══════════════════════════════════════
+   SEMANTIC — LIGHT MODE (gallery default)
+   Parchment walls, carbon ink
+   ═══════════════════════════════════════ */
+:root {
+  --bg-base:       var(--parchment);   /* #F9F7F2 — gallery wall */
+  --bg-surface:    #FFFFFF;
+  --bg-subtle:     var(--n100);        /* #EEEAE0 */
+  --bg-admin:      #F4F1EB;
+
+  --fg-primary:    var(--carbon);      /* #121212 */
+  --fg-secondary:  var(--n600);        /* #54504A */
+  --fg-muted:      var(--n500);        /* #78736C */
+  --fg-faint:      var(--n400);        /* #9E9890 */
+
+  --accent:        var(--accent-orange);
+  --accent-hover:  #C46708;
+  --accent-fg:     #FFFFFF;
+
+  --border-subtle:  var(--n200);       /* #DDD8CB */
+  --border-default: var(--n300);       /* #C4BFB2 */
+  --border-strong:  var(--n400);       /* #9E9890 */
+
+  --success-bg:    #D8F5E4;
+  --success-fg:    #1A6B40;
+  --success-border:#A8E6C4;
+  --error-bg:      #FAE0DF;
+  --error-fg:      #9B1C1C;
+  --error-border:  #F0B8B8;
+}
+
+/* ═══════════════════════════════════════
+   SEMANTIC — DARK MODE
+   Carbon surfaces, parchment ink
+   ═══════════════════════════════════════ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-base:       var(--carbon);
+    --bg-surface:    var(--n800);      /* #1E1C19 */
+    --bg-subtle:     var(--n700);      /* #312E2A */
+    --bg-admin:      #0E0D0B;
+
+    --fg-primary:    var(--parchment);
+    --fg-secondary:  var(--n200);
+    --fg-muted:      var(--n400);
+    --fg-faint:      var(--n600);
+
+    --accent:        var(--accent-orange);
+    --accent-hover:  #F5A030;
+
+    --border-subtle:  var(--n700);
+    --border-default: var(--n600);
+    --border-strong:  var(--n500);
+  }
+}
+
+/* ═══════════════════════════════════════
+   FOUR NAMED THEMES (from artwork AI analysis)
+   Apply via class on <html> or <body>
+   ═══════════════════════════════════════ */
+.theme-neon-ember {
+  --bg: #FFFDF6; --text: #1A0F1C;
+  --accent: #E96B00; --accent-hover: #A73E00;
+  --mark-bg: #FFD34E; --border-accent: #6E3FD6;
+}
+.theme-garden-ink {
+  --bg: #F7FAF8; --text: #0F2B2B;
+  --accent: #D8527D; --accent-hover: #B23567;
+  --mark-bg: #F3EAC8; --border-accent: #F09B2E;
+}
+.theme-kinetic-primary {
+  --bg: #FBFEFF; --text: #0A1633;
+  --accent: #FF3D2E; --accent-hover: #C92D25;
+  --mark-bg: #FFF066; --border-accent: #132D5E;
+}
+.theme-acid-meadow {
+  --bg: #FCFFF8; --text: #07111E;
+  --accent: #FF6A1A; --accent-hover: #D94E00;
+  --mark-bg: #D8FF5D; --border-accent: #9EEA2F;
+}
+
+/* ═══════════════════════════════════════
+   TYPOGRAPHY
+   ═══════════════════════════════════════ */
+:root {
+  --font-display: 'Clash Grotesk', 'Helvetica Neue', Arial, sans-serif;
+  --font-body:    'Instrument Sans', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+
+  /* Modular scale — base 8px */
+  --text-xs:   0.6875rem;   /* 11px — timestamps, captions */
+  --text-sm:   0.75rem;     /* 12px — mono labels */
+  --text-base: 0.9375rem;   /* 15px — body */
+  --text-md:   1.0625rem;   /* 17px — artwork description */
+  --text-lg:   1.25rem;     /* 20px — card title */
+  --text-xl:   1.5rem;      /* 24px — section heading */
+  --text-2xl:  2rem;        /* 32px — page h1 */
+  --text-3xl:  2.75rem;     /* 44px — gallery hero */
+  --text-4xl:  4rem;        /* 64px — editorial splash */
+  --text-5xl:  6rem;        /* 96px — full-screen hero */
+
+  --weight-light:    200;
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:  1.1;
+  --leading-snug:   1.25;
+  --leading-normal: 1.55;
+  --leading-loose:  1.7;
+
+  --tracking-tightest: -0.04em;
+  --tracking-tight:    -0.02em;
+  --tracking-normal:    0;
+  --tracking-wide:      0.06em;
+  --tracking-widest:    0.14em;
+}
+
+/* ═══════════════════════════════════════
+   SEMANTIC TYPE ROLES
+   ═══════════════════════════════════════ */
+:root {
+  /* Hero / Splash */
+  --type-hero-family:   var(--font-display);
+  --type-hero-size:     var(--text-4xl);
+  --type-hero-weight:   var(--weight-semibold);
+  --type-hero-leading:  var(--leading-tight);
+  --type-hero-tracking: var(--tracking-tightest);
+
+  /* Gallery h1 */
+  --type-h1-family:     var(--font-display);
+  --type-h1-size:       var(--text-2xl);
+  --type-h1-weight:     var(--weight-semibold);
+  --type-h1-leading:    var(--leading-snug);
+  --type-h1-tracking:   var(--tracking-tight);
+
+  /* Panel / section h2 */
+  --type-h2-family:     var(--font-display);
+  --type-h2-size:       var(--text-xl);
+  --type-h2-weight:     var(--weight-medium);
+  --type-h2-leading:    var(--leading-snug);
+
+  /* Card title */
+  --type-title-family:  var(--font-body);
+  --type-title-size:    var(--text-lg);
+  --type-title-weight:  var(--weight-semibold);
+
+  /* Body prose */
+  --type-body-family:   var(--font-body);
+  --type-body-size:     var(--text-base);
+  --type-body-weight:   var(--weight-regular);
+  --type-body-leading:  var(--leading-normal);
+
+  /* Artifact description */
+  --type-desc-family:   var(--font-body);
+  --type-desc-size:     var(--text-md);
+  --type-desc-leading:  1.6;
+
+  /* Mono label (uppercase, 0.6 opacity) */
+  --type-mono-family:   var(--font-mono);
+  --type-mono-size:     var(--text-sm);
+  --type-mono-tracking: var(--tracking-widest);
+  --type-mono-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════
+   SPACING — 8px base
+   ═══════════════════════════════════════ */
+:root {
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-7:  48px;
+  --space-8:  64px;
+  --space-9:  96px;
+  --space-10: 128px;
+}
+
+/* ═══════════════════════════════════════
+   BORDER RADIUS — architectural / sharp
+   ═══════════════════════════════════════ */
+:root {
+  --radius-sm:   2px;    /* image corners, tight inputs */
+  --radius-md:   4px;    /* buttons, cards */
+  --radius-lg:   8px;    /* panels, large cards */
+  --radius-full: 2px;    /* pills use sm — no round pills */
+}
+
+/* ═══════════════════════════════════════
+   SHADOW — minimal, precise
+   ═══════════════════════════════════════ */
+:root {
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.10);
+  --shadow-lg:  0 8px 24px rgba(0,0,0,0.14);
+}
+
+/* ═══════════════════════════════════════
+   MOTION — "Bloom"
+   ease-out entrances (blooming), ease-in exits
+   ═══════════════════════════════════════ */
+:root {
+  --ease-bloom-in:  cubic-bezier(0.0, 0.0, 0.2, 1.0);  /* ease-out */
+  --ease-bloom-out: cubic-bezier(0.4, 0.0, 1.0, 1.0);  /* ease-in */
+  --duration-short: 250ms;
+  --duration-med:   400ms;
+}
+
+/* ═══════════════════════════════════════
+   SHADER-BG UTILITY
+   Subtle noise overlay — applied to all pages
+   ═══════════════════════════════════════ */
+.shader-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 128px;
+}
+
+/* ═══════════════════════════════════════
+   BASE ELEMENT DEFAULTS
+   ═══════════════════════════════════════ */
+.artazzen-base {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--fg-primary);
+  background-color: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  text-wrap: pretty;
+}
+
+.artazzen-base h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-snug);
+  color: var(--fg-primary);
+}
+
+.artazzen-base h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-snug);
+}
+
+.artazzen-base p {
+  color: var(--fg-secondary);
+  line-height: var(--leading-loose);
+}
+
+/* Mono label — the "Curated Art & Data" pattern */
+.artazzen-base .mono-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-widest);
+  opacity: 0.6;
+}
+
+.artazzen-base a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color var(--duration-short) var(--ease-bloom-in);
+}
+
+.artazzen-base a:hover {
+  color: var(--accent-hover);
+}

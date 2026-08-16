@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #F7F4EE; padding: 20px 24px; font-family: 'DM Sans', sans-serif; }
+  .row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .label { font-size: 10px; font-weight: 600; color: #adb5bd; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 18px; border-radius: 6px; font-family: inherit; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: background .2s, transform .2s; text-decoration: none; }
+  .primary { background: #495057; color: #fff; }
+  .primary:hover { background: #343a40; transform: translateY(-1px); }
+  .secondary { background: #ced4da; color: #212529; }
+  .secondary:hover { background: #adb5bd; transform: translateY(-1px); }
+  .accent { background: #E8820A; color: #fff; }
+  .accent:hover { background: #C46708; transform: translateY(-1px); }
+  .ghost { background: transparent; color: #495057; border: 1.5px solid #dee2e6; }
+  .ghost:hover { background: #f1f3f5; }
+  .danger { background: #C7231B; color: #fff; }
+  .sm { padding: 5px 12px; font-size: 12px; }
+  .lg { padding: 12px 28px; font-size: 16px; }
+  .disabled { opacity: .45; cursor: not-allowed; }
+</style>
+</head>
+<body>
+  <div class="label">Variants</div>
+  <div class="row">
+    <button class="btn primary">Primary</button>
+    <button class="btn secondary">Secondary</button>
+    <button class="btn accent">Accent · Amber</button>
+    <button class="btn ghost">Ghost</button>
+    <button class="btn danger">Danger</button>
+  </div>
+  <div class="label">Sizes</div>
+  <div class="row">
+    <button class="btn primary sm">Small</button>
+    <button class="btn primary">Default</button>
+    <button class="btn primary lg">Large</button>
+  </div>
+  <div class="label">States</div>
+  <div class="row">
+    <button class="btn primary">Default</button>
+    <button class="btn primary" style="background:#343a40; transform:translateY(-1px);">Hover</button>
+    <button class="btn primary disabled" disabled>Disabled</button>
+    <button class="btn secondary disabled" disabled>Disabled</button>
+  </div>
+</body>
+</html>
