@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Artwork Admin Review</title>
+    <title>Artwork Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
     <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -12,123 +12,168 @@
 <body class="admin-page">
     <header>
         <h1>Administration</h1>
-        <p class="admin-subheading">Upload, detect, and describe artifacts</p>
+        <p class="admin-subheading">Gallery curation and artwork management</p>
         <nav class="admin-nav">
             <a href="/" class="button secondary">View Public Gallery</a>
-            <button type="button" id="refresh-pending" class="button secondary">Refresh Pending List</button>
         </nav>
     </header>
 
     <div class="shader-bg"></div>
 
-    <main class="admin-container">
-        <section class="admin-panel">
-            <h2>AI Metadata Settings</h2>
-            <p class="panel-description">Control automatic title/description generation for new or unreviewed images.</p>
-            <form id="ai-config-form" class="ai-config-form">
-                <div class="form-row">
-                    <label class="checkbox">
-                        <input type="checkbox" id="ai-enabled">
-                        <span>Enable AI metadata generation</span>
-                    </label>
-                </div>
-                <div class="form-row">
-                    <label for="ai-model">Model</label>
-                    <select id="ai-model">
-                        <option value="gpt-4o-mini">gpt-4o-mini</option>
-                        <option value="gpt-5-mini">gpt-5-mini</option>
-                    </select>
-                </div>
-                <div class="form-row">
-                    <label for="ai-temp">Temperature</label>
-                    <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
-                </div>
-                <div class="form-row">
-                    <label for="ai-tokens">Max output tokens</label>
-                    <input type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="button">Save settings</button>
-                </div>
-            </form>
-        </section>
-        <section class="admin-panel">
-            <h2>Upload new artwork</h2>
-            <p class="panel-description">Drag and drop image files or click below to open a file browser. You can also include existing JSON sidecar files.</p>
-            <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop images here or press enter to choose files">
-                <svg aria-hidden="true" focusable="false" class="dropzone-icon" viewBox="0 0 24 24">
-                    <path d="M12 2a5 5 0 0 1 5 5h3a1 1 0 1 1 0 2h-3v2h1a4 4 0 1 1 0 8H7a5 5 0 0 1-1-9.9V9H3a1 1 0 1 1 0-2h3a5 5 0 0 1 6-5Zm0 2a3 3 0 0 0-3 3v2a1 1 0 0 1-1 1H7a3 3 0 1 0 0 6h11a2 2 0 1 0 0-4h-2a1 1 0 0 1-1-1V7a3 3 0 0 0-3-3Zm0 4a1 1 0 0 1 1 1v2.585l1.293-1.293a1 1 0 1 1 1.414 1.414l-3.004 3.003a1 1 0 0 1-1.414 0l-3.004-3.003a1 1 0 0 1 1.414-1.414L11 11.585V9a1 1 0 0 1 1-1Z" fill="currentColor"/>
-                </svg>
-                <p><strong>Drop files here</strong> or use the button below.</p>
-                <button type="button" id="select-files" class="button">Choose files</button>
-                <input type="file" id="file-input" name="files" accept="image/*,.json" multiple hidden>
-                <p class="supported-formats">Supported formats: {{ allowed_extensions | join(', ') }} and JSON sidecars.</p>
-            </div>
+    <nav class="admin-tabs" role="tablist">
+        <button class="admin-tab active" role="tab" aria-selected="true" data-tab="dashboard">Dashboard</button>
+        <button class="admin-tab" role="tab" aria-selected="false" data-tab="settings">Settings</button>
+    </nav>
 
-            <form id="path-form" class="path-form">
-                <h3>Import from server path</h3>
-                <p class="panel-description">Paste an absolute file or directory path that the server can read. Images will be copied into <code>Static/images</code>.</p>
-                <label for="path-input" class="sr-only">Absolute path on the server</label>
-                <div class="path-input-row">
-                    <input type="text" id="path-input" name="path" placeholder="/home/user/photos" required>
-                    <button type="submit" class="button">Import</button>
+    <div id="tab-dashboard" class="tab-content active">
+        <main class="admin-container">
+            <!-- Upload Section -->
+            <section class="admin-panel">
+                <h2>Upload new artwork</h2>
+                <p class="panel-description">Drag and drop image files or click below to open a file browser.</p>
+                <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Drop images here or press enter to choose files">
+                    <svg aria-hidden="true" focusable="false" class="dropzone-icon" viewBox="0 0 24 24">
+                        <path d="M12 2a5 5 0 0 1 5 5h3a1 1 0 1 1 0 2h-3v2h1a4 4 0 1 1 0 8H7a5 5 0 0 1-1-9.9V9H3a1 1 0 1 1 0-2h3a5 5 0 0 1 6-5Zm0 2a3 3 0 0 0-3 3v2a1 1 0 0 1-1 1H7a3 3 0 1 0 0 6h11a2 2 0 1 0 0-4h-2a1 1 0 0 1-1-1V7a3 3 0 0 0-3-3Zm0 4a1 1 0 0 1 1 1v2.585l1.293-1.293a1 1 0 1 1 1.414 1.414l-3.004 3.003a1 1 0 0 1-1.414 0l-3.004-3.003a1 1 0 0 1 1.414-1.414L11 11.585V9a1 1 0 0 1 1-1Z" fill="currentColor"/>
+                    </svg>
+                    <p><strong>Drop files here</strong> or use the button below.</p>
+                    <button type="button" id="select-files" class="button">Choose files</button>
+                    <input type="file" id="file-input" name="files" accept="image/*,.json" multiple hidden>
+                    <p class="supported-formats">Supported formats: {{ allowed_extensions | join(', ') }} and JSON sidecars.</p>
                 </div>
-            </form>
-        </section>
 
-        <section class="admin-panel">
-            <div class="panel-header">
-                <h2>Pending review <span id="pending-count" class="badge">{{ pending_images | length }}</span></h2>
-                <p class="panel-description">Review each image to confirm or edit the metadata that appears to visitors.</p>
-                <div class="panel-actions">
-                    <label class="checkbox" title="Overwrite existing title/description when regenerating">
-                        <input type="checkbox" id="force-overwrite">
-                        <span>Force overwrite</span>
-                    </label>
-                    <button type="button" id="select-all" class="button secondary">Select all</button>
-                    <button type="button" id="regen-selected" class="button">Re-run AI for selected</button>
+                <form id="path-form" class="path-form">
+                    <h3>Import from server path</h3>
+                    <p class="panel-description">Paste an absolute file or directory path that the server can read.</p>
+                    <label for="path-input" class="sr-only">Absolute path on the server</label>
+                    <div class="path-input-row">
+                        <input type="text" id="path-input" name="path" placeholder="/home/user/photos" required>
+                        <button type="submit" class="button">Import</button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Search Section -->
+            <section class="admin-panel">
+                <h2>Search</h2>
+                <div class="admin-search">
+                    <input type="text" id="search-input" placeholder="Filter by title or filename..." aria-label="Search artwork">
                 </div>
-            </div>
-            <div id="pending-list" class="pending-list" aria-live="polite">
-                {% if pending_images %}
-                    {% for item in pending_images %}
-                        <article class="pending-card" data-image-name="{{ item.name }}">
+            </section>
+
+            <!-- Gallery (Approved) Section -->
+            <section class="admin-panel">
+                <div class="panel-header">
+                    <h2>Gallery <span id="gallery-count" class="badge">{{ gallery_images | length }}</span></h2>
+                    <p class="panel-description">Approved artwork visible to the public.</p>
+                </div>
+                <div id="gallery-list" class="admin-grid" aria-live="polite">
+                    {% if gallery_images %}
+                        {% for item in gallery_images %}
+                        <article class="admin-card" data-image-name="{{ item.name }}" data-title="{{ item.title|default('', true) }}" data-section="gallery">
+                            <img src="{{ item.url }}" alt="{{ item.title or item.name }}" loading="lazy">
+                            <div class="admin-card-info">
+                                <h3>{{ item.title or item.name }}</h3>
+                                <p class="filename">{{ item.name }}</p>
+                                <div class="admin-card-actions">
+                                    <a class="button secondary" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Edit</a>
+                                    <button type="button" class="button secondary" data-action="unapprove" data-name="{{ item.name }}">Unapprove</button>
+                                    <button type="button" class="button danger" data-action="delete" data-name="{{ item.name }}">Delete</button>
+                                </div>
+                            </div>
+                        </article>
+                        {% endfor %}
+                    {% else %}
+                        <p class="empty-state">No approved artwork yet. Review pending items to add them to the gallery.</p>
+                    {% endif %}
+                </div>
+            </section>
+
+            <!-- Pending Section -->
+            <section class="admin-panel">
+                <div class="panel-header">
+                    <h2>Pending review <span id="pending-count" class="badge">{{ pending_images | length }}</span></h2>
+                    <p class="panel-description">Review each image to confirm or edit the metadata before publishing.</p>
+                    <div class="panel-actions">
+                        <label class="checkbox" title="Overwrite existing title/description when regenerating">
+                            <input type="checkbox" id="force-overwrite">
+                            <span>Force overwrite</span>
+                        </label>
+                        <button type="button" id="select-all" class="button secondary">Select all</button>
+                        <button type="button" id="regen-selected" class="button">Re-run AI for selected</button>
+                        <button type="button" id="refresh-pending" class="button secondary">Refresh</button>
+                    </div>
+                </div>
+                <div id="pending-list" class="admin-grid" aria-live="polite">
+                    {% if pending_images %}
+                        {% for item in pending_images %}
+                        <article class="admin-card" data-image-name="{{ item.name }}" data-title="{{ item.metadata.title|default('', true) }}" data-section="pending">
                             <div class="select-col">
                                 <input type="checkbox" class="item-select" aria-label="Select {{ item.name }}">
                             </div>
-                            <div class="pending-thumb">
-                                <img src="{{ item.url }}" alt="Preview of {{ item.metadata.title }}" loading="lazy">
-                            </div>
-                            <div class="pending-info">
-                                <h3>{{ item.metadata.title }}</h3>
+                            <img src="{{ item.url }}" alt="Preview of {{ item.metadata.title }}" loading="lazy">
+                            <div class="admin-card-info">
+                                <h3>{{ item.metadata.title or item.name }}</h3>
                                 <p class="filename">{{ item.name }}</p>
                                 {% if item.metadata.description %}
-                                    <p class="description">{{ item.metadata.description }}</p>
-                                {% else %}
-                                    <p class="description empty">No description detected yet.</p>
+                                    <p class="description">{{ item.metadata.description|truncate(80) }}</p>
                                 {% endif %}
-                                {% set ai = item.metadata.get('ai_details') or {} %}
-                                {% set ai_time = ai.get('created') or ai.get('attempted_at') or item.metadata.get('detected_at') %}
                                 <p class="ai-status">
                                     {% if item.metadata.get('ai_generated') %}
                                         <span class="badge">AI generated</span>
                                     {% else %}
                                         <span class="badge secondary">AI pending</span>
                                     {% endif %}
-                                    {% if ai_time %}
-                                        <span class="timestamp" data-ts="{{ ai_time }}"></span>
-                                    {% endif %}
                                 </p>
-                                <a class="button" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Review details</a>
+                                <div class="admin-card-actions">
+                                    <a class="button" href="{{ url_for('preview_image_metadata', image_name=item.name) }}">Review</a>
+                                    <button type="button" class="button danger" data-action="delete" data-name="{{ item.name }}">Delete</button>
+                                </div>
                             </div>
                         </article>
-                    {% endfor %}
-                {% else %}
-                    <p class="empty-state">No new files waiting for review. Upload artwork to begin curating descriptions.</p>
-                {% endif %}
-            </div>
-        </section>
-    </main>
+                        {% endfor %}
+                    {% else %}
+                        <p class="empty-state">No new files waiting for review.</p>
+                    {% endif %}
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="tab-settings" class="tab-content">
+        <main class="admin-container">
+            <section class="admin-panel">
+                <h2>AI Metadata Settings</h2>
+                <p class="panel-description">Control automatic title/description generation for new images.</p>
+                <form id="ai-config-form" class="ai-config-form">
+                    <div class="form-row">
+                        <label class="checkbox">
+                            <input type="checkbox" id="ai-enabled">
+                            <span>Enable AI metadata generation</span>
+                        </label>
+                    </div>
+                    <div class="form-row">
+                        <label for="ai-model">Model</label>
+                        <select id="ai-model">
+                            <option value="gpt-4o-mini">gpt-4o-mini</option>
+                            <option value="gpt-5-mini">gpt-5-mini</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="ai-temp">Temperature</label>
+                        <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
+                    </div>
+                    <div class="form-row">
+                        <label for="ai-tokens">Max output tokens</label>
+                        <input type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="button">Save settings</button>
+                        <button type="button" id="reset-config" class="button secondary">Reset to defaults</button>
+                    </div>
+                </form>
+            </section>
+        </main>
+    </div>
 
     <section id="feedback" class="feedback" role="status" aria-live="polite" hidden></section>
 
@@ -143,6 +188,8 @@
     const feedback = document.getElementById('feedback');
     const pendingList = document.getElementById('pending-list');
     const pendingCount = document.getElementById('pending-count');
+    const galleryList = document.getElementById('gallery-list');
+    const galleryCount = document.getElementById('gallery-count');
     const refreshButton = document.getElementById('refresh-pending');
     const pathForm = document.getElementById('path-form');
     const aiForm = document.getElementById('ai-config-form');
@@ -153,102 +200,179 @@
     const selectAllBtn = document.getElementById('select-all');
     const regenBtn = document.getElementById('regen-selected');
     const forceOverwrite = document.getElementById('force-overwrite');
+    const searchInput = document.getElementById('search-input');
+    const resetConfigBtn = document.getElementById('reset-config');
+
+    // Tab navigation
+    document.querySelectorAll('.admin-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.admin-tab').forEach(t => {
+                t.classList.remove('active');
+                t.setAttribute('aria-selected', 'false');
+            });
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            tab.classList.add('active');
+            tab.setAttribute('aria-selected', 'true');
+            document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+        });
+    });
+
+    // Search filtering
+    searchInput?.addEventListener('input', () => {
+        const query = searchInput.value.toLowerCase().trim();
+        document.querySelectorAll('.admin-card').forEach(card => {
+            const title = (card.dataset.title || '').toLowerCase();
+            const name = (card.dataset.imageName || '').toLowerCase();
+            card.style.display = (!query || title.includes(query) || name.includes(query)) ? '' : 'none';
+        });
+    });
 
     function showFeedback(message, type = 'info') {
         feedback.textContent = message;
         feedback.classList.remove('error', 'success');
         feedback.classList.add(type === 'error' ? 'error' : 'success');
         feedback.hidden = false;
-        window.setTimeout(() => {
-            feedback.hidden = true;
-        }, 8000);
+        window.setTimeout(() => { feedback.hidden = true; }, 8000);
     }
 
-    function renderPendingList(pending) {
-        pendingList.innerHTML = '';
-        if (!pending || pending.length === 0) {
-            const emptyMessage = document.createElement('p');
-            emptyMessage.className = 'empty-state';
-            emptyMessage.textContent = 'No new files waiting for review. Upload artwork to begin curating descriptions.';
-            pendingList.appendChild(emptyMessage);
+    function renderCard(item, section) {
+        const card = document.createElement('article');
+        card.className = 'admin-card';
+        card.dataset.imageName = item.name;
+        card.dataset.title = item.metadata?.title || item.title || '';
+        card.dataset.section = section;
+
+        if (section === 'pending') {
+            const selectCol = document.createElement('div');
+            selectCol.className = 'select-col';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'item-select';
+            checkbox.setAttribute('aria-label', `Select ${item.name}`);
+            selectCol.appendChild(checkbox);
+            card.appendChild(selectCol);
+        }
+
+        const img = document.createElement('img');
+        img.src = item.url;
+        img.alt = item.metadata?.title || item.title || item.name;
+        img.loading = 'lazy';
+        card.appendChild(img);
+
+        const info = document.createElement('div');
+        info.className = 'admin-card-info';
+
+        const title = document.createElement('h3');
+        title.textContent = item.metadata?.title || item.title || item.name;
+        info.appendChild(title);
+
+        const filename = document.createElement('p');
+        filename.className = 'filename';
+        filename.textContent = item.name;
+        info.appendChild(filename);
+
+        if (section === 'pending') {
+            const desc = item.metadata?.description;
+            if (desc) {
+                const descEl = document.createElement('p');
+                descEl.className = 'description';
+                descEl.textContent = desc.length > 80 ? desc.substring(0, 80) + '...' : desc;
+                info.appendChild(descEl);
+            }
+            const aiStatus = document.createElement('p');
+            aiStatus.className = 'ai-status';
+            const badge = document.createElement('span');
+            badge.className = item.metadata?.ai_generated ? 'badge' : 'badge secondary';
+            badge.textContent = item.metadata?.ai_generated ? 'AI generated' : 'AI pending';
+            aiStatus.appendChild(badge);
+            info.appendChild(aiStatus);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'admin-card-actions';
+
+        if (section === 'gallery') {
+            const editLink = document.createElement('a');
+            editLink.className = 'button secondary';
+            editLink.href = `/admin/review/${encodeURIComponent(item.name)}`;
+            editLink.textContent = 'Edit';
+            actions.appendChild(editLink);
+
+            const unapproveBtn = document.createElement('button');
+            unapproveBtn.type = 'button';
+            unapproveBtn.className = 'button secondary';
+            unapproveBtn.dataset.action = 'unapprove';
+            unapproveBtn.dataset.name = item.name;
+            unapproveBtn.textContent = 'Unapprove';
+            actions.appendChild(unapproveBtn);
         } else {
-            pending.forEach((item) => {
-                const card = document.createElement('article');
-                card.className = 'pending-card';
-                card.dataset.imageName = item.name;
-
-                const selectCol = document.createElement('div');
-                selectCol.className = 'select-col';
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.className = 'item-select';
-                checkbox.setAttribute('aria-label', `Select ${item.name}`);
-                selectCol.appendChild(checkbox);
-                card.appendChild(selectCol);
-
-                const thumb = document.createElement('div');
-                thumb.className = 'pending-thumb';
-                const img = document.createElement('img');
-                img.src = item.url;
-                img.alt = `Preview of ${item.metadata?.title || item.name}`;
-                img.loading = 'lazy';
-                thumb.appendChild(img);
-                card.appendChild(thumb);
-
-                const info = document.createElement('div');
-                info.className = 'pending-info';
-
-                const title = document.createElement('h3');
-                title.textContent = item.metadata?.title || item.name;
-                info.appendChild(title);
-
-                const filename = document.createElement('p');
-                filename.className = 'filename';
-                filename.textContent = item.name;
-                info.appendChild(filename);
-
-                const description = document.createElement('p');
-                description.className = 'description';
-                const desc = item.metadata?.description;
-                if (desc) {
-                    description.textContent = desc;
-                } else {
-                    description.classList.add('empty');
-                    description.textContent = 'No description detected yet.';
-                }
-                info.appendChild(description);
-
-                const ai = item.metadata?.ai_details || {};
-                const aiStatus = document.createElement('p');
-                aiStatus.className = 'ai-status';
-                const badge = document.createElement('span');
-                const generated = !!item.metadata?.ai_generated;
-                badge.className = generated ? 'badge' : 'badge secondary';
-                badge.textContent = generated ? 'AI generated' : 'AI pending';
-                aiStatus.appendChild(badge);
-                const ts = ai.created || ai.attempted_at || item.metadata?.detected_at;
-                if (ts) {
-                    const tsSpan = document.createElement('span');
-                    tsSpan.className = 'timestamp';
-                    tsSpan.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
-                    aiStatus.appendChild(tsSpan);
-                }
-                info.appendChild(aiStatus);
-
-                const link = document.createElement('a');
-                link.className = 'button';
-                link.href = `/admin/review/${encodeURIComponent(item.name)}`;
-                link.textContent = 'Review details';
-                info.appendChild(link);
-
-                card.appendChild(info);
-                pendingList.appendChild(card);
-            });
+            const reviewLink = document.createElement('a');
+            reviewLink.className = 'button';
+            reviewLink.href = `/admin/review/${encodeURIComponent(item.name)}`;
+            reviewLink.textContent = 'Review';
+            actions.appendChild(reviewLink);
         }
-        if (pendingCount) {
-            pendingCount.textContent = pending ? pending.length : 0;
-        }
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'button danger';
+        deleteBtn.dataset.action = 'delete';
+        deleteBtn.dataset.name = item.name;
+        deleteBtn.textContent = 'Delete';
+        actions.appendChild(deleteBtn);
+
+        info.appendChild(actions);
+        card.appendChild(info);
+        return card;
     }
+
+    function renderGalleryList(items) {
+        galleryList.innerHTML = '';
+        if (!items || items.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'empty-state';
+            empty.textContent = 'No approved artwork yet.';
+            galleryList.appendChild(empty);
+        } else {
+            items.forEach(item => galleryList.appendChild(renderCard(item, 'gallery')));
+        }
+        if (galleryCount) galleryCount.textContent = items ? items.length : 0;
+    }
+
+    function renderPendingList(items) {
+        pendingList.innerHTML = '';
+        if (!items || items.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'empty-state';
+            empty.textContent = 'No new files waiting for review.';
+            pendingList.appendChild(empty);
+        } else {
+            items.forEach(item => pendingList.appendChild(renderCard(item, 'pending')));
+        }
+        if (pendingCount) pendingCount.textContent = items ? items.length : 0;
+    }
+
+    // Action handlers (unapprove, delete) via event delegation
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const name = btn.dataset.name;
+        if (!name) return;
+
+        if (action === 'delete' && !confirm(`Delete "${name}"? It will be moved to .trash/.`)) return;
+
+        try {
+            const res = await fetch(`/admin/${action}/${encodeURIComponent(name)}`, { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || `${action} failed`);
+            showFeedback(`${name}: ${action}d successfully.`, 'success');
+            await fetchAll();
+        } catch (err) {
+            console.error(err);
+            showFeedback(err.message, 'error');
+        }
+    });
 
     async function loadConfig() {
         try {
@@ -289,9 +413,20 @@
         }
     }
 
+    resetConfigBtn?.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/admin/config/reset', { method: 'POST' });
+            if (!res.ok) throw new Error('Reset failed');
+            showFeedback('Settings reset to defaults.', 'success');
+            await loadConfig();
+        } catch (e) {
+            showFeedback(e.message, 'error');
+        }
+    });
+
     function selectedNames() {
-        return Array.from(document.querySelectorAll('.pending-card .item-select:checked'))
-            .map((cb) => cb.closest('.pending-card')?.dataset.imageName)
+        return Array.from(document.querySelectorAll('.admin-card .item-select:checked'))
+            .map(cb => cb.closest('.admin-card')?.dataset.imageName)
             .filter(Boolean);
     }
 
@@ -322,146 +457,93 @@
     }
 
     async function uploadFiles(files) {
-        if (!files || files.length === 0) {
-            return;
-        }
+        if (!files || files.length === 0) return;
         const formData = new FormData();
-        Array.from(files).forEach((file) => formData.append('files', file));
+        Array.from(files).forEach(file => formData.append('files', file));
 
-        const response = await fetch('/admin/upload', {
-            method: 'POST',
-            body: formData,
-        });
+        const response = await fetch('/admin/upload', { method: 'POST', body: formData });
         const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.detail || 'Upload failed');
-        }
-        renderPendingList(data.pending || []);
+        if (!response.ok) throw new Error(data.detail || 'Upload failed');
+        await fetchAll();
         const saved = data.saved?.length ? `Saved: ${data.saved.join(', ')}` : '';
         const skipped = data.skipped?.length ? ` Skipped: ${data.skipped.join(', ')}` : '';
         showFeedback(`${data.message || 'Upload complete.'} ${saved}${skipped}`.trim(), 'success');
     }
 
-    async function fetchPending(showMessage = false) {
+    async function fetchAll(showMessage = false) {
         const response = await fetch('/admin/api/new-files');
         const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.detail || 'Unable to refresh pending files');
-        }
+        if (!response.ok) throw new Error(data.detail || 'Unable to refresh');
         renderPendingList(data.pending || []);
-        if (showMessage) {
-            showFeedback('Pending list refreshed.', 'success');
-        }
+        renderGalleryList(data.gallery || []);
+        if (showMessage) showFeedback('Refreshed.', 'success');
     }
 
     if (dropzone) {
-        ['dragenter', 'dragover'].forEach((eventName) => {
-            dropzone.addEventListener(eventName, (event) => {
-                event.preventDefault();
-                event.stopPropagation();
+        ['dragenter', 'dragover'].forEach(ev => {
+            dropzone.addEventListener(ev, e => {
+                e.preventDefault(); e.stopPropagation();
                 dropzone.classList.add('is-dragover');
             });
         });
-
-        ['dragleave', 'dragend', 'drop'].forEach((eventName) => {
-            dropzone.addEventListener(eventName, (event) => {
-                event.preventDefault();
-                event.stopPropagation();
+        ['dragleave', 'dragend', 'drop'].forEach(ev => {
+            dropzone.addEventListener(ev, e => {
+                e.preventDefault(); e.stopPropagation();
                 dropzone.classList.remove('is-dragover');
             });
         });
-
-        dropzone.addEventListener('drop', async (event) => {
-            try {
-                await uploadFiles(event.dataTransfer.files);
-            } catch (error) {
-                console.error(error);
-                showFeedback(error.message, 'error');
-            }
+        dropzone.addEventListener('drop', async e => {
+            try { await uploadFiles(e.dataTransfer.files); }
+            catch (err) { console.error(err); showFeedback(err.message, 'error'); }
         });
-
-        dropzone.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                fileInput?.click();
-            }
+        dropzone.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click(); }
         });
     }
 
     selectFilesButton?.addEventListener('click', () => fileInput?.click());
-
-    fileInput?.addEventListener('change', async (event) => {
-        try {
-            await uploadFiles(event.target.files);
-            event.target.value = '';
-        } catch (error) {
-            console.error(error);
-            showFeedback(error.message, 'error');
-        }
+    fileInput?.addEventListener('change', async e => {
+        try { await uploadFiles(e.target.files); e.target.value = ''; }
+        catch (err) { console.error(err); showFeedback(err.message, 'error'); }
     });
 
-    pathForm?.addEventListener('submit', async (event) => {
-        event.preventDefault();
+    pathForm?.addEventListener('submit', async e => {
+        e.preventDefault();
         const formData = new FormData(pathForm);
         try {
-            const response = await fetch('/admin/import-path', {
-                method: 'POST',
-                body: formData,
-            });
+            const response = await fetch('/admin/import-path', { method: 'POST', body: formData });
             const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.detail || 'Import failed');
-            }
-            renderPendingList(data.pending || []);
+            if (!response.ok) throw new Error(data.detail || 'Import failed');
+            await fetchAll();
             const copied = data.copied?.length ? `Imported: ${data.copied.join(', ')}` : '';
             const skipped = data.skipped?.length ? ` Skipped: ${data.skipped.join(', ')}` : '';
             showFeedback(`${copied}${skipped}`.trim() || 'Import complete.', 'success');
             pathForm.reset();
-        } catch (error) {
-            console.error(error);
-            showFeedback(error.message, 'error');
+        } catch (err) {
+            console.error(err);
+            showFeedback(err.message, 'error');
         }
     });
 
     aiForm?.addEventListener('submit', saveConfig);
     selectAllBtn?.addEventListener('click', () => {
-        const boxes = document.querySelectorAll('.pending-card .item-select');
+        const boxes = document.querySelectorAll('.admin-card[data-section="pending"] .item-select');
         const allChecked = Array.from(boxes).every(cb => cb.checked);
         boxes.forEach(cb => cb.checked = !allChecked);
     });
     regenBtn?.addEventListener('click', regenSelected);
 
     refreshButton?.addEventListener('click', async () => {
-        try {
-            await fetchPending(true);
-        } catch (error) {
-            console.error(error);
-            showFeedback(error.message, 'error');
-        }
+        try { await fetchAll(true); }
+        catch (err) { console.error(err); showFeedback(err.message, 'error'); }
     });
 
     window.setInterval(async () => {
-        try {
-            await fetchPending(false);
-        } catch (error) {
-            console.error(error);
-        }
+        try { await fetchAll(false); }
+        catch (err) { console.error(err); }
     }, 15000);
 
-    // Initial load
     loadConfig();
-
-    // Format any server-rendered timestamps
-    function formatServerTimestamps() {
-        document.querySelectorAll('.ai-status .timestamp[data-ts]')
-            .forEach((el) => {
-                const ts = parseFloat(el.getAttribute('data-ts'));
-                if (!isNaN(ts)) {
-                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
-                }
-            });
-    }
-    formatServerTimestamps();
     </script>
 </body>
 </html>

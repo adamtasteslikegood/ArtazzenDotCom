@@ -69,9 +69,16 @@
         }
       }
     },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "approved", "hidden"],
+      "default": "pending",
+      "description": "Curation status of the artwork."
+    },
     "reviewed": {
       "type": "boolean",
-      "default": false
+      "default": false,
+      "description": "Deprecated: use status field instead. Kept for backwards compatibility."
     },
     "detected_at": {
       "type": "number",
@@ -84,7 +91,7 @@
     "description",
     "ai_generated",
     "ai_details",
-    "reviewed",
+    "status",
     "detected_at"
   ]
 }
