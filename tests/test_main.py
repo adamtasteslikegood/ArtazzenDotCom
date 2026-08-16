@@ -221,6 +221,11 @@ def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_
         raise RuntimeError(secret_detail)
 
     monkeypatch.setattr(gallery_app, "_populate_missing_metadata", fail_metadata)
+    monkeypatch.setattr(
+        gallery_app,
+        "_refresh_pending_files",
+        lambda _request: [{"name": "fresh-state.jpg"}],
+    )
     body = json.dumps({"images": ["safe.jpg"]}).encode("utf-8")
 
     async def receive():
@@ -239,7 +244,6 @@ def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_
     response = asyncio.run(
         gallery_app.regenerate_ai_metadata(
             request,
-            pending_dependency=[],
             _=None,
         )
     )
@@ -248,7 +252,83 @@ def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_
     assert payload["errors"] == [
         {"name": "safe.jpg", "error": "Metadata regeneration failed"}
     ]
+    assert payload["pending"] == [{"name": "fresh-state.jpg"}]
     assert secret_detail not in response.body.decode("utf-8")
+
+
+def test_upload_without_size_attribute_uses_streaming_limit(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app, "_refresh_pending_files", lambda _request: [])
+
+    class UploadWithoutSize:
+        filename = "no-size.png"
+
+        def __init__(self):
+            self.file = io.BytesIO(b"small image payload")
+
+        async def read(self, size):
+            return self.file.read(size)
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/upload",
+            "headers": [],
+            "app": app,
+        }
+    )
+    response = asyncio.run(
+        gallery_app.upload_images(
+            request,
+            files=[UploadWithoutSize()],
+            _=None,
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert payload["saved"] == ["no-size.png"]
+    assert (image_root / "no-size.png").exists()
+
+
+def test_import_returns_refreshed_pending_state(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    import_root = tmp_path / "imports"
+    batch = import_root / "batch"
+    batch.mkdir(parents=True)
+    (batch / "imported.jpg").touch()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app, "IMPORT_ROOT", import_root)
+    monkeypatch.setattr(
+        gallery_app,
+        "_refresh_pending_files",
+        lambda _request: [{"name": "fresh-state.jpg"}],
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/import-path",
+            "headers": [],
+            "app": app,
+        }
+    )
+
+    response = asyncio.run(
+        gallery_app.import_from_path(
+            request,
+            path="batch",
+            _=None,
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert payload["copied"] == ["imported.jpg"]
+    assert payload["pending"] == [{"name": "fresh-state.jpg"}]
+    assert (image_root / "imported.jpg").exists()
 
 
 def test_openai_http_error_details_are_not_exposed(monkeypatch, tmp_path):

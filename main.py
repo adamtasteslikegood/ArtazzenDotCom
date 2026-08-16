@@ -948,6 +948,11 @@ async def get_pending_files(request: Request) -> List[Dict[str, Any]]:
     FastAPI dependency to get the list of pending files.
     This runs before routes that depend on it.
     """
+    return _refresh_pending_files(request)
+
+
+def _refresh_pending_files(request: Request) -> List[Dict[str, Any]]:
+    """Re-scan pending images and keep the application cache in sync."""
     pending = new_files_detected()
     request.app.state.pending_images = pending
     return pending
@@ -1054,7 +1059,6 @@ async def reset_admin_config(
 @app.post("/admin/ai/regenerate", response_class=JSONResponse)
 async def regenerate_ai_metadata(
     request: Request,
-    pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     try:
@@ -1089,14 +1093,14 @@ async def regenerate_ai_metadata(
             logger.exception("Failed to regenerate metadata for %s", fname)
             errors.append({"name": fname, "error": "Metadata regeneration failed"})
 
-    return JSONResponse({"updated": updated, "errors": errors, "pending": pending_dependency})
+    pending = _refresh_pending_files(request)
+    return JSONResponse({"updated": updated, "errors": errors, "pending": pending})
 
 
 @app.post("/admin/upload")
 async def upload_images(
     request: Request,
     files: List[UploadFile] = File(...),
-    pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     if not files:
@@ -1117,7 +1121,8 @@ async def upload_images(
         destination = _resolve_image_path(filename)
         try:
             # Fast pre-check using Content-Length / spooled size when available
-            if upload.size is not None and upload.size > MAX_UPLOAD_SIZE_BYTES:
+            upload_size = getattr(upload, "size", None)
+            if upload_size is not None and upload_size > MAX_UPLOAD_SIZE_BYTES:
                 logger.warning(
                     "Upload rejected: %s exceeds size limit (%d MB)",
                     filename,
@@ -1158,14 +1163,14 @@ async def upload_images(
             upload.file.close()
 
     message = "Uploaded files successfully" if saved else "No supported files uploaded"
-    return JSONResponse({"saved": saved, "skipped": skipped, "message": message, "pending": pending_dependency})
+    pending = _refresh_pending_files(request)
+    return JSONResponse({"saved": saved, "skipped": skipped, "message": message, "pending": pending})
 
 
 @app.post("/admin/import-path")
 async def import_from_path(
     request: Request,
     path: str = Form(...),
-    pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     source_files = _select_import_files(path)
@@ -1188,7 +1193,8 @@ async def import_from_path(
         else:
             skipped.append(target_name)
 
-    return JSONResponse({"copied": copied, "skipped": skipped, "pending": pending_dependency})
+    pending = _refresh_pending_files(request)
+    return JSONResponse({"copied": copied, "skipped": skipped, "pending": pending})
 
 
 @app.get("/admin/review/{image_name}", response_class=HTMLResponse)
