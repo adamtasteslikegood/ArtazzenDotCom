@@ -147,6 +147,15 @@ def _parse_bool_env(value: Optional[str], default: bool) -> bool:
         return default
 
 
+def _coerce_bool(value: Any) -> bool:
+    """Safely coerce a bool or string to a Python bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
+
+
 def _parse_float_env(value: Optional[str], default: float) -> float:
     if value is None:
         return default
@@ -656,7 +665,7 @@ def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
     sidecar_data["ai_generated"] = bool(metadata.get("ai_generated", False))
     sidecar_ai_details = metadata.get("ai_details") if isinstance(metadata.get("ai_details"), dict) else {}
     sidecar_data["ai_details"] = sidecar_ai_details
-    sidecar_data["status"] = metadata.get("status", "approved" if metadata.get("reviewed") else "pending")
+    sidecar_data["status"] = metadata.get("status", "approved" if _coerce_bool(metadata.get("reviewed", False)) else "pending")
     sidecar_data["detected_at"] = float(metadata.get("detected_at", now))
     with sidecar_lock:
         _atomic_write_json(json_path, sidecar_data)
@@ -841,7 +850,7 @@ def _load_metadata(image_path: Path) -> Dict[str, Any]:
     data.setdefault("title", "")
     data.setdefault("description", "")
     if "status" not in data and "reviewed" in data:
-        data["status"] = "approved" if data["reviewed"] else "pending"
+        data["status"] = "approved" if _coerce_bool(data["reviewed"]) else "pending"
     data.setdefault("status", "pending")
     data.setdefault("detected_at", time.time())
     data.setdefault("ai_generated", False)

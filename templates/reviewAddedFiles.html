@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
 </head>
-<body class="admin-page">
+<body class="admin-page" data-root-path="{{ request.scope.get('root_path', '') }}">
     <header>
         <h1>Administration</h1>
         <p class="admin-subheading">Gallery curation and artwork management</p>
@@ -21,11 +21,11 @@
     <div class="shader-bg"></div>
 
     <nav class="admin-tabs" role="tablist">
-        <button class="admin-tab active" role="tab" aria-selected="true" data-tab="dashboard">Dashboard</button>
-        <button class="admin-tab" role="tab" aria-selected="false" data-tab="settings">Settings</button>
+        <button class="admin-tab active" role="tab" id="btn-dashboard" aria-selected="true" aria-controls="tab-dashboard" data-tab="dashboard">Dashboard</button>
+        <button class="admin-tab" role="tab" id="btn-settings" aria-selected="false" aria-controls="tab-settings" data-tab="settings">Settings</button>
     </nav>
 
-    <div id="tab-dashboard" class="tab-content active">
+    <div id="tab-dashboard" class="tab-content active" role="tabpanel" aria-labelledby="btn-dashboard">
         <main class="admin-container">
             <!-- Upload Section -->
             <section class="admin-panel">
@@ -139,7 +139,7 @@
         </main>
     </div>
 
-    <div id="tab-settings" class="tab-content">
+    <div id="tab-settings" class="tab-content" role="tabpanel" aria-labelledby="btn-settings">
         <main class="admin-container">
             <section class="admin-panel">
                 <h2>AI Metadata Settings</h2>
@@ -202,6 +202,7 @@
     const forceOverwrite = document.getElementById('force-overwrite');
     const searchInput = document.getElementById('search-input');
     const resetConfigBtn = document.getElementById('reset-config');
+    const ROOT = document.body.dataset.rootPath || '';
 
     // Tab navigation
     document.querySelectorAll('.admin-tab').forEach(tab => {
@@ -294,7 +295,7 @@
         if (section === 'gallery') {
             const editLink = document.createElement('a');
             editLink.className = 'button secondary';
-            editLink.href = `/admin/review/${encodeURIComponent(item.name)}`;
+            editLink.href = `${ROOT}/admin/review/${encodeURIComponent(item.name)}`;
             editLink.textContent = 'Edit';
             actions.appendChild(editLink);
 
@@ -308,7 +309,7 @@
         } else {
             const reviewLink = document.createElement('a');
             reviewLink.className = 'button';
-            reviewLink.href = `/admin/review/${encodeURIComponent(item.name)}`;
+            reviewLink.href = `${ROOT}/admin/review/${encodeURIComponent(item.name)}`;
             reviewLink.textContent = 'Review';
             actions.appendChild(reviewLink);
         }
@@ -363,7 +364,7 @@
         if (action === 'delete' && !confirm(`Delete "${name}"? It will be moved to .trash/.`)) return;
 
         try {
-            const res = await fetch(`/admin/${action}/${encodeURIComponent(name)}`, { method: 'POST' });
+            const res = await fetch(`${ROOT}/admin/${action}/${encodeURIComponent(name)}`, { method: 'POST' });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || `${action} failed`);
             showFeedback(`${name}: ${action}d successfully.`, 'success');
@@ -376,7 +377,7 @@
 
     async function loadConfig() {
         try {
-            const res = await fetch('/admin/config');
+            const res = await fetch(`${ROOT}/admin/config`);
             const data = await res.json();
             const cfg = data.ai || {};
             if (typeof cfg.enabled === 'boolean') aiEnabled.checked = cfg.enabled;
@@ -399,7 +400,7 @@
             }
         };
         try {
-            const res = await fetch('/admin/config', {
+            const res = await fetch(`${ROOT}/admin/config`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -415,7 +416,7 @@
 
     resetConfigBtn?.addEventListener('click', async () => {
         try {
-            const res = await fetch('/admin/config/reset', { method: 'POST' });
+            const res = await fetch(`${ROOT}/admin/config/reset`, { method: 'POST' });
             if (!res.ok) throw new Error('Reset failed');
             showFeedback('Settings reset to defaults.', 'success');
             await loadConfig();
@@ -437,7 +438,7 @@
             return;
         }
         try {
-            const res = await fetch('/admin/ai/regenerate', {
+            const res = await fetch(`${ROOT}/admin/ai/regenerate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ images: names, force: !!forceOverwrite?.checked })
@@ -461,7 +462,7 @@
         const formData = new FormData();
         Array.from(files).forEach(file => formData.append('files', file));
 
-        const response = await fetch('/admin/upload', { method: 'POST', body: formData });
+        const response = await fetch(`${ROOT}/admin/upload`, { method: 'POST', body: formData });
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Upload failed');
         await fetchAll();
@@ -471,7 +472,7 @@
     }
 
     async function fetchAll(showMessage = false) {
-        const response = await fetch('/admin/api/new-files');
+        const response = await fetch(`${ROOT}/admin/api/new-files`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Unable to refresh');
         renderPendingList(data.pending || []);
@@ -511,7 +512,7 @@
         e.preventDefault();
         const formData = new FormData(pathForm);
         try {
-            const response = await fetch('/admin/import-path', { method: 'POST', body: formData });
+            const response = await fetch(`${ROOT}/admin/import-path`, { method: 'POST', body: formData });
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail || 'Import failed');
             await fetchAll();

@@ -22,6 +22,15 @@ from typing import Any, Dict
 from jsonschema import validate as js_validate, ValidationError
 
 
+def _coerce_bool(value: Any) -> bool:
+    """Safely coerce a bool or string to a Python bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
+
+
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "Static"
 IMAGES_DIR = STATIC_DIR / "images"
@@ -93,7 +102,7 @@ def _load_schema() -> Dict[str, Any]:
 def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
     # Backwards-compat: convert reviewed → status before defaults fill it in
     if "status" not in data and "reviewed" in data:
-        data["status"] = "approved" if data["reviewed"] else "pending"
+        data["status"] = "approved" if _coerce_bool(data["reviewed"]) else "pending"
     props = schema.get("properties", {})
     required = set(schema.get("required", []))
     for key in required:

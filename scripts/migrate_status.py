@@ -15,6 +15,14 @@ from pathlib import Path
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif"}
 
 
+def _coerce_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
+
+
 def migrate(images_dir: Path, dry_run: bool = False) -> int:
     if not images_dir.is_dir():
         print(f"[error] Not a directory: {images_dir}")
@@ -41,14 +49,12 @@ def migrate(images_dir: Path, dry_run: bool = False) -> int:
             skipped += 1
             continue
 
-        reviewed = data.get("reviewed", False)
-        expected_status = "approved" if reviewed else "pending"
-
-        if data.get("status") == expected_status:
+        if "status" in data and data["status"] in ("pending", "approved", "hidden"):
             skipped += 1
             continue
 
-        data["status"] = expected_status
+        reviewed = _coerce_bool(data.get("reviewed", False))
+        data["status"] = "approved" if reviewed else "pending"
 
         if not dry_run:
             tmp = json_path.with_suffix(".json.tmp")
