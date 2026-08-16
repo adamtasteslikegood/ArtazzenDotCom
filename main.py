@@ -824,6 +824,14 @@ def _verify_admin(
             detail="Invalid credentials",
             headers={"WWW-Authenticate": 'Basic realm="Artwork Admin"'},
         )
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin") or request.headers.get("referer", "")
+        host = request.headers.get("host", "")
+        if origin and host and host not in origin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-origin request rejected",
+            )
 
 
 
@@ -1310,9 +1318,14 @@ async def soft_delete_image(
     trash_dir = IMAGES_DIR / ".trash"
     trash_dir.mkdir(exist_ok=True)
     sidecar_path = image_path.with_suffix(".json")
-    shutil.move(str(image_path), str(trash_dir / image_path.name))
+    trash_name = image_path.name
+    if (trash_dir / trash_name).exists():
+        stem, suffix = image_path.stem, image_path.suffix
+        trash_name = f"{stem}_{int(time.time())}{suffix}"
+    shutil.move(str(image_path), str(trash_dir / trash_name))
     if sidecar_path.exists():
-        shutil.move(str(sidecar_path), str(trash_dir / sidecar_path.name))
+        trash_sidecar = Path(trash_name).with_suffix(".json").name
+        shutil.move(str(sidecar_path), str(trash_dir / trash_sidecar))
     logger.info("Soft-deleted %s to .trash/", image_name)
     return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
 
