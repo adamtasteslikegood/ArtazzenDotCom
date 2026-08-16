@@ -22,6 +22,15 @@ from typing import Any, Dict
 from jsonschema import validate as js_validate, ValidationError
 
 
+def _coerce_bool(value: Any) -> bool:
+    """Safely coerce a bool or string to a Python bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
+
+
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "Static"
 IMAGES_DIR = STATIC_DIR / "images"
@@ -74,6 +83,7 @@ def _load_schema() -> Dict[str, Any]:
                         "raw_response": {"type": "object", "default": {}},
                     },
                 },
+                "status": {"type": "string", "enum": ["pending", "approved", "hidden"], "default": "pending"},
                 "reviewed": {"type": "boolean", "default": False},
                 "detected_at": {"type": "number", "default": 0},
             },
@@ -82,7 +92,7 @@ def _load_schema() -> Dict[str, Any]:
                 "description",
                 "ai_generated",
                 "ai_details",
-                "reviewed",
+                "status",
                 "detected_at",
             ],
             "additionalProperties": False,
@@ -90,6 +100,9 @@ def _load_schema() -> Dict[str, Any]:
 
 
 def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+    # Backwards-compat: convert reviewed → status before defaults fill it in
+    if "status" not in data and "reviewed" in data:
+        data["status"] = "approved" if _coerce_bool(data["reviewed"]) else "pending"
     props = schema.get("properties", {})
     required = set(schema.get("required", []))
     for key in required:
@@ -107,13 +120,8 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
                 data[key] = {}
             else:
                 data[key] = None
-    # Simple coercions
-    if isinstance(data.get("reviewed"), str):
-        lowered = data["reviewed"].strip().lower()
-        if lowered in {"true", "1", "yes", "y"}:
-            data["reviewed"] = True
-        elif lowered in {"false", "0", "no", "n"}:
-            data["reviewed"] = False
+    if "status" in data and data["status"] not in ("pending", "approved", "hidden"):
+        data["status"] = "pending"
     if isinstance(data.get("ai_generated"), str):
         lowered = data["ai_generated"].strip().lower()
         if lowered in {"true", "1", "yes", "y"}:
@@ -149,7 +157,7 @@ def _ensure_sidecar(image_path: Path, schema: Dict[str, Any]) -> None:
     sidecar.setdefault("ai_generated", False)
     if not isinstance(sidecar.get("ai_details"), dict):
         sidecar["ai_details"] = {}
-    sidecar.setdefault("reviewed", False)
+    sidecar.setdefault("status", "pending")
     sidecar.setdefault("detected_at", now)
     _atomic_write_json(json_path, sidecar)
 

@@ -46,6 +46,7 @@ IMAGES_DIR = Path(os.getenv("IMAGES_DIR", STATIC_DIR / "images"))
 _USING_VOLUME = IMAGES_DIR != STATIC_DIR / "images"
 IMAGES_URL_PREFIX = "/images" if _USING_VOLUME else "/static/images"
 IMPORT_ROOT = Path(os.getenv("IMPORT_ROOT", BASE_DIR / "imports"))
+GALLERY_TITLE = os.getenv("GALLERY_TITLE", "Artazzen Gallery")
 TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 CONFIG_PATH = BASE_DIR / "ai_config.json"
@@ -146,6 +147,15 @@ def _parse_bool_env(value: Optional[str], default: bool) -> bool:
         return default
 
 
+def _coerce_bool(value: Any) -> bool:
+    """Safely coerce a bool or string to a Python bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
+
+
 def _parse_float_env(value: Optional[str], default: float) -> float:
     if value is None:
         return default
@@ -238,10 +248,10 @@ def _load_schema() -> Dict[str, Any]:
             "properties": {
                 "title": {"type": "string", "default": ""},
                 "description": {"type": "string", "default": ""},
-                "reviewed": {"type": "boolean", "default": False},
+                "status": {"type": "string", "enum": ["pending", "approved", "hidden"], "default": "pending"},
                 "detected_at": {"type": "number", "default": 0},
             },
-            "required": ["title", "description", "reviewed", "detected_at"],
+            "required": ["title", "description", "status", "detected_at"],
             "additionalProperties": False,
         }
 
@@ -631,7 +641,7 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
         metadata.setdefault("ai_generated", False)
 
     metadata.setdefault("detected_at", time.time())
-    metadata.setdefault("reviewed", False)
+    metadata.setdefault("status", "pending")
     _write_sidecar(image_path, metadata)
     return metadata
 
@@ -655,7 +665,7 @@ def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
     sidecar_data["ai_generated"] = bool(metadata.get("ai_generated", False))
     sidecar_ai_details = metadata.get("ai_details") if isinstance(metadata.get("ai_details"), dict) else {}
     sidecar_data["ai_details"] = sidecar_ai_details
-    sidecar_data["reviewed"] = bool(metadata.get("reviewed", False))
+    sidecar_data["status"] = metadata.get("status", "approved" if _coerce_bool(metadata.get("reviewed", False)) else "pending")
     sidecar_data["detected_at"] = float(metadata.get("detected_at", now))
     with sidecar_lock:
         _atomic_write_json(json_path, sidecar_data)
@@ -667,14 +677,14 @@ def _write_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
     with sidecar_lock:
         _atomic_write_json(json_path, metadata)
 
-def _set_review_status_sidecar(image_path: Path, reviewed: bool) -> None:
+def _set_status_sidecar(image_path: Path, new_status: str) -> None:
     safe_image_path = _resolve_image_path(image_path.name)
     json_path = safe_image_path.with_suffix(".json")
     data: Dict[str, Any] = {}
     if json_path.exists():
         with suppress(json.JSONDecodeError, OSError):
             data = json.loads(json_path.read_text(encoding="utf-8"))
-    data["reviewed"] = reviewed
+    data["status"] = new_status
     data.setdefault("title", "")
     data.setdefault("description", "")
     data.setdefault("ai_generated", False)
@@ -685,7 +695,7 @@ def _set_review_status_sidecar(image_path: Path, reviewed: bool) -> None:
 
 
 def new_files_detected() -> List[Dict[str, Any]]:
-    """Detect unreviewed image files based on their sidecar JSON."""
+    """Detect pending image files based on their sidecar JSON status."""
     pending: List[Dict[str, Any]] = []
     try:
         disk_listing = os.listdir(IMAGES_DIR)
@@ -703,7 +713,7 @@ def new_files_detected() -> List[Dict[str, Any]]:
         _ensure_sidecar(image_path, metadata)
         metadata = _load_metadata(image_path)
         metadata = _populate_missing_metadata(image_path, metadata)
-        if not bool(metadata.get("reviewed", False)):
+        if metadata.get("status", "pending") == "pending":
             pending.append(
                 {
                     "name": filename,
@@ -722,8 +732,11 @@ async def _watch_image_directory(app: FastAPI) -> None:
     """Background task that polls for new files."""
     try:
         while True:
-            pending = new_files_detected()
-            app.state.pending_images = pending
+            try:
+                pending = new_files_detected()
+                app.state.pending_images = pending
+            except FileNotFoundError:
+                logger.debug("File disappeared during watcher scan, will retry next cycle")
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
     except asyncio.CancelledError:  # pragma: no cover - clean shutdown
         logger.debug("Image directory watcher cancelled")
@@ -811,6 +824,14 @@ def _verify_admin(
             detail="Invalid credentials",
             headers={"WWW-Authenticate": 'Basic realm="Artwork Admin"'},
         )
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin") or request.headers.get("referer", "")
+        host = request.headers.get("host", "")
+        if origin and host and host not in origin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cross-origin request rejected",
+            )
 
 
 
@@ -836,7 +857,9 @@ def _load_metadata(image_path: Path) -> Dict[str, Any]:
 
     data.setdefault("title", "")
     data.setdefault("description", "")
-    data.setdefault("reviewed", False)
+    if "status" not in data and "reviewed" in data:
+        data["status"] = "approved" if _coerce_bool(data["reviewed"]) else "pending"
+    data.setdefault("status", "pending")
     data.setdefault("detected_at", time.time())
     data.setdefault("ai_generated", False)
     if not isinstance(data.get("ai_details"), dict):
@@ -863,12 +886,8 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
             else:
                 data[key] = None
     # Simple coercions
-    if isinstance(data.get("reviewed"), str):
-        lowered = data["reviewed"].strip().lower()
-        if lowered in {"true", "1", "yes", "y"}:
-            data["reviewed"] = True
-        elif lowered in {"false", "0", "no", "n"}:
-            data["reviewed"] = False
+    if "status" in data and data["status"] not in ("pending", "approved", "hidden"):
+        data["status"] = "pending"
     if isinstance(data.get("ai_generated"), str):
         lowered = data["ai_generated"].strip().lower()
         if lowered in {"true", "1", "yes", "y"}:
@@ -919,8 +938,8 @@ def _validate_and_migrate_sidecars() -> None:
 
 
 # --- Helper Function ---
-def get_artwork_files():
-    """Scan IMAGES_DIR and return metadata for each image."""
+def get_artwork_files(*, status_filter: str = "approved"):
+    """Scan IMAGES_DIR and return metadata for images matching status_filter."""
     artwork = []
     logger.info(f"Scanning for artwork in: {IMAGES_DIR}")
     if IMAGES_DIR.exists() and IMAGES_DIR.is_dir():
@@ -929,6 +948,8 @@ def get_artwork_files():
                 file_path = IMAGES_DIR / filename
                 if file_path.is_file() and _allowed_image(filename):
                     meta = _load_metadata(file_path)
+                    if status_filter and meta.get("status", "pending") != status_filter:
+                        continue
                     image_url = f"{IMAGES_URL_PREFIX}/{filename}"
                     meta.update({"url": image_url, "name": filename})
                     artwork.append(meta)
@@ -939,7 +960,7 @@ def get_artwork_files():
     else:
         logger.warning(f"Images directory not found or is not a directory: {IMAGES_DIR}")
 
-    logger.info(f"Found {len(artwork)} artwork files.")
+    logger.info(f"Found {len(artwork)} artwork files (filter={status_filter}).")
     return artwork
 
 
@@ -967,11 +988,13 @@ async def admin_home(
     _: None = Depends(_verify_admin),
 ) -> HTMLResponse:
     """Render the admin review dashboard."""
+    gallery_images = get_artwork_files(status_filter="approved")
     return templates.TemplateResponse(
         request,
         "reviewAddedFiles.html",
         {
             "pending_images": pending_images,
+            "gallery_images": gallery_images,
             "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
         },
     )
@@ -984,11 +1007,13 @@ async def review_added_files(
     _: None = Depends(_verify_admin),
 ) -> HTMLResponse:
     """Render the admin review dashboard. Alias for /admin."""
+    gallery_images = get_artwork_files(status_filter="approved")
     return templates.TemplateResponse(
         request,
         "reviewAddedFiles.html",
         {
             "pending_images": pending_images,
+            "gallery_images": gallery_images,
             "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
         },
     )
@@ -999,8 +1024,9 @@ async def api_new_files(
     pending: List[Dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
-    """Return the list of pending files as JSON."""
-    return JSONResponse({"pending": pending})
+    """Return pending and gallery files as JSON."""
+    gallery = get_artwork_files(status_filter="approved")
+    return JSONResponse({"pending": pending, "gallery": gallery})
 
 
 @app.get("/admin/config", response_class=JSONResponse)
@@ -1255,10 +1281,10 @@ async def update_image_metadata(
         "title": title.strip() or image_path.stem,
         "description": description.strip(),
     }
-    # Merge with existing sidecar and mark as reviewed
+    # Merge with existing sidecar and mark as approved
     existing = _load_metadata(image_path)
     existing.update(clean_metadata)
-    existing["reviewed"] = True
+    existing["status"] = "approved"
     _write_sidecar(image_path, existing)
 
     return RedirectResponse(
@@ -1266,6 +1292,42 @@ async def update_image_metadata(
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
+
+@app.post("/admin/unapprove/{image_name}", response_class=JSONResponse)
+async def unapprove_image(
+    image_name: str,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Move an approved image back to pending status."""
+    image_path = _resolve_image_path(image_name)
+    if not image_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    _set_status_sidecar(image_path, "pending")
+    return JSONResponse({"status": "ok", "image": image_name, "new_status": "pending"})
+
+
+@app.post("/admin/delete/{image_name}", response_class=JSONResponse)
+async def soft_delete_image(
+    image_name: str,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Soft-delete an image by moving it and its sidecar to .trash/."""
+    image_path = _resolve_image_path(image_name)
+    if not image_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    trash_dir = IMAGES_DIR / ".trash"
+    trash_dir.mkdir(exist_ok=True)
+    sidecar_path = image_path.with_suffix(".json")
+    trash_name = image_path.name
+    if (trash_dir / trash_name).exists():
+        stem, suffix = image_path.stem, image_path.suffix
+        trash_name = f"{stem}_{int(time.time())}{suffix}"
+    shutil.move(str(image_path), str(trash_dir / trash_name))
+    if sidecar_path.exists():
+        trash_sidecar = Path(trash_name).with_suffix(".json").name
+        shutil.move(str(sidecar_path), str(trash_dir / trash_sidecar))
+    logger.info("Soft-deleted %s to .trash/", image_name)
+    return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
 
 
 @app.get("/artwork/{image_filename}", response_class=HTMLResponse)
@@ -1310,7 +1372,7 @@ async def read_root(request: Request):
     context = {
         "request": request, # Required by Jinja2Templates
         "artwork_files": artwork_list,
-        "gallery_title": "My Girlfriend's Artwork Gallery" # Customizable title
+        "gallery_title": GALLERY_TITLE
     }
 
     # Render the HTML template with the context data
