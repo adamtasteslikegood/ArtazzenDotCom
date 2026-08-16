@@ -71,11 +71,13 @@ Railway supports multiple environments tied to branches. Each environment has it
 
 ### Production (`main`)
 
-- **Branch**: `main`
-- **Auto-deploy**: on push/merge to `main`
+- **URL**: https://artazzen.com (canonical apex domain)
+- **Branch**: `main` — auto-deploys on push/merge
+- **Hosting**: Dedicated Railway project
+- **DNS**: Cloudflare nameservers. `www.artazzen.com` → 301 redirect to apex via Cloudflare rule. `www` A record points to Cloudflare proxy internal IP.
+- **CDN/Proxy**: Cloudflare proxy on apex — SSL termination, DDoS protection, caching
 - **Volume**: persistent storage mounted at `/data/images` (`IMAGES_DIR=/data/images`)
 - **Variables**: `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `MY_OPENAI_API_KEY`, and other production secrets set in Railway dashboard
-- **Domain**: production URL configured in Railway
 
 ### PR Deploy Previews (planned)
 
