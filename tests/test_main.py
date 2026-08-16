@@ -1,11 +1,15 @@
 import base64
+import asyncio
 import io
 import json
 import os
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
+import main as gallery_app
 from main import app, IMAGES_DIR, ALLOWED_IMAGE_EXTENSIONS
 
 
@@ -140,3 +144,103 @@ def test_upload_rejects_svg(authed_client):
     data = response.json()
     assert "evil.svg" in data.get("skipped", [])
     assert "evil.svg" not in data.get("saved", [])
+
+
+# ---------------------------------------------------------------------------
+# Filesystem containment
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "filename",
+    ["../secret.jpg", "nested/secret.jpg", r"nested\secret.jpg", "..secret.jpg"],
+)
+def test_sanitize_filename_rejects_path_syntax(filename):
+    assert gallery_app._sanitize_filename(filename) == ""
+
+
+def test_resolve_image_path_rejects_escape_and_symlink(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    outside = tmp_path / "outside.jpg"
+    outside.touch()
+    (image_root / "escape.jpg").symlink_to(outside)
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+
+    assert gallery_app._resolve_image_path("safe.jpg") == image_root / "safe.jpg"
+    for candidate in ("../outside.jpg", str(outside), "escape.jpg"):
+        with pytest.raises(HTTPException) as exc_info:
+            gallery_app._resolve_image_path(candidate)
+        assert exc_info.value.status_code == 404
+
+
+def test_resolve_import_path_stays_within_configured_root(monkeypatch, tmp_path):
+    import_root = tmp_path / "imports"
+    import_root.mkdir()
+    nested = import_root / "batch"
+    nested.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (import_root / "escape").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(gallery_app, "IMPORT_ROOT", import_root)
+
+    assert gallery_app._resolve_import_path("batch") == nested
+    assert gallery_app._resolve_import_path(str(nested)) == nested
+    for candidate in ("../outside", str(outside), "escape"):
+        with pytest.raises(HTTPException) as exc_info:
+            gallery_app._resolve_import_path(candidate)
+        assert exc_info.value.status_code == 400
+
+
+def test_atomic_json_write_rejects_unapproved_destination(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+
+    sidecar = image_root / "safe.json"
+    gallery_app._atomic_write_json(sidecar, {"title": "Safe"})
+    assert json.loads(sidecar.read_text(encoding="utf-8")) == {"title": "Safe"}
+
+    with pytest.raises(ValueError, match="outside an approved storage root"):
+        gallery_app._atomic_write_json(tmp_path / "outside.json", {"secret": True})
+
+
+def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "safe.jpg").touch()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+
+    secret_detail = "/srv/private/secret-key.txt"
+
+    def fail_metadata(*_args, **_kwargs):
+        raise RuntimeError(secret_detail)
+
+    monkeypatch.setattr(gallery_app, "_populate_missing_metadata", fail_metadata)
+    body = json.dumps({"images": ["safe.jpg"]}).encode("utf-8")
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/ai/regenerate",
+            "headers": [(b"content-type", b"application/json")],
+            "app": app,
+        },
+        receive,
+    )
+    response = asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            request,
+            pending_dependency=[],
+            _=None,
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert payload["errors"] == [
+        {"name": "safe.jpg", "error": "Metadata regeneration failed"}
+    ]
+    assert secret_detail not in response.body.decode("utf-8")

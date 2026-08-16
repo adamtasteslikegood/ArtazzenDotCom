@@ -45,6 +45,7 @@ STATIC_DIR = BASE_DIR / "Static"
 IMAGES_DIR = Path(os.getenv("IMAGES_DIR", STATIC_DIR / "images"))
 _USING_VOLUME = IMAGES_DIR != STATIC_DIR / "images"
 IMAGES_URL_PREFIX = "/images" if _USING_VOLUME else "/static/images"
+IMPORT_ROOT = Path(os.getenv("IMPORT_ROOT", BASE_DIR / "imports"))
 TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 CONFIG_PATH = BASE_DIR / "ai_config.json"
@@ -85,6 +86,7 @@ except ValueError:
 # exist_ok=True prevents an error if the directory already exists
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+IMPORT_ROOT.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 (STATIC_DIR / "css").mkdir(parents=True, exist_ok=True) # For optional CSS
 
@@ -207,10 +209,22 @@ def _save_ai_config(cfg: Dict[str, Any]) -> None:
 
 def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
     """Write JSON atomically to reduce corruption risk across workers."""
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    candidate_path = os.path.realpath(os.fspath(path))
+    config_path = os.path.realpath(os.fspath(CONFIG_PATH))
+    images_root = os.path.realpath(os.fspath(IMAGES_DIR))
+    is_config = candidate_path == config_path
+    is_image_sidecar = (
+        candidate_path.startswith(images_root + os.sep)
+        and candidate_path.lower().endswith(".json")
+    )
+    if not (is_config or is_image_sidecar):
+        raise ValueError("JSON destination is outside an approved storage root")
+
+    safe_path = Path(candidate_path)
+    tmp_path = safe_path.with_suffix(safe_path.suffix + ".tmp")
     text = json.dumps(data, indent=2, ensure_ascii=False)
     tmp_path.write_text(text, encoding="utf-8")
-    tmp_path.replace(path)
+    tmp_path.replace(safe_path)
 
 
 def _load_schema() -> Dict[str, Any]:
@@ -232,23 +246,50 @@ def _load_schema() -> Dict[str, Any]:
         }
 
 
-def _sanitize_filename(filename: str) -> str:
-    """Return a safe filename without directory traversal."""
-    return Path(filename).name
+def _sanitize_filename(filename: Optional[str]) -> str:
+    """Return a safe single-component filename or an empty string.
+
+    Filenames are identifiers in this application, not paths. Rejecting path
+    syntax instead of silently stripping it prevents ambiguous uploads and
+    gives static analysis a clear allowlist boundary.
+    """
+    candidate = (filename or "").strip()
+    if (
+        not candidate
+        or "\x00" in candidate
+        or "/" in candidate
+        or "\\" in candidate
+        or ".." in candidate
+        or candidate != os.path.basename(candidate)
+    ):
+        return ""
+    return candidate
 
 
 def _resolve_image_path(filename: str) -> Path:
-    """Return the resolved path inside IMAGES_DIR, raising 404 if the path escapes.
-
-    Strips any directory components from *filename* before joining so that
-    traversal sequences (e.g. ``../``) are discarded at the construction site,
-    not only at the containment-check site.
-    """
-    safe_name = Path(filename).name  # strip directory components first
-    resolved = (IMAGES_DIR / safe_name).resolve()
-    if not resolved.is_relative_to(IMAGES_DIR.resolve()):
+    """Return a normalized image path contained beneath ``IMAGES_DIR``."""
+    safe_name = _sanitize_filename(filename)
+    if not safe_name:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
-    return resolved
+
+    root_path = os.path.realpath(os.fspath(IMAGES_DIR))
+    full_path = os.path.realpath(os.path.join(root_path, safe_name))
+    if not full_path.startswith(root_path + os.sep):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+    return Path(full_path)
+
+
+def _resolve_import_path(candidate: str) -> Path:
+    """Resolve an admin import source strictly beneath ``IMPORT_ROOT``."""
+    root_path = os.path.realpath(os.fspath(IMPORT_ROOT))
+    expanded_candidate = os.path.expanduser(candidate.strip())
+    full_path = os.path.realpath(os.path.join(root_path, expanded_candidate))
+    if full_path != root_path and not full_path.startswith(root_path + os.sep):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Import path must be inside the configured import root",
+        )
+    return Path(full_path)
 
 
 def _allowed_image(filename: str) -> bool:
@@ -566,7 +607,8 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
 
 def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
     """Ensure a JSON sidecar exists for the provided image with schema fields."""
-    json_path = image_path.with_suffix(".json")
+    safe_image_path = _resolve_image_path(image_path.name)
+    json_path = safe_image_path.with_suffix(".json")
     if json_path.exists():
         return
     schema = _load_schema()
@@ -589,12 +631,14 @@ def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
 
 
 def _write_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
-    json_path = image_path.with_suffix(".json")
+    safe_image_path = _resolve_image_path(image_path.name)
+    json_path = safe_image_path.with_suffix(".json")
     with sidecar_lock:
         _atomic_write_json(json_path, metadata)
 
 def _set_review_status_sidecar(image_path: Path, reviewed: bool) -> None:
-    json_path = image_path.with_suffix(".json")
+    safe_image_path = _resolve_image_path(image_path.name)
+    json_path = safe_image_path.with_suffix(".json")
     data: Dict[str, Any] = {}
     if json_path.exists():
         with suppress(json.JSONDecodeError, OSError):
@@ -742,6 +786,7 @@ def _verify_admin(
 
 def _load_metadata(image_path: Path) -> Dict[str, Any]:
     """Load metadata for an image, combining sidecar data and EXIF hints."""
+    image_path = _resolve_image_path(image_path.name)
     data: Dict[str, Any] = {}
     json_path = image_path.with_suffix(".json")
     if json_path.exists():
@@ -1009,8 +1054,9 @@ async def regenerate_ai_metadata(
             meta = _populate_missing_metadata(path, meta)
             _write_sidecar(path, meta)
             updated.append({"name": fname, "metadata": meta})
-        except Exception as exc:
-            errors.append({"name": name, "error": str(exc)})
+        except Exception:
+            logger.exception("Failed to regenerate metadata for %s", fname)
+            errors.append({"name": fname, "error": "Metadata regeneration failed"})
 
     return JSONResponse({"updated": updated, "errors": errors, "pending": pending_dependency})
 
@@ -1091,7 +1137,7 @@ async def import_from_path(
     pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
-    source_path = Path(path).expanduser()
+    source_path = _resolve_import_path(path)
     if not source_path.exists():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Path does not exist")
 
@@ -1100,8 +1146,8 @@ async def import_from_path(
 
     def _handle_file(file_path: Path) -> None:
         target_name = _sanitize_filename(file_path.name)
-        if _allowed_image(target_name) or file_path.suffix.lower() == ".json":
-            target = IMAGES_DIR / target_name
+        if target_name and (_allowed_image(target_name) or file_path.suffix.lower() == ".json"):
+            target = _resolve_image_path(target_name)
             try:
                 shutil.copy2(file_path, target)
                 copied.append(target_name)

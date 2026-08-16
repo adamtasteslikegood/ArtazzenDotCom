@@ -10,6 +10,6 @@ __pycache__/
 app_repro.log
 claude-skills/
 data/
+/imports/
 final_test.log
 logs/
-

@@ -148,6 +148,7 @@ See `.env.example` for the full list. Key vars:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `IMAGES_DIR` | `Static/images` | Image storage path. Set to `/data/images` on Railway |
+| `IMPORT_ROOT` | `imports` | Only server directory allowed as a source for admin filesystem imports |
 | `ADMIN_USERNAME` | `admin` | Basic auth username for admin |
 | `ADMIN_PASSWORD` | *(none)* | Basic auth password (**required** for admin) |
 | `MY_OPENAI_API_KEY` | *(none)* | OpenAI API key for AI metadata |

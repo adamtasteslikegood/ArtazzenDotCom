@@ -98,6 +98,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 **Considerations for this project:**
 - Preview environments will need their own `ADMIN_PASSWORD` (set a shared test password in Railway's PR environment config)
 - `IMAGES_DIR` can be left unset (defaults to `Static/images/` with bundled test images) or pointed at a preview volume
+- `IMPORT_ROOT` limits admin filesystem imports to one approved staging directory; keep the default ephemeral `imports/` directory or set an explicit preview path
 - `MY_OPENAI_API_KEY` — use a separate key with lower rate limits for previews, or leave unset to disable AI features in previews
 - Preview URLs are temporary — don't use them for anything persistent
 
@@ -106,6 +107,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 | Variable | Production | PR Preview |
 |----------|-----------|------------|
 | `IMAGES_DIR` | `/data/images` (volume) | unset (uses `Static/images/`) |
+| `IMPORT_ROOT` | `/data/images/imports` or another approved staging directory | unset (uses `imports/`) |
 | `ADMIN_USERNAME` | `admin` | `admin` |
 | `ADMIN_PASSWORD` | production secret | shared test password |
 | `MY_OPENAI_API_KEY` | production key | test key or unset |
