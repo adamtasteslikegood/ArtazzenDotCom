@@ -9,7 +9,7 @@ import time
 import textwrap
 from contextlib import asynccontextmanager, suppress
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional
 
 import secrets
@@ -279,17 +279,50 @@ def _resolve_image_path(filename: str) -> Path:
     return Path(full_path)
 
 
-def _resolve_import_path(candidate: str) -> Path:
-    """Resolve an admin import source strictly beneath ``IMPORT_ROOT``."""
-    root_path = os.path.realpath(os.fspath(IMPORT_ROOT))
-    expanded_candidate = os.path.expanduser(candidate.strip())
-    full_path = os.path.realpath(os.path.join(root_path, expanded_candidate))
-    if full_path != root_path and not full_path.startswith(root_path + os.sep):
+def _select_import_files(candidate: str) -> List[Path]:
+    """Select import files from an allowlist enumerated beneath ``IMPORT_ROOT``.
+
+    The request value is used only to match relative path components; it is
+    never used to construct or access a filesystem path.
+    """
+    requested = candidate.strip().replace("\\", "/")
+    requested_path = PurePosixPath(requested)
+    if (
+        not requested
+        or "\x00" in requested
+        or requested_path.is_absolute()
+        or ".." in requested_path.parts
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Import path must be inside the configured import root",
+            detail="Import path must be relative to the configured import root",
         )
-    return Path(full_path)
+
+    requested_parts = () if requested_path == PurePosixPath(".") else requested_path.parts
+    root_path = os.path.realpath(os.fspath(IMPORT_ROOT))
+    root = Path(root_path)
+    selected: List[Path] = []
+    for discovered_path in root.rglob("*"):
+        full_path = os.path.realpath(os.fspath(discovered_path))
+        if not full_path.startswith(root_path + os.sep):
+            continue
+        safe_path = Path(full_path)
+        if not safe_path.is_file():
+            continue
+        relative_parts = safe_path.relative_to(root).parts
+        if (
+            not requested_parts
+            or relative_parts == requested_parts
+            or relative_parts[: len(requested_parts)] == requested_parts
+        ):
+            selected.append(safe_path)
+
+    if not selected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Import path does not exist inside the configured import root",
+        )
+    return sorted(selected)
 
 
 def _allowed_image(filename: str) -> bool:
@@ -491,13 +524,10 @@ def _request_openai_metadata(
             response.raise_for_status()
             payload = response.json()
     except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        logger.warning("OpenAI metadata request failed: %s", exc)
         details["status"] = "error_http"
-        details["error"] = str(exc)
-        # Attach response body when available for diagnostics
-        try:
-            details["error_body"] = response.text
-        except Exception:
-            pass
+        details["error"] = "OpenAI metadata request failed."
+        details["error_body"] = ""
         return {"title": "", "description": "", "details": details}
 
     details["response_id"] = payload.get("id", "")
@@ -541,8 +571,9 @@ def _request_openai_metadata(
         try:
             parsed = json.loads(content_text) if content_text else None
         except json.JSONDecodeError as exc:
+            logger.warning("Unable to parse OpenAI metadata response: %s", exc)
             details["status"] = "error_parse"
-            details["error"] = f"Failed to parse OpenAI response: {exc}"
+            details["error"] = "OpenAI metadata response could not be parsed."
             # attach brief output excerpt and types for debugging
             try:
                 details["raw_response"] = {
@@ -1137,14 +1168,12 @@ async def import_from_path(
     pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
-    source_path = _resolve_import_path(path)
-    if not source_path.exists():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Path does not exist")
+    source_files = _select_import_files(path)
 
     copied: List[str] = []
     skipped: List[str] = []
 
-    def _handle_file(file_path: Path) -> None:
+    for file_path in source_files:
         target_name = _sanitize_filename(file_path.name)
         if target_name and (_allowed_image(target_name) or file_path.suffix.lower() == ".json"):
             target = _resolve_image_path(target_name)
@@ -1158,13 +1187,6 @@ async def import_from_path(
                 skipped.append(target_name)
         else:
             skipped.append(target_name)
-
-    if source_path.is_file():
-        _handle_file(source_path)
-    else:
-        for file_path in source_path.rglob("*"):
-            if file_path.is_file():
-                _handle_file(file_path)
 
     return JSONResponse({"copied": copied, "skipped": skipped, "pending": pending_dependency})
 
