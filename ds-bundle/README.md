@@ -10,21 +10,23 @@ A CSS-only design system for the Artazzen artwork gallery and curation platform.
 
 ## Font Stack
 
-| Role | Family | Use |
-|------|--------|-----|
-| Display/Hero | `var(--font-heading)` — Clash Grotesk | Headings, buttons, tabs, hero text |
-| Body | `var(--font-body)` — Instrument Sans | Body copy, descriptions, form inputs |
-| Data | `var(--font-mono)` — JetBrains Mono | Timestamps, filenames, badges, labels |
+| Role         | Family                                | Use                                   |
+| ------------ | ------------------------------------- | ------------------------------------- |
+| Display/Hero | `var(--font-heading)` — Clash Grotesk | Headings, buttons, tabs, hero text    |
+| Body         | `var(--font-body)` — Instrument Sans  | Body copy, descriptions, form inputs  |
+| Data         | `var(--font-mono)` — JetBrains Mono   | Timestamps, filenames, badges, labels |
 
 ## Component Vocabulary
 
 ### Gallery
+
 - `.gallery-grid` — asymmetric editorial grid (auto-fill, 300px min, 4rem gap)
 - `.artwork-item` — card with hover lift, even-child offset
 - `.artwork-title` — Clash Grotesk, uppercase, 1.25rem
 - `.artwork-description` — muted, max-width 30ch
 
 ### Admin
+
 - `.admin-card` — bordered card with image + info section
 - `.admin-tabs` / `.admin-tab` — tab navigation bar
 - `.admin-panel` — bordered content panel with section heading
@@ -33,6 +35,7 @@ A CSS-only design system for the Artazzen artwork gallery and curation platform.
 - `.admin-nav` — centered button row
 
 ### Controls
+
 - `.button` — primary filled (dark bg, inverts on hover)
 - `.button.secondary` — ghost/outline variant
 - `.button.danger` — orange destructive action
@@ -41,6 +44,7 @@ A CSS-only design system for the Artazzen artwork gallery and curation platform.
 - `.dropzone` / `.dropzone.is-dragover` — file upload area
 
 ### Utility
+
 - `.badge` — mono font, uppercase, bordered tag
 - `.filename` — mono, 0.7rem, muted
 - `.timestamp` — mono, 0.65rem, muted
@@ -62,6 +66,7 @@ Automatic via `prefers-color-scheme: dark`. Carbon and Parchment swap roles; pan
 ## Named Themes
 
 Four artwork-derived themes applicable via class on `<html>` or `<body>`:
+
 - `.theme-neon-ember` — warm amber/violet
 - `.theme-garden-ink` — botanical rose/teal
 - `.theme-kinetic-primary` — bold red/blue

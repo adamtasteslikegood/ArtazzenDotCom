@@ -42,20 +42,20 @@ tests/test_main.py       # Pytest suite
 
 ### Route Map
 
-| Path | Method | Purpose |
-|------|--------|---------|
-| `/` | GET | Public gallery |
-| `/artwork/{image_filename}` | GET | Single artwork detail |
-| `/admin` | GET | Admin dashboard |
-| `/admin/review` | GET | Review queue |
-| `/admin/review/{image_name}` | GET | Review specific image |
-| `/admin/api/new-files` | GET | JSON: pending files |
-| `/admin/upload` | POST | Upload artwork |
-| `/admin/import-path` | POST | Import from filesystem |
-| `/admin/metadata/{image_name}` | POST | Save image metadata |
-| `/admin/config` | GET/POST | AI config CRUD |
-| `/admin/config/reset` | POST | Reset AI config |
-| `/admin/ai/regenerate` | POST | Trigger AI regeneration |
+| Path                           | Method   | Purpose                 |
+| ------------------------------ | -------- | ----------------------- |
+| `/`                            | GET      | Public gallery          |
+| `/artwork/{image_filename}`    | GET      | Single artwork detail   |
+| `/admin`                       | GET      | Admin dashboard         |
+| `/admin/review`                | GET      | Review queue            |
+| `/admin/review/{image_name}`   | GET      | Review specific image   |
+| `/admin/api/new-files`         | GET      | JSON: pending files     |
+| `/admin/upload`                | POST     | Upload artwork          |
+| `/admin/import-path`           | POST     | Import from filesystem  |
+| `/admin/metadata/{image_name}` | POST     | Save image metadata     |
+| `/admin/config`                | GET/POST | AI config CRUD          |
+| `/admin/config/reset`          | POST     | Reset AI config         |
+| `/admin/ai/regenerate`         | POST     | Trigger AI regeneration |
 
 ## Tech Stack
 
@@ -84,6 +84,7 @@ python manage_sidecars.py validate  # Validate all sidecars
 ```
 
 Manual verification endpoints:
+
 ```bash
 curl http://127.0.0.1:8000/admin/api/new-files
 curl -F "files=@image.jpg" http://127.0.0.1:8000/admin/upload
@@ -145,6 +146,7 @@ The app detects volume mode automatically (`_USING_VOLUME` flag) and switches th
 ### Admin Authentication
 
 Admin routes (`/admin/*`) are protected by HTTP Basic Auth.
+
 - `ADMIN_USERNAME` — defaults to `admin`
 - `ADMIN_PASSWORD` — **required**; admin access is disabled when unset
 
@@ -152,21 +154,22 @@ Admin routes (`/admin/*`) are protected by HTTP Basic Auth.
 
 See `.env.example` for the full list. Key vars:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `IMAGES_DIR` | `Static/images` | Image storage path. Set to `/data/images` on Railway |
-| `IMPORT_ROOT` | `imports` | Only server directory allowed as a source for admin filesystem imports |
-| `ADMIN_USERNAME` | `admin` | Basic auth username for admin |
-| `ADMIN_PASSWORD` | *(none)* | Basic auth password (**required** for admin) |
-| `MY_OPENAI_API_KEY` | *(none)* | OpenAI API key for AI metadata |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini` | Model for AI descriptions |
-| `OPENAI_TIMEOUT_SECONDS` | `30` | Timeout for OpenAI calls |
-| `MAX_UPLOAD_SIZE_MB` | `50` | Max upload file size |
-| `PORT` | *(uvicorn default)* | Server port (set by Railway) |
+| Variable                      | Default             | Description                                                            |
+| ----------------------------- | ------------------- | ---------------------------------------------------------------------- |
+| `IMAGES_DIR`                  | `Static/images`     | Image storage path. Set to `/data/images` on Railway                   |
+| `IMPORT_ROOT`                 | `imports`           | Only server directory allowed as a source for admin filesystem imports |
+| `ADMIN_USERNAME`              | `admin`             | Basic auth username for admin                                          |
+| `ADMIN_PASSWORD`              | _(none)_            | Basic auth password (**required** for admin)                           |
+| `MY_OPENAI_API_KEY`           | _(none)_            | OpenAI API key for AI metadata                                         |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini`       | Model for AI descriptions                                              |
+| `OPENAI_TIMEOUT_SECONDS`      | `30`                | Timeout for OpenAI calls                                               |
+| `MAX_UPLOAD_SIZE_MB`          | `50`                | Max upload file size                                                   |
+| `PORT`                        | _(uvicorn default)_ | Server port (set by Railway)                                           |
 
 ## Behavioral Guidelines
 
 Follow the four Karpathy principles:
+
 1. **Think Before Coding** — Understand the full context before making changes.
 2. **Simplicity First** — Prefer the simplest solution that works.
 3. **Surgical Changes** — Minimize diff size; touch only what's needed.
