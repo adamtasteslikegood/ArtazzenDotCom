@@ -1,5 +1,5 @@
-import base64
 import asyncio
+import base64
 import io
 import json
 import os
@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 import main as gallery_app
-from main import app, IMAGES_DIR, ALLOWED_IMAGE_EXTENSIONS
+from main import ALLOWED_IMAGE_EXTENSIONS, IMAGES_DIR, app
 
 
 def _basic_auth_header(username: str = "admin", password: str = "testpass") -> dict:
@@ -67,6 +67,7 @@ def teardown_function(function):
 # Public gallery routes
 # ---------------------------------------------------------------------------
 
+
 def test_read_root(client: TestClient):
     """Test the root endpoint."""
     response = client.get("/")
@@ -85,6 +86,7 @@ def test_artwork_detail(client: TestClient):
 # Security headers
 # ---------------------------------------------------------------------------
 
+
 def test_security_headers_on_root(client: TestClient):
     """Ensure security headers are present on public responses."""
     response = client.get("/")
@@ -96,6 +98,7 @@ def test_security_headers_on_root(client: TestClient):
 # ---------------------------------------------------------------------------
 # Admin authentication
 # ---------------------------------------------------------------------------
+
 
 def test_admin_requires_auth(client: TestClient):
     """Admin routes must reject unauthenticated requests."""
@@ -128,6 +131,7 @@ def test_admin_api_new_files_requires_auth(client: TestClient):
 # SVG not accepted
 # ---------------------------------------------------------------------------
 
+
 def test_svg_not_in_allowed_extensions():
     """.svg must not be in ALLOWED_IMAGE_EXTENSIONS."""
     assert ".svg" not in ALLOWED_IMAGE_EXTENSIONS
@@ -135,7 +139,9 @@ def test_svg_not_in_allowed_extensions():
 
 def test_upload_rejects_svg(authed_client):
     """Upload endpoint must skip SVG files."""
-    svg_content = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    svg_content = (
+        b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    )
     response = authed_client.post(
         "/admin/upload",
         files=[("files", ("evil.svg", io.BytesIO(svg_content), "image/svg+xml"))],
@@ -149,6 +155,7 @@ def test_upload_rejects_svg(authed_client):
 # ---------------------------------------------------------------------------
 # Filesystem containment
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "filename",
@@ -347,11 +354,17 @@ def test_openai_http_error_details_are_not_exposed(monkeypatch, tmp_path):
             return False
 
         def post(self, *_args, **_kwargs):
-            request = gallery_app.httpx.Request("POST", "https://api.openai.com/v1/responses")
+            request = gallery_app.httpx.Request(
+                "POST", "https://api.openai.com/v1/responses"
+            )
             raise gallery_app.httpx.ConnectError(secret_detail, request=request)
 
     monkeypatch.setattr(gallery_app, "_get_openai_api_key", lambda: "test-key")
-    monkeypatch.setattr(gallery_app, "_prepare_image_for_openai", lambda _path: "data:image/jpeg;base64,eA==")
+    monkeypatch.setattr(
+        gallery_app,
+        "_prepare_image_for_openai",
+        lambda _path: "data:image/jpeg;base64,eA==",
+    )
     monkeypatch.setattr(gallery_app.httpx, "Client", FailingClient)
 
     result = gallery_app._request_openai_metadata(image_path, {}, True, True)
@@ -398,7 +411,11 @@ def test_openai_parse_error_details_are_not_exposed(monkeypatch, tmp_path):
             return InvalidJsonResponse()
 
     monkeypatch.setattr(gallery_app, "_get_openai_api_key", lambda: "test-key")
-    monkeypatch.setattr(gallery_app, "_prepare_image_for_openai", lambda _path: "data:image/jpeg;base64,eA==")
+    monkeypatch.setattr(
+        gallery_app,
+        "_prepare_image_for_openai",
+        lambda _path: "data:image/jpeg;base64,eA==",
+    )
     monkeypatch.setattr(gallery_app.httpx, "Client", InvalidJsonClient)
 
     result = gallery_app._request_openai_metadata(image_path, {}, True, True)

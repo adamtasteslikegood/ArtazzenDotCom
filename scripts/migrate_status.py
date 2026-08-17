@@ -58,11 +58,15 @@ def migrate(images_dir: Path, dry_run: bool = False) -> int:
 
         if not dry_run:
             tmp = json_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            tmp.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
             tmp.replace(json_path)
 
         status_label = data["status"]
-        print(f"[migrated] {json_path.name}: reviewed={reviewed} → status={status_label}")
+        print(
+            f"[migrated] {json_path.name}: reviewed={reviewed} → status={status_label}"
+        )
         migrated += 1
 
     print(f"\nTotal images: {total}, migrated: {migrated}, skipped: {skipped}")
@@ -72,11 +76,20 @@ def migrate(images_dir: Path, dry_run: bool = False) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Migrate sidecars from reviewed to status enum.")
-    parser.add_argument("--images-dir", type=Path, default=Path("Static/images"),
-                        help="Path to images directory (default: Static/images)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show what would be migrated without writing files")
+    parser = argparse.ArgumentParser(
+        description="Migrate sidecars from reviewed to status enum."
+    )
+    parser.add_argument(
+        "--images-dir",
+        type=Path,
+        default=Path("Static/images"),
+        help="Path to images directory (default: Static/images)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be migrated without writing files",
+    )
     args = parser.parse_args()
     return migrate(args.images_dir, dry_run=args.dry_run)
 

@@ -17,9 +17,10 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
-from jsonschema import validate as js_validate, ValidationError
+from jsonschema import ValidationError
+from jsonschema import validate as js_validate
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -48,13 +49,13 @@ ALLOWED_IMAGE_EXTENSIONS = {
 }
 
 
-def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
+def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
 
 
-def _load_schema() -> Dict[str, Any]:
+def _load_schema() -> dict[str, Any]:
     try:
         return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -83,7 +84,11 @@ def _load_schema() -> Dict[str, Any]:
                         "raw_response": {"type": "object", "default": {}},
                     },
                 },
-                "status": {"type": "string", "enum": ["pending", "approved", "hidden"], "default": "pending"},
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "approved", "hidden"],
+                    "default": "pending",
+                },
                 "reviewed": {"type": "boolean", "default": False},
                 "detected_at": {"type": "number", "default": 0},
             },
@@ -99,7 +104,9 @@ def _load_schema() -> Dict[str, Any]:
         }
 
 
-def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_schema_defaults(
+    data: dict[str, Any], schema: dict[str, Any]
+) -> dict[str, Any]:
     # Backwards-compat: convert reviewed → status before defaults fill it in
     if "status" not in data and "reviewed" in data:
         data["status"] = "approved" if _coerce_bool(data["reviewed"]) else "pending"
@@ -143,12 +150,12 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
     return data
 
 
-def _ensure_sidecar(image_path: Path, schema: Dict[str, Any]) -> None:
+def _ensure_sidecar(image_path: Path, schema: dict[str, Any]) -> None:
     json_path = image_path.with_suffix(".json")
     if json_path.exists():
         return
     now = time.time()
-    sidecar: Dict[str, Any] = {}
+    sidecar: dict[str, Any] = {}
     for key, spec in schema.get("properties", {}).items():
         if "default" in spec:
             sidecar[key] = spec["default"]
@@ -201,9 +208,13 @@ def validate_and_migrate(images_dir: Path = IMAGES_DIR) -> int:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Validate/migrate image sidecar JSON files.")
+    parser = argparse.ArgumentParser(
+        description="Validate/migrate image sidecar JSON files."
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("validate", help="Validate and migrate sidecars under Static/images/")
+    sub.add_parser(
+        "validate", help="Validate and migrate sidecars under Static/images/"
+    )
     args = parser.parse_args(argv)
 
     if args.cmd == "validate":
