@@ -21,7 +21,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
-      - run: pip install ruff black
+      - run: pip install ruff==0.16.3 black==26.5.1
       - run: ruff check .
       - run: black --check .
 
@@ -45,12 +45,6 @@ jobs:
   test:
     name: Tests & coverage
     runs-on: ubuntu-latest
-    env:
-      # Tigris S3 — print-master bucket
-      AWS_ACCESS_KEY_ID: ${{ secrets.TIGRIS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TIGRIS_SECRET_ACCESS_KEY }}
-      AWS_ENDPOINT_URL: https://t3.storageapi.dev
-      S3_BUCKET_NAME: wrapped-stand-dthj7ckk4jm
     steps:
       - uses: actions/checkout@v4
 
@@ -63,7 +57,7 @@ jobs:
         run: pip install -r requirements.txt pytest-cov
 
       - name: pytest with coverage
-        run: pytest test_main.py -q --tb=short --cov=. --cov-report=xml --cov-report=term-missing
+        run: pytest tests/test_main.py -q --tb=short --cov=. --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage report
         if: always()
@@ -91,4 +85,4 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - run: pip install bandit[toml]
-      - run: bandit main.py scripts/ -ll -q
+      - run: bandit main.py manage_sidecars.py scripts/ -ll -q
