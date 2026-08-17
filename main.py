@@ -594,7 +594,7 @@ def _request_openai_metadata(
                 break
     # Fallback for older chat-style payloads
     if parsed is None and not content_text:
-        choice = next(iter(payload.get("choices", []) or []), {})
+        choice: dict[str, Any] = next(iter(payload.get("choices", []) or []), {})
         details["finish_reason"] = choice.get("finish_reason", "")
         message = choice.get("message", {})
         content = message.get("content", "")
