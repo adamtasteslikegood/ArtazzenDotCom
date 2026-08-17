@@ -3,6 +3,7 @@
 ArtazzenDotCom is a FastAPI + Jinja2 project for curating artwork with rich metadata. Images live on disk with JSON “sidecars” that describe each piece, while the app provides both a public gallery and an admin workflow for uploads, reviews, and optional AI assistance.
 
 ## Highlights
+
 - Responsive gallery view backed by `templates/index.html`.
 - Admin dashboard (`/admin`) for uploads, metadata review, and AI configuration.
 - Per-image JSON sidecars validated against `ImageSidecar.schema.json`; no centralized manifest.
@@ -10,14 +11,17 @@ ArtazzenDotCom is a FastAPI + Jinja2 project for curating artwork with rich meta
 - Optional OpenAI-powered title and description generation.
 
 ## Design System
+
 This project uses the "Techno-Botanical" design system, which is documented in `DESIGN.md`. The design system is implemented in `Static/css/styles.css` and is used throughout the application.
 
 ## Requirements
+
 - Python 3.10 or newer
 - `pip` for dependency management
 - (Optional) OpenAI API key for AI metadata suggestions
 
 ## Quick Start
+
 ```bash
 git clone https://github.com/adamtasteslikegood/ArtazzenDotCom.git
 cd ArtazzenDotCom
@@ -26,9 +30,11 @@ source .venv/bin/activate            # use .\.venv\Scripts\activate on Windows
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
+
 Then open `http://127.0.0.1:8000/` for the gallery or `http://127.0.0.1:8000/admin` for the dashboard.
 
 ## Project Layout
+
 ```
 .
 ├── main.py                     # FastAPI application entry point
@@ -47,17 +53,19 @@ Then open `http://127.0.0.1:8000/` for the gallery or `http://127.0.0.1:8000/adm
 ```
 
 ## Testing
+
 This project uses `pytest` for testing. To run the tests, first install the dependencies from `requirements.txt` into your virtual environment, then run:
+
 ```bash
 pytest
 ```
 
 ## TODOS
+
 This project uses `TODOS.md` to track future work. The file is organized by skill/component and priority.
 
-
-
 ## Metadata Workflow
+
 1. Drop images into `Static/images/`. Supported formats include JPG, PNG, GIF, WEBP, SVG, BMP, and TIFF.
 2. Create a matching JSON sidecar (same filename, `.json` extension) with the schema fields:
    - `title` (string)
@@ -68,14 +76,18 @@ This project uses `TODOS.md` to track future work. The file is organized by skil
 4. The admin review page lets you edit metadata, mark items as reviewed, and save changes atomically.
 
 ## AI Metadata Support
+
 Enable automatic suggestions with environment variables:
+
 ```bash
 export MY_OPENAI_API_KEY=sk-...          # or legacy My_OpenAI_APIKey
 export OPENAI_IMAGE_METADATA_MODEL=gpt-4o-mini   # optional override
 ```
+
 Runtime settings persist in `ai_config.json` and are also editable from the admin UI under **AI Metadata Settings**. The app triggers AI generation when new assets arrive or when you request suggestions during review.
 
 ## Useful Commands
+
 - Run with reload: `uvicorn main:app --reload`
 - Validate sidecars: `python manage_sidecars.py validate`
 - List pending reviews: `curl http://127.0.0.1:8000/admin/api/new-files`
@@ -89,6 +101,7 @@ Runtime settings persist in `ai_config.json` and are also editable from the admi
   ```
 
 ## Development Notes
+
 - Follow PEP 8 with 4-space indentation and type hints.
 - Use the built-in logger (`logging.getLogger(__name__)`) instead of `print`.
 - Keep handlers asynchronous and avoid blocking I/O on request paths.
@@ -99,12 +112,14 @@ Runtime settings persist in `ai_config.json` and are also editable from the admi
 - When adding tests, use `pytest` with `httpx` clients under `tests/`.
 
 ## Contributing
+
 - Keep commits small, imperative, and scoped (e.g., `Add admin metadata review`).
 - Document UI changes with screenshots and verification steps in PRs.
 - Note any new assets or sidecar updates under `Static/images/`.
 - Discuss significant architectural changes before implementation.
 
 ## License & Credits
+
 This project is released under the MIT License—see `LICENSE` for details.
 
 Maintainers: Adam Schoen, Allison Lunn, Gemini 2.5, Claude 3.5 Sonnet  

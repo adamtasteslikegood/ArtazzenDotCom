@@ -13,11 +13,11 @@ main (production)          ← deployed to Railway production environment
 
 ### Branch Roles
 
-| Branch | Purpose | Deploys To | Protected |
-|--------|---------|------------|-----------|
-| `main` | Production-ready code | Railway production | Yes — PR required, all threads resolved |
-| `dev` | Integration and staging | Railway staging (when configured) | Yes — PR required |
-| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews (when configured) | No |
+| Branch                                 | Purpose                   | Deploys To                            | Protected                               |
+| -------------------------------------- | ------------------------- | ------------------------------------- | --------------------------------------- |
+| `main`                                 | Production-ready code     | Railway production                    | Yes — PR required, all threads resolved |
+| `dev`                                  | Integration and staging   | Railway staging (when configured)     | Yes — PR required                       |
+| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews (when configured) | No                                      |
 
 ### Rules
 
@@ -84,6 +84,7 @@ Railway supports multiple environments tied to branches. Each environment has it
 Railway can spin up isolated environments for each pull request, giving reviewers a live preview before merging.
 
 **What PR previews provide:**
+
 - Temporary environment created automatically when a PR is opened
 - Own service instance with the PR's code deployed
 - Isolated variables (can inherit from production or use test values)
@@ -91,6 +92,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 - Auto-teardown when the PR is merged or closed
 
 **Setup steps (after initial PRs are merged):**
+
 1. Enable "PR Deploy Previews" in the Railway service settings
 2. Connect the GitHub repo if not already linked
 3. Configure environment variables for preview environments (use test API keys, separate admin credentials)
@@ -98,6 +100,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 5. Set a base environment to inherit variables from
 
 **Considerations for this project:**
+
 - Preview environments will need their own `ADMIN_PASSWORD` (set a shared test password in Railway's PR environment config)
 - `IMAGES_DIR` can be left unset (defaults to `Static/images/` with bundled test images) or pointed at a preview volume
 - `IMPORT_ROOT` limits admin filesystem imports to one approved staging directory; keep the default ephemeral `imports/` directory or set an explicit preview path
@@ -106,16 +109,16 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 
 ### Environment Variable Matrix
 
-| Variable | Production | PR Preview |
-|----------|-----------|------------|
-| `IMAGES_DIR` | `/data/images` (volume) | unset (uses `Static/images/`) |
-| `IMPORT_ROOT` | `/data/images/imports` or another approved staging directory | unset (uses `imports/`) |
-| `ADMIN_USERNAME` | `admin` | `admin` |
-| `ADMIN_PASSWORD` | production secret | shared test password |
-| `MY_OPENAI_API_KEY` | production key | test key or unset |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini` | `gpt-4o-mini` |
-| `MAX_UPLOAD_SIZE_MB` | `50` | `50` |
-| `PORT` | set by Railway | set by Railway |
+| Variable                      | Production                                                   | PR Preview                    |
+| ----------------------------- | ------------------------------------------------------------ | ----------------------------- |
+| `IMAGES_DIR`                  | `/data/images` (volume)                                      | unset (uses `Static/images/`) |
+| `IMPORT_ROOT`                 | `/data/images/imports` or another approved staging directory | unset (uses `imports/`)       |
+| `ADMIN_USERNAME`              | `admin`                                                      | `admin`                       |
+| `ADMIN_PASSWORD`              | production secret                                            | shared test password          |
+| `MY_OPENAI_API_KEY`           | production key                                               | test key or unset             |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini`                                                | `gpt-4o-mini`                 |
+| `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                          |
+| `PORT`                        | set by Railway                                               | set by Railway                |
 
 ## Workflow Summary
 
