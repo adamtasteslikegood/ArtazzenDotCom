@@ -1,38 +1,38 @@
 # main.py
-import os
-import json
 import asyncio
 import base64
+import json
+import logging  # Import logging
+import os
+import secrets
 import shutil
+import textwrap
 import threading
 import time
-import textwrap
 from contextlib import asynccontextmanager, suppress
 from io import BytesIO
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-import secrets
-
+import httpx
 from fastapi import (
+    Depends,
     FastAPI,
     File,
     Form,
     HTTPException,
     Request,
     UploadFile,
-    Depends,
 )
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from jsonschema import ValidationError
+from jsonschema import validate as js_validate
+from PIL import ExifTags, Image
 from starlette import status
 from starlette.middleware.base import BaseHTTPMiddleware
-from PIL import Image, ExifTags
-from jsonschema import validate as js_validate, ValidationError
-import httpx
-import logging # Import logging
 
 # --- Configuration ---
 # Get the directory where this script is located
@@ -89,7 +89,7 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 IMPORT_ROOT.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
-(STATIC_DIR / "css").mkdir(parents=True, exist_ok=True) # For optional CSS
+(STATIC_DIR / "css").mkdir(parents=True, exist_ok=True)  # For optional CSS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -112,7 +112,7 @@ sidecar_lock = threading.Lock()
 config_lock = threading.Lock()
 
 
-def _get_ai_config() -> Dict[str, Any]:
+def _get_ai_config() -> dict[str, Any]:
     """Return runtime AI config from app.state with env fallbacks."""
     cfg = getattr(app.state, "ai_config", {})
     enabled = bool(cfg.get("enabled", True))
@@ -133,7 +133,7 @@ def _get_ai_config() -> Dict[str, Any]:
     }
 
 
-def _parse_bool_env(value: Optional[str], default: bool) -> bool:
+def _parse_bool_env(value: str | None, default: bool) -> bool:
     if value is None:
         return default
     candidate = value.strip().lower()
@@ -156,7 +156,7 @@ def _coerce_bool(value: Any) -> bool:
     return bool(value)
 
 
-def _parse_float_env(value: Optional[str], default: float) -> float:
+def _parse_float_env(value: str | None, default: float) -> float:
     if value is None:
         return default
     try:
@@ -165,7 +165,7 @@ def _parse_float_env(value: Optional[str], default: float) -> float:
         return default
 
 
-def _parse_int_env(value: Optional[str], default: int) -> int:
+def _parse_int_env(value: str | None, default: int) -> int:
     if value is None:
         return default
     try:
@@ -174,16 +174,20 @@ def _parse_int_env(value: Optional[str], default: int) -> int:
         return default
 
 
-def _default_ai_config_from_env() -> Dict[str, Any]:
+def _default_ai_config_from_env() -> dict[str, Any]:
     return {
         "enabled": _parse_bool_env(os.getenv("AI_METADATA_ENABLED"), True),
         "model": os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL),
-        "temperature": _parse_float_env(os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE"), 0.6),
-        "max_output_tokens": _parse_int_env(os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600),
+        "temperature": _parse_float_env(
+            os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE"), 0.6
+        ),
+        "max_output_tokens": _parse_int_env(
+            os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600
+        ),
     }
 
 
-def _sanitize_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
     out = dict(_default_ai_config_from_env())
     if isinstance(cfg, dict):
         if "enabled" in cfg:
@@ -203,7 +207,7 @@ def _sanitize_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _load_ai_config() -> Dict[str, Any]:
+def _load_ai_config() -> dict[str, Any]:
     base = _default_ai_config_from_env()
     if CONFIG_PATH.exists():
         with suppress(json.JSONDecodeError, OSError):
@@ -212,21 +216,20 @@ def _load_ai_config() -> Dict[str, Any]:
     return base
 
 
-def _save_ai_config(cfg: Dict[str, Any]) -> None:
+def _save_ai_config(cfg: dict[str, Any]) -> None:
     with config_lock:
         _atomic_write_json(CONFIG_PATH, _sanitize_ai_config(cfg))
 
 
-def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
+def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     """Write JSON atomically to reduce corruption risk across workers."""
     candidate_path = os.path.realpath(os.fspath(path))
     config_path = os.path.realpath(os.fspath(CONFIG_PATH))
     images_root = os.path.realpath(os.fspath(IMAGES_DIR))
     is_config = candidate_path == config_path
-    is_image_sidecar = (
-        candidate_path.startswith(images_root + os.sep)
-        and candidate_path.lower().endswith(".json")
-    )
+    is_image_sidecar = candidate_path.startswith(
+        images_root + os.sep
+    ) and candidate_path.lower().endswith(".json")
     if not (is_config or is_image_sidecar):
         raise ValueError("JSON destination is outside an approved storage root")
 
@@ -237,7 +240,7 @@ def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
     tmp_path.replace(safe_path)
 
 
-def _load_schema() -> Dict[str, Any]:
+def _load_schema() -> dict[str, Any]:
     try:
         return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -248,7 +251,11 @@ def _load_schema() -> Dict[str, Any]:
             "properties": {
                 "title": {"type": "string", "default": ""},
                 "description": {"type": "string", "default": ""},
-                "status": {"type": "string", "enum": ["pending", "approved", "hidden"], "default": "pending"},
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "approved", "hidden"],
+                    "default": "pending",
+                },
                 "detected_at": {"type": "number", "default": 0},
             },
             "required": ["title", "description", "status", "detected_at"],
@@ -256,7 +263,7 @@ def _load_schema() -> Dict[str, Any]:
         }
 
 
-def _sanitize_filename(filename: Optional[str]) -> str:
+def _sanitize_filename(filename: str | None) -> str:
     """Return a safe single-component filename or an empty string.
 
     Filenames are identifiers in this application, not paths. Rejecting path
@@ -280,16 +287,20 @@ def _resolve_image_path(filename: str) -> Path:
     """Return a normalized image path contained beneath ``IMAGES_DIR``."""
     safe_name = _sanitize_filename(filename)
     if not safe_name:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
 
     root_path = os.path.realpath(os.fspath(IMAGES_DIR))
     full_path = os.path.realpath(os.path.join(root_path, safe_name))
     if not full_path.startswith(root_path + os.sep):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
     return Path(full_path)
 
 
-def _select_import_files(candidate: str) -> List[Path]:
+def _select_import_files(candidate: str) -> list[Path]:
     """Select import files from an allowlist enumerated beneath ``IMPORT_ROOT``.
 
     The request value is used only to match relative path components; it is
@@ -308,10 +319,12 @@ def _select_import_files(candidate: str) -> List[Path]:
             detail="Import path must be relative to the configured import root",
         )
 
-    requested_parts = () if requested_path == PurePosixPath(".") else requested_path.parts
+    requested_parts = (
+        () if requested_path == PurePosixPath(".") else requested_path.parts
+    )
     root_path = os.path.realpath(os.fspath(IMPORT_ROOT))
     root = Path(root_path)
-    selected: List[Path] = []
+    selected: list[Path] = []
     for discovered_path in root.rglob("*"):
         full_path = os.path.realpath(os.fspath(discovered_path))
         if not full_path.startswith(root_path + os.sep):
@@ -339,9 +352,9 @@ def _allowed_image(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_IMAGE_EXTENSIONS
 
 
-def _extract_exif_metadata(image_path: Path) -> Dict[str, str]:
+def _extract_exif_metadata(image_path: Path) -> dict[str, str]:
     """Return a subset of EXIF metadata relevant to titles and descriptions."""
-    data: Dict[str, str] = {}
+    data: dict[str, str] = {}
     try:
         with Image.open(image_path) as img:
             exif = img.getexif()
@@ -351,17 +364,27 @@ def _extract_exif_metadata(image_path: Path) -> Dict[str, str]:
                 tag = ExifTags.TAGS.get(tag_id, tag_id)
                 if tag == "ImageDescription" and value:
                     if isinstance(value, bytes):
-                        data["description"] = value.decode("utf-8", errors="ignore").strip()
+                        data["description"] = value.decode(
+                            "utf-8", errors="ignore"
+                        ).strip()
                     else:
                         data["description"] = str(value).strip()
                 if tag == "XPTitle" and value:
                     if isinstance(value, bytes):
-                        data["title"] = value.decode("utf-16-le", errors="ignore").rstrip("\x00").strip()
+                        data["title"] = (
+                            value.decode("utf-16-le", errors="ignore")
+                            .rstrip("\x00")
+                            .strip()
+                        )
                     else:
                         data["title"] = str(value).strip()
                 if tag == "XPComment" and value and "description" not in data:
                     if isinstance(value, bytes):
-                        data["description"] = value.decode("utf-16-le", errors="ignore").rstrip("\x00").strip()
+                        data["description"] = (
+                            value.decode("utf-16-le", errors="ignore")
+                            .rstrip("\x00")
+                            .strip()
+                        )
                     else:
                         data["description"] = str(value).strip()
     except Exception as exc:  # pragma: no cover - dependent on image format
@@ -371,35 +394,33 @@ def _extract_exif_metadata(image_path: Path) -> Dict[str, str]:
 
 def _build_openai_prompt(
     image_path: Path,
-    metadata: Dict[str, Any],
+    metadata: dict[str, Any],
     needs_title: bool,
     needs_description: bool,
 ) -> str:
     """Create a deterministic prompt for the OpenAI metadata request."""
-    hints: List[str] = []
+    hints: list[str] = []
     if metadata.get("title"):
         hints.append(f"Existing title: {metadata['title']}")
     if metadata.get("description"):
         hints.append(f"Existing description: {metadata['description']}")
     hint_text = "\n".join(hints) if hints else "No reliable text metadata was detected."
-    requested_parts: List[str] = []
+    requested_parts: list[str] = []
     if needs_title:
         requested_parts.append("a short but descriptive title (<= 80 characters)")
     if needs_description:
         requested_parts.append("an engaging description (<= 400 characters)")
     requested = " and ".join(requested_parts)
-    return textwrap.dedent(
-        f"""
+    return textwrap.dedent(f"""
         You are assisting with cataloging artwork. Analyze the provided image
         named '{image_path.name}'. {hint_text}
         Generate {requested}. Respond with JSON that contains the keys "title" and "description"
         with concise English text suitable for a public art gallery. Avoid mentioning that information
         is guessed or unavailable.
-        """
-    ).strip()
+        """).strip()
 
 
-def _prepare_image_for_openai(image_path: Path) -> Optional[str]:
+def _prepare_image_for_openai(image_path: Path) -> str | None:
     """Return a data URL encoded version of the image for OpenAI vision models."""
     try:
         with Image.open(image_path) as img:
@@ -412,17 +433,21 @@ def _prepare_image_for_openai(image_path: Path) -> Optional[str]:
         encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return f"data:image/jpeg;base64,{encoded}"
     except Exception as exc:  # pragma: no cover - dependent on Pillow support
-        logger.warning("Failed to prepare %s for OpenAI metadata request: %s", image_path, exc)
+        logger.warning(
+            "Failed to prepare %s for OpenAI metadata request: %s", image_path, exc
+        )
         return None
 
 
-def _get_openai_api_key() -> Optional[str]:
+def _get_openai_api_key() -> str | None:
     """Return OpenAI API key from env or optional local module.
 
     Checks env vars `MY_OPENAI_API_KEY` then legacy `My_OpenAI_APIKey`.
     Falls back to optional my_OpenAI_APIkey.py module if present.
     """
-    api_key = os.getenv(OPENAI_API_KEY_ENV_PRIMARY) or os.getenv(OPENAI_API_KEY_ENV_LEGACY)
+    api_key = os.getenv(OPENAI_API_KEY_ENV_PRIMARY) or os.getenv(
+        OPENAI_API_KEY_ENV_LEGACY
+    )
     if api_key:
         return api_key
     with suppress(Exception):
@@ -437,15 +462,15 @@ def _get_openai_api_key() -> Optional[str]:
 
 def _request_openai_metadata(
     image_path: Path,
-    metadata: Dict[str, Any],
+    metadata: dict[str, Any],
     needs_title: bool,
     needs_description: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Request metadata from OpenAI and return the response payload."""
     ai_cfg = _get_ai_config()
     model = ai_cfg["model"]
     prompt = _build_openai_prompt(image_path, metadata, needs_title, needs_description)
-    details: Dict[str, Any] = {
+    details: dict[str, Any] = {
         "provider": "openai",
         "model": model,
         "prompt": prompt,
@@ -506,11 +531,11 @@ def _request_openai_metadata(
                     "type": "object",
                     "properties": {
                         "title": {"type": "string"},
-                        "description": {"type": "string"}
+                        "description": {"type": "string"},
                     },
                     "required": ["title", "description"],
-                    "additionalProperties": False
-                }
+                    "additionalProperties": False,
+                },
             }
         },
     }
@@ -556,7 +581,9 @@ def _request_openai_metadata(
                 if not isinstance(part, dict):
                     continue
                 ptype = part.get("type")
-                if ptype in {"output_json", "json"} and isinstance(part.get("json"), dict):
+                if ptype in {"output_json", "json"} and isinstance(
+                    part.get("json"), dict
+                ):
                     parsed = part.get("json")
                     break
                 if ptype in {"output_text", "text"}:
@@ -572,7 +599,9 @@ def _request_openai_metadata(
         message = choice.get("message", {})
         content = message.get("content", "")
         if isinstance(content, list):
-            text_parts = [part.get("text", "") for part in content if isinstance(part, dict)]
+            text_parts = [
+                part.get("text", "") for part in content if isinstance(part, dict)
+            ]
             content_text = "".join(text_parts)
         elif isinstance(content, str):
             content_text = content
@@ -590,24 +619,35 @@ def _request_openai_metadata(
                     "id": payload.get("id"),
                     "usage": payload.get("usage", {}),
                     "output_types": [
-                        [(p or {}).get("type") for p in ((it or {}).get("content") or [])]
+                        [
+                            (p or {}).get("type")
+                            for p in ((it or {}).get("content") or [])
+                        ]
                         for it in (output or [])
                     ],
                     "text_excerpt": content_text[:200],
                 }
             except Exception:
-                details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
+                details["raw_response"] = {
+                    "id": payload.get("id"),
+                    "usage": payload.get("usage", {}),
+                }
             return {"title": "", "description": "", "details": details}
 
     # Keep raw id/usage only to avoid bloating sidecar
-    details["raw_response"] = {"id": payload.get("id"), "usage": payload.get("usage", {})}
+    details["raw_response"] = {
+        "id": payload.get("id"),
+        "usage": payload.get("usage", {}),
+    }
 
     title = str(parsed.get("title", "")).strip()
     description = str(parsed.get("description", "")).strip()
     return {"title": title, "description": description, "details": details}
 
 
-def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
+def _populate_missing_metadata(
+    image_path: Path, metadata: dict[str, Any]
+) -> dict[str, Any]:
     """Fill missing metadata using OpenAI when configured."""
     title_value = (metadata.get("title") or "").strip()
     description_value = (metadata.get("description") or "").strip()
@@ -627,7 +667,9 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
     if not _get_openai_api_key() and ai_details.get("status") == "skipped_no_api_key":
         return metadata
 
-    result = _request_openai_metadata(image_path, metadata, needs_title, needs_description)
+    result = _request_openai_metadata(
+        image_path, metadata, needs_title, needs_description
+    )
     details = result.get("details", {})
     metadata["ai_details"] = details
 
@@ -646,7 +688,7 @@ def _populate_missing_metadata(image_path: Path, metadata: Dict[str, Any]) -> Di
     return metadata
 
 
-def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
+def _ensure_sidecar(image_path: Path, metadata: dict[str, Any]) -> None:
     """Ensure a JSON sidecar exists for the provided image with schema fields."""
     safe_image_path = _resolve_image_path(image_path.name)
     json_path = safe_image_path.with_suffix(".json")
@@ -655,7 +697,7 @@ def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
     schema = _load_schema()
     now = time.time()
     # Base with schema defaults
-    sidecar_data: Dict[str, Any] = {}
+    sidecar_data: dict[str, Any] = {}
     for key, spec in schema.get("properties", {}).items():
         if "default" in spec:
             sidecar_data[key] = spec["default"]
@@ -663,24 +705,32 @@ def _ensure_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
     sidecar_data["title"] = str(metadata.get("title") or "").strip()
     sidecar_data["description"] = str(metadata.get("description") or "").strip()
     sidecar_data["ai_generated"] = bool(metadata.get("ai_generated", False))
-    sidecar_ai_details = metadata.get("ai_details") if isinstance(metadata.get("ai_details"), dict) else {}
+    sidecar_ai_details = (
+        metadata.get("ai_details")
+        if isinstance(metadata.get("ai_details"), dict)
+        else {}
+    )
     sidecar_data["ai_details"] = sidecar_ai_details
-    sidecar_data["status"] = metadata.get("status", "approved" if _coerce_bool(metadata.get("reviewed", False)) else "pending")
+    sidecar_data["status"] = metadata.get(
+        "status",
+        "approved" if _coerce_bool(metadata.get("reviewed", False)) else "pending",
+    )
     sidecar_data["detected_at"] = float(metadata.get("detected_at", now))
     with sidecar_lock:
         _atomic_write_json(json_path, sidecar_data)
 
 
-def _write_sidecar(image_path: Path, metadata: Dict[str, Any]) -> None:
+def _write_sidecar(image_path: Path, metadata: dict[str, Any]) -> None:
     safe_image_path = _resolve_image_path(image_path.name)
     json_path = safe_image_path.with_suffix(".json")
     with sidecar_lock:
         _atomic_write_json(json_path, metadata)
 
+
 def _set_status_sidecar(image_path: Path, new_status: str) -> None:
     safe_image_path = _resolve_image_path(image_path.name)
     json_path = safe_image_path.with_suffix(".json")
-    data: Dict[str, Any] = {}
+    data: dict[str, Any] = {}
     if json_path.exists():
         with suppress(json.JSONDecodeError, OSError):
             data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -694,9 +744,9 @@ def _set_status_sidecar(image_path: Path, new_status: str) -> None:
     _write_sidecar(image_path, data)
 
 
-def new_files_detected() -> List[Dict[str, Any]]:
+def new_files_detected() -> list[dict[str, Any]]:
     """Detect pending image files based on their sidecar JSON status."""
-    pending: List[Dict[str, Any]] = []
+    pending: list[dict[str, Any]] = []
     try:
         disk_listing = os.listdir(IMAGES_DIR)
     except OSError as exc:
@@ -704,7 +754,9 @@ def new_files_detected() -> List[Dict[str, Any]]:
         disk_listing = []
 
     existing_files = [
-        name for name in disk_listing if (IMAGES_DIR / name).is_file() and _allowed_image(name)
+        name
+        for name in disk_listing
+        if (IMAGES_DIR / name).is_file() and _allowed_image(name)
     ]
 
     for filename in existing_files:
@@ -736,11 +788,15 @@ async def _watch_image_directory(app: FastAPI) -> None:
                 pending = new_files_detected()
                 app.state.pending_images = pending
             except FileNotFoundError:
-                logger.debug("File disappeared during watcher scan, will retry next cycle")
+                logger.debug(
+                    "File disappeared during watcher scan, will retry next cycle"
+                )
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
     except asyncio.CancelledError:  # pragma: no cover - clean shutdown
         logger.debug("Image directory watcher cancelled")
         raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -755,6 +811,7 @@ async def lifespan(app: FastAPI):
         watcher.cancel()
         with suppress(asyncio.CancelledError):
             await watcher
+
 
 app = FastAPI(title="Artwork Gallery", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -773,7 +830,9 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
         return response
 
 
@@ -782,7 +841,7 @@ app.add_middleware(_SecurityHeadersMiddleware)
 
 def _verify_admin(
     request: Request,
-    credentials: Optional[HTTPBasicCredentials] = Depends(_http_basic),
+    credentials: HTTPBasicCredentials | None = Depends(_http_basic),
 ) -> None:
     """FastAPI dependency that enforces HTTP Basic Auth on admin routes.
 
@@ -834,12 +893,10 @@ def _verify_admin(
             )
 
 
-
-
-def _load_metadata(image_path: Path) -> Dict[str, Any]:
+def _load_metadata(image_path: Path) -> dict[str, Any]:
     """Load metadata for an image, combining sidecar data and EXIF hints."""
     image_path = _resolve_image_path(image_path.name)
-    data: Dict[str, Any] = {}
+    data: dict[str, Any] = {}
     json_path = image_path.with_suffix(".json")
     if json_path.exists():
         try:
@@ -847,12 +904,16 @@ def _load_metadata(image_path: Path) -> Dict[str, Any]:
             if isinstance(loaded, dict):
                 data.update(loaded)
         except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Unable to load or parse sidecar JSON in %s: %s", json_path, exc)
+            logger.warning(
+                "Unable to load or parse sidecar JSON in %s: %s", json_path, exc
+            )
 
     exif_data = _extract_exif_metadata(image_path)
     if not (data.get("title") or "title" in data) and exif_data.get("title"):
         data["title"] = exif_data["title"]
-    if not (data.get("description") or "description" in data) and exif_data.get("description"):
+    if not (data.get("description") or "description" in data) and exif_data.get(
+        "description"
+    ):
         data["description"] = exif_data["description"]
 
     data.setdefault("title", "")
@@ -867,7 +928,9 @@ def _load_metadata(image_path: Path) -> Dict[str, Any]:
     return data
 
 
-def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_schema_defaults(
+    data: dict[str, Any], schema: dict[str, Any]
+) -> dict[str, Any]:
     props = schema.get("properties", {})
     required = set(schema.get("required", []))
     for key in required:
@@ -958,13 +1021,15 @@ def get_artwork_files(*, status_filter: str = "approved"):
             logger.error(f"Error reading image directory {IMAGES_DIR}: {e}")
             return []
     else:
-        logger.warning(f"Images directory not found or is not a directory: {IMAGES_DIR}")
+        logger.warning(
+            f"Images directory not found or is not a directory: {IMAGES_DIR}"
+        )
 
     logger.info(f"Found {len(artwork)} artwork files (filter={status_filter}).")
     return artwork
 
 
-async def get_pending_files(request: Request) -> List[Dict[str, Any]]:
+async def get_pending_files(request: Request) -> list[dict[str, Any]]:
     """
     FastAPI dependency to get the list of pending files.
     This runs before routes that depend on it.
@@ -972,11 +1037,12 @@ async def get_pending_files(request: Request) -> List[Dict[str, Any]]:
     return _refresh_pending_files(request)
 
 
-def _refresh_pending_files(request: Request) -> List[Dict[str, Any]]:
+def _refresh_pending_files(request: Request) -> list[dict[str, Any]]:
     """Re-scan pending images and keep the application cache in sync."""
     pending = new_files_detected()
     request.app.state.pending_images = pending
     return pending
+
 
 # --- Routes ---
 
@@ -984,7 +1050,7 @@ def _refresh_pending_files(request: Request) -> List[Dict[str, Any]]:
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_home(
     request: Request,
-    pending_images: List[Dict[str, Any]] = Depends(get_pending_files),
+    pending_images: list[dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> HTMLResponse:
     """Render the admin review dashboard."""
@@ -1003,7 +1069,7 @@ async def admin_home(
 @app.get("/admin/review", response_class=HTMLResponse)
 async def review_added_files(
     request: Request,
-    pending_images: List[Dict[str, Any]] = Depends(get_pending_files),
+    pending_images: list[dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> HTMLResponse:
     """Render the admin review dashboard. Alias for /admin."""
@@ -1021,7 +1087,7 @@ async def review_added_files(
 
 @app.get("/admin/api/new-files", response_class=JSONResponse)
 async def api_new_files(
-    pending: List[Dict[str, Any]] = Depends(get_pending_files),
+    pending: list[dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     """Return pending and gallery files as JSON."""
@@ -1032,10 +1098,12 @@ async def api_new_files(
 @app.get("/admin/config", response_class=JSONResponse)
 async def get_admin_config(_: None = Depends(_verify_admin)) -> JSONResponse:
     cfg = _get_ai_config()
-    return JSONResponse({
-        "ai": cfg,
-        "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
-    })
+    return JSONResponse(
+        {
+            "ai": cfg,
+            "allowed_extensions": sorted(ALLOWED_IMAGE_EXTENSIONS),
+        }
+    )
 
 
 @app.post("/admin/config", response_class=JSONResponse)
@@ -1094,7 +1162,9 @@ async def regenerate_ai_metadata(
     images = body.get("images") or []
     force = bool(body.get("force", False))
     if not isinstance(images, list) or not images:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No images provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No images provided"
+        )
 
     updated = []
     errors = []
@@ -1126,14 +1196,16 @@ async def regenerate_ai_metadata(
 @app.post("/admin/upload")
 async def upload_images(
     request: Request,
-    files: List[UploadFile] = File(...),
+    files: list[UploadFile] = File(...),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     if not files:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files uploaded")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No files uploaded"
+        )
 
-    saved: List[str] = []
-    skipped: List[str] = []
+    saved: list[str] = []
+    skipped: list[str] = []
 
     for upload in files:
         filename = _sanitize_filename(upload.filename)
@@ -1190,7 +1262,9 @@ async def upload_images(
 
     message = "Uploaded files successfully" if saved else "No supported files uploaded"
     pending = _refresh_pending_files(request)
-    return JSONResponse({"saved": saved, "skipped": skipped, "message": message, "pending": pending})
+    return JSONResponse(
+        {"saved": saved, "skipped": skipped, "message": message, "pending": pending}
+    )
 
 
 @app.post("/admin/import-path")
@@ -1201,12 +1275,14 @@ async def import_from_path(
 ) -> JSONResponse:
     source_files = _select_import_files(path)
 
-    copied: List[str] = []
-    skipped: List[str] = []
+    copied: list[str] = []
+    skipped: list[str] = []
 
     for file_path in source_files:
         target_name = _sanitize_filename(file_path.name)
-        if target_name and (_allowed_image(target_name) or file_path.suffix.lower() == ".json"):
+        if target_name and (
+            _allowed_image(target_name) or file_path.suffix.lower() == ".json"
+        ):
             target = _resolve_image_path(target_name)
             try:
                 shutil.copy2(file_path, target)
@@ -1231,11 +1307,15 @@ async def preview_image_metadata(
 ) -> HTMLResponse:
     filename = _sanitize_filename(image_name)
     if not filename or not _allowed_image(filename):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
 
     image_path = _resolve_image_path(filename)
     if not image_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
 
     metadata = _load_metadata(image_path)
     _ensure_sidecar(image_path, metadata)
@@ -1260,12 +1340,14 @@ async def update_image_metadata(
     title: str = Form(""),
     description: str = Form(""),
     action: str = Form("save"),
-    pending_dependency: List[Dict[str, Any]] = Depends(get_pending_files),
+    pending_dependency: list[dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> RedirectResponse:
     filename = _sanitize_filename(image_name)
     if not filename or not _allowed_image(filename):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
 
     if action == "cancel":
         return RedirectResponse(
@@ -1275,7 +1357,9 @@ async def update_image_metadata(
 
     image_path = _resolve_image_path(filename)
     if not image_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
 
     clean_metadata = {
         "title": title.strip() or image_path.stem,
@@ -1301,7 +1385,9 @@ async def unapprove_image(
     """Move an approved image back to pending status."""
     image_path = _resolve_image_path(image_name)
     if not image_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
     _set_status_sidecar(image_path, "pending")
     return JSONResponse({"status": "ok", "image": image_name, "new_status": "pending"})
 
@@ -1314,7 +1400,9 @@ async def soft_delete_image(
     """Soft-delete an image by moving it and its sidecar to .trash/."""
     image_path = _resolve_image_path(image_name)
     if not image_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
     trash_dir = IMAGES_DIR / ".trash"
     trash_dir.mkdir(exist_ok=True)
     sidecar_path = image_path.with_suffix(".json")
@@ -1337,11 +1425,15 @@ async def artwork_detail(request: Request, image_filename: str):
     """
     filename = _sanitize_filename(image_filename)
     if not filename or not _allowed_image(filename):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found"
+        )
 
     image_path = _resolve_image_path(filename)
     if not image_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found"
+        )
 
     metadata = _load_metadata(image_path)
     image_url = f"{IMAGES_URL_PREFIX}/{filename}"
@@ -1370,13 +1462,14 @@ async def read_root(request: Request):
 
     # Data to pass to the HTML template
     context = {
-        "request": request, # Required by Jinja2Templates
+        "request": request,  # Required by Jinja2Templates
         "artwork_files": artwork_list,
-        "gallery_title": GALLERY_TITLE
+        "gallery_title": GALLERY_TITLE,
     }
 
     # Render the HTML template with the context data
     return templates.TemplateResponse(request, "index.html", context)
+
 
 # --- Running the App ---
 # To run this app:
