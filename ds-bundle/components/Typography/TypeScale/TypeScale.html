@@ -1,0 +1,298 @@
+<!-- @dsCard group="Typography" -->
+<link rel="stylesheet" href="../../../styles.css">
+<style>
+  .type-card {
+    padding: 24px;
+    font-family: var(--font-body);
+    color: var(--text-main);
+    background: var(--bg-main);
+  }
+  .type-card h2 {
+    font-family: var(--font-heading);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.6;
+  }
+  .type-card h2:not(:first-child) {
+    margin-top: 40px;
+  }
+  .type-card hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 40px 0;
+  }
+
+  /* Font Families */
+  .font-sample {
+    margin-bottom: 20px;
+  }
+  .font-name {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--fg-muted);
+    margin: 0 0 4px 0;
+  }
+  .font-var {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-faint);
+    margin: 0 0 8px 0;
+  }
+  .font-sentence {
+    font-size: var(--text-xl);
+    margin: 0;
+    line-height: var(--leading-snug);
+    color: var(--fg-primary);
+  }
+
+  /* Type Scale */
+  .scale-row {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .scale-row:last-child {
+    border-bottom: none;
+  }
+  .scale-meta {
+    flex: 0 0 160px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .scale-var {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-primary);
+  }
+  .scale-px {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+  }
+  .scale-sample {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-primary);
+  }
+
+  /* Type Roles */
+  .role-block {
+    margin-bottom: 24px;
+  }
+  .role-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--fg-muted);
+    margin: 0 0 6px 0;
+  }
+  .role-sample {
+    margin: 0;
+    color: var(--fg-primary);
+  }
+</style>
+
+<div class="type-card">
+
+  <!-- ─── FONT FAMILIES ─── -->
+  <h2>Font Families</h2>
+
+  <div class="font-sample">
+    <p class="font-name">Clash Grotesk</p>
+    <p class="font-var">var(--font-heading)</p>
+    <p class="font-sentence" style="font-family: var(--font-heading);">
+      The botanical architecture of light and shadow.
+    </p>
+  </div>
+
+  <div class="font-sample">
+    <p class="font-name">Instrument Sans</p>
+    <p class="font-var">var(--font-body)</p>
+    <p class="font-sentence" style="font-family: var(--font-body);">
+      The botanical architecture of light and shadow.
+    </p>
+  </div>
+
+  <div class="font-sample">
+    <p class="font-name">JetBrains Mono</p>
+    <p class="font-var">var(--font-mono)</p>
+    <p class="font-sentence" style="font-family: var(--font-mono);">
+      The botanical architecture of light and shadow.
+    </p>
+  </div>
+
+  <hr>
+
+  <!-- ─── TYPE SCALE ─── -->
+  <h2>Type Scale</h2>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-5xl</span>
+      <span class="scale-px">96px / 6rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-heading); font-size: var(--text-5xl); font-weight: var(--weight-bold); line-height: 1;">Aa</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-4xl</span>
+      <span class="scale-px">64px / 4rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-heading); font-size: var(--text-4xl); font-weight: var(--weight-semibold); line-height: 1;">Aa</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-3xl</span>
+      <span class="scale-px">44px / 2.75rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-heading); font-size: var(--text-3xl); font-weight: var(--weight-semibold); line-height: 1.1;">Artazzen Gallery</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-2xl</span>
+      <span class="scale-px">32px / 2rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-heading); font-size: var(--text-2xl); font-weight: var(--weight-semibold); line-height: 1.2;">Artazzen Gallery</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-xl</span>
+      <span class="scale-px">24px / 1.5rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-heading); font-size: var(--text-xl); font-weight: var(--weight-medium); line-height: 1.25;">Artazzen Gallery</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-lg</span>
+      <span class="scale-px">20px / 1.25rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-body); font-size: var(--text-lg); font-weight: var(--weight-semibold); line-height: 1.3;">Curated digital and botanical art</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-md</span>
+      <span class="scale-px">17px / 1.0625rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-body); font-size: var(--text-md); line-height: 1.5;">Each artwork is accompanied by metadata describing its origin and process.</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-base</span>
+      <span class="scale-px">15px / 0.9375rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-body); font-size: var(--text-base); line-height: 1.55;">Each artwork is accompanied by metadata describing its origin and process.</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-sm</span>
+      <span class="scale-px">12px / 0.75rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-mono); font-size: var(--text-sm); letter-spacing: 0.06em;">REVIEWED &middot; 2026-08-17 &middot; AI-GENERATED</span>
+  </div>
+
+  <div class="scale-row">
+    <div class="scale-meta">
+      <span class="scale-var">--text-xs</span>
+      <span class="scale-px">11px / 0.6875rem</span>
+    </div>
+    <span class="scale-sample" style="font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: 0.06em;">FILENAME.JSON &middot; SIDECAR METADATA</span>
+  </div>
+
+  <hr>
+
+  <!-- ─── TYPE ROLES ─── -->
+  <h2>Type Roles</h2>
+
+  <div class="role-block">
+    <p class="role-label">Hero</p>
+    <p class="role-sample" style="
+      font-family: var(--type-hero-family);
+      font-size: var(--type-hero-size);
+      font-weight: var(--type-hero-weight);
+      line-height: var(--type-hero-leading);
+      letter-spacing: var(--type-hero-tracking);
+      text-transform: uppercase;
+    ">Artazzen</p>
+  </div>
+
+  <div class="role-block">
+    <p class="role-label">H1</p>
+    <p class="role-sample" style="
+      font-family: var(--type-h1-family);
+      font-size: var(--type-h1-size);
+      font-weight: var(--type-h1-weight);
+      line-height: var(--type-h1-leading);
+      letter-spacing: var(--type-h1-tracking);
+    ">Gallery Collection</p>
+  </div>
+
+  <div class="role-block">
+    <p class="role-label">H2</p>
+    <p class="role-sample" style="
+      font-family: var(--type-h2-family);
+      font-size: var(--type-h2-size);
+      font-weight: var(--type-h2-weight);
+      line-height: var(--type-h2-leading);
+    ">Recent Artwork</p>
+  </div>
+
+  <div class="role-block">
+    <p class="role-label">Title</p>
+    <p class="role-sample" style="
+      font-family: var(--type-title-family);
+      font-size: var(--type-title-size);
+      font-weight: var(--type-title-weight);
+    ">Chromatic Bloom Series</p>
+  </div>
+
+  <div class="role-block">
+    <p class="role-label">Body</p>
+    <p class="role-sample" style="
+      font-family: var(--type-body-family);
+      font-size: var(--type-body-size);
+      font-weight: var(--type-body-weight);
+      line-height: var(--type-body-leading);
+    ">A generative exploration of botanical forms rendered through computational algorithms, blending organic growth patterns with precise digital geometry.</p>
+  </div>
+
+  <div class="role-block">
+    <p class="role-label">Desc</p>
+    <p class="role-sample" style="
+      font-family: var(--type-desc-family);
+      font-size: var(--type-desc-size);
+      line-height: var(--type-desc-leading);
+    ">This piece was generated using a custom diffusion model trained on botanical illustration archives from the 19th century.</p>
+  </div>
+
+  <div class="role-block">
+    <p class="role-label">Mono Label</p>
+    <p class="role-sample" style="
+      font-family: var(--type-mono-family);
+      font-size: var(--type-mono-size);
+      letter-spacing: var(--type-mono-tracking);
+      text-transform: var(--type-mono-transform);
+      opacity: 0.6;
+    ">reviewed &middot; ai-generated &middot; 2026-08-17</p>
+  </div>
+
+</div>
