@@ -73,6 +73,13 @@ jobs:
           path: coverage.xml
           retention-days: 14
 
+  format-docs:
+    name: Prettier (docs & config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx --yes prettier --check "**/*.{md,yml,yaml,json}" --ignore-path .gitignore
+
   security:
     name: Security scan
     runs-on: ubuntu-latest
