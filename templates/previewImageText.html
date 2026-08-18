@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
 </head>
-<body class="admin-page">
+<body class="admin-page" data-root-path="{{ request.scope.get('root_path', '') }}">
     <header>
         <h1>Review</h1>
         <p class="admin-subheading">Curating metadata for artifact</p>
@@ -55,19 +55,44 @@
         </section>
 
         <section class="admin-panel">
-            <h2>Edit text for this image</h2>
-            <p class="panel-description">Update the fields below to control the title and description that accompany the artwork in the public gallery. Saving will also update or create the JSON sidecar file.</p>
+            <h2>Edit metadata</h2>
+            <p class="panel-description">Update the fields below. Saving approves the artwork and updates its JSON sidecar.</p>
             <form class="metadata-form" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
                 <div class="form-field">
-                    <label for="title">Title</label>
+                    <label for="title">Title <button type="button" class="field-regen-btn" data-field="title">AI</button></label>
                     <input type="text" id="title" name="title" value="{{ metadata.title | e }}" required>
                 </div>
                 <div class="form-field">
-                    <label for="description">Description</label>
-                    <textarea id="description" name="description" rows="6" placeholder="Describe the story, medium, or inspiration for this piece.">{{ metadata.description | e }}</textarea>
+                    <label for="description">Description <button type="button" class="field-regen-btn" data-field="description">AI</button></label>
+                    <textarea id="description" name="description" rows="4" placeholder="Describe the story, medium, or inspiration.">{{ metadata.description | e }}</textarea>
                 </div>
+                <div class="form-field">
+                    <label for="caption">Caption <button type="button" class="field-regen-btn" data-field="caption">AI</button></label>
+                    <input type="text" id="caption" name="caption" value="{{ metadata.get('caption', '') | e }}" placeholder="Short gallery caption">
+                </div>
+                <div class="form-field">
+                    <label for="tags">Tags <button type="button" class="field-regen-btn" data-field="tags">AI</button></label>
+                    <input type="text" id="tags" name="tags" value="{{ metadata.get('tags', []) | join(', ') }}" placeholder="Comma-separated tags">
+                </div>
+                <div class="form-field">
+                    <label for="artist">Artist</label>
+                    <input type="text" id="artist" name="artist" value="{{ metadata.get('artist', '') | e }}">
+                </div>
+                <div class="form-field">
+                    <label for="copyright">Copyright</label>
+                    <input type="text" id="copyright" name="copyright" value="{{ metadata.get('copyright', '') | e }}">
+                </div>
+                <div class="form-field">
+                    <label for="collection">Collection</label>
+                    <input type="text" id="collection" name="collection" value="{{ metadata.get('collection', '') | e }}">
+                </div>
+                {% if metadata.get('ai_fields') %}
+                <p class="ai-status">
+                    <span class="badge">AI fields: {{ metadata.ai_fields | join(', ') }}</span>
+                </p>
+                {% endif %}
                 <div class="form-actions">
-                    <button type="submit" name="action" value="save" class="button">OK</button>
+                    <button type="submit" name="action" value="save" class="button">Approve &amp; Save</button>
                     <button type="submit" name="action" value="cancel" class="button secondary">Cancel</button>
                 </div>
             </form>
@@ -79,15 +104,47 @@
     </footer>
 
     <script>
-    // Format any server-rendered timestamps on this page
     (function () {
+        var ROOT = document.body.dataset.rootPath || '';
+
         document.querySelectorAll('.ai-status .timestamp[data-ts]')
-            .forEach((el) => {
-                const ts = parseFloat(el.getAttribute('data-ts'));
+            .forEach(function(el) {
+                var ts = parseFloat(el.getAttribute('data-ts'));
                 if (!isNaN(ts)) {
                     el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
                 }
             });
+
+        document.querySelectorAll('.field-regen-btn').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+                var field = btn.dataset.field;
+                var imageName = '{{ image_name | e }}';
+                btn.disabled = true;
+                btn.textContent = '…';
+                try {
+                    var res = await fetch(ROOT + '/admin/ai/regenerate', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({images: [imageName], fields: [field], force: true})
+                    });
+                    var data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Failed');
+                    var updated = (data.updated || [])[0];
+                    if (updated && updated.metadata) {
+                        var val = updated.metadata[field];
+                        var input = document.getElementById(field);
+                        if (input) {
+                            input.value = Array.isArray(val) ? val.join(', ') : (val || '');
+                        }
+                    }
+                    btn.textContent = '✓';
+                    setTimeout(function() { btn.textContent = 'AI'; btn.disabled = false; }, 2000);
+                } catch (e) {
+                    btn.textContent = '✗';
+                    setTimeout(function() { btn.textContent = 'AI'; btn.disabled = false; }, 2000);
+                }
+            });
+        });
     })();
     </script>
 </body>

@@ -395,27 +395,33 @@ def _extract_exif_metadata(image_path: Path) -> dict[str, str]:
 def _build_openai_prompt(
     image_path: Path,
     metadata: dict[str, Any],
-    needs_title: bool,
-    needs_description: bool,
+    needed_fields: list[str],
 ) -> str:
     """Create a deterministic prompt for the OpenAI metadata request."""
     hints: list[str] = []
-    if metadata.get("title"):
-        hints.append(f"Existing title: {metadata['title']}")
-    if metadata.get("description"):
-        hints.append(f"Existing description: {metadata['description']}")
+    for key in ("title", "description", "caption", "artist"):
+        if metadata.get(key):
+            hints.append(f"Existing {key}: {metadata[key]}")
+    if metadata.get("tags"):
+        hints.append(f"Existing tags: {', '.join(metadata['tags'])}")
     hint_text = "\n".join(hints) if hints else "No reliable text metadata was detected."
-    requested_parts: list[str] = []
-    if needs_title:
-        requested_parts.append("a short but descriptive title (<= 80 characters)")
-    if needs_description:
-        requested_parts.append("an engaging description (<= 400 characters)")
+
+    field_descriptions: dict[str, str] = {
+        "title": "a short but descriptive title (<= 80 characters)",
+        "description": "an engaging description (<= 400 characters)",
+        "caption": "a concise gallery caption (<= 160 characters)",
+        "tags": "3-8 descriptive tags for categorization",
+    }
+    requested_parts = [field_descriptions[f] for f in needed_fields if f in field_descriptions]
     requested = " and ".join(requested_parts)
+
+    field_keys = ", ".join(f'"{f}"' for f in needed_fields)
     return textwrap.dedent(f"""
         You are assisting with cataloging artwork. Analyze the provided image
         named '{image_path.name}'. {hint_text}
-        Generate {requested}. Respond with JSON that contains the keys "title" and "description"
-        with concise English text suitable for a public art gallery. Avoid mentioning that information
+        Generate {requested}. Respond with JSON containing the keys {field_keys}
+        with concise English text suitable for a public art gallery. For tags,
+        return an array of lowercase strings. Avoid mentioning that information
         is guessed or unavailable.
         """).strip()
 
@@ -463,13 +469,12 @@ def _get_openai_api_key() -> str | None:
 def _request_openai_metadata(
     image_path: Path,
     metadata: dict[str, Any],
-    needs_title: bool,
-    needs_description: bool,
+    needed_fields: list[str],
 ) -> dict[str, Any]:
     """Request metadata from OpenAI and return the response payload."""
     ai_cfg = _get_ai_config()
     model = ai_cfg["model"]
-    prompt = _build_openai_prompt(image_path, metadata, needs_title, needs_description)
+    prompt = _build_openai_prompt(image_path, metadata, needed_fields)
     details: dict[str, Any] = {
         "provider": "openai",
         "model": model,
@@ -530,10 +535,10 @@ def _request_openai_metadata(
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "title": {"type": "string"},
-                        "description": {"type": "string"},
+                        f: ({"type": "array", "items": {"type": "string"}} if f == "tags" else {"type": "string"})
+                        for f in needed_fields
                     },
-                    "required": ["title", "description"],
+                    "required": sorted(needed_fields),
                     "additionalProperties": False,
                 },
             }
@@ -640,22 +645,44 @@ def _request_openai_metadata(
         "usage": payload.get("usage", {}),
     }
 
-    title = str(parsed.get("title", "")).strip()
-    description = str(parsed.get("description", "")).strip()
-    return {"title": title, "description": description, "details": details}
+    result: dict[str, Any] = {"details": details}
+    for field in needed_fields:
+        val = parsed.get(field)
+        if field == "tags" and isinstance(val, list):
+            result[field] = [str(t).strip() for t in val if str(t).strip()]
+        elif val is not None:
+            result[field] = str(val).strip()
+        else:
+            result[field] = "" if field != "tags" else []
+    return result
 
 
 def _populate_missing_metadata(
-    image_path: Path, metadata: dict[str, Any]
+    image_path: Path,
+    metadata: dict[str, Any],
+    only_fields: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Fill missing metadata using OpenAI when configured."""
-    title_value = (metadata.get("title") or "").strip()
-    description_value = (metadata.get("description") or "").strip()
-    needs_title = title_value == ""
-    needs_description = description_value == ""
-    if not (needs_title or needs_description):
+    """Fill missing metadata using OpenAI when configured.
+
+    If only_fields is provided, only regenerate those specific fields.
+    Otherwise, regenerate any empty AI-eligible field.
+    """
+    ai_eligible = ["title", "description", "caption", "tags"]
+
+    if only_fields is not None:
+        needed_fields = [f for f in only_fields if f in ai_eligible]
+    else:
+        needed_fields = []
+        for field in ai_eligible:
+            val = metadata.get(field)
+            if field == "tags":
+                if not val:
+                    needed_fields.append(field)
+            elif not (val or "").strip():
+                needed_fields.append(field)
+
+    if not needed_fields:
         return metadata
-    # Respect runtime toggle
     if not _get_ai_config().get("enabled", True):
         return metadata
 
@@ -667,17 +694,21 @@ def _populate_missing_metadata(
     if not _get_openai_api_key() and ai_details.get("status") == "skipped_no_api_key":
         return metadata
 
-    result = _request_openai_metadata(
-        image_path, metadata, needs_title, needs_description
-    )
+    result = _request_openai_metadata(image_path, metadata, needed_fields)
     details = result.get("details", {})
     metadata["ai_details"] = details
 
     if details.get("status") == "success":
-        if needs_title and result.get("title"):
-            metadata["title"] = result["title"]
-        if needs_description and result.get("description"):
-            metadata["description"] = result["description"]
+        existing_ai_fields = set(metadata.get("ai_fields", []))
+        for field in needed_fields:
+            val = result.get(field)
+            if field == "tags" and isinstance(val, list) and val:
+                metadata["tags"] = val
+                existing_ai_fields.add("tags")
+            elif isinstance(val, str) and val:
+                metadata[field] = val
+                existing_ai_fields.add(field)
+        metadata["ai_fields"] = sorted(existing_ai_fields)
         metadata["ai_generated"] = True
     else:
         metadata.setdefault("ai_generated", False)
@@ -1095,6 +1126,27 @@ async def api_new_files(
     return JSONResponse({"pending": pending, "gallery": gallery})
 
 
+@app.get("/admin/api/collections", response_class=JSONResponse)
+async def list_collections(_: None = Depends(_verify_admin)) -> JSONResponse:
+    """Return distinct collection values from all sidecars."""
+    collections: set[str] = set()
+    try:
+        for name in os.listdir(IMAGES_DIR):
+            if not name.lower().endswith(".json"):
+                continue
+            json_path = IMAGES_DIR / name
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                val = data.get("collection", "").strip()
+                if val:
+                    collections.add(val)
+            except (json.JSONDecodeError, OSError):
+                continue
+    except OSError:
+        pass
+    return JSONResponse({"collections": sorted(collections)})
+
+
 @app.get("/admin/config", response_class=JSONResponse)
 async def get_admin_config(_: None = Depends(_verify_admin)) -> JSONResponse:
     cfg = _get_ai_config()
@@ -1161,6 +1213,14 @@ async def regenerate_ai_metadata(
         body = {}
     images = body.get("images") or []
     force = bool(body.get("force", False))
+    fields: list[str] | None = body.get("fields")
+    if isinstance(fields, list):
+        fields = [f for f in fields if f in ("title", "description", "caption", "tags")]
+        if not fields:
+            fields = None
+    else:
+        fields = None
+
     if not isinstance(images, list) or not images:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No images provided"
@@ -1180,9 +1240,13 @@ async def regenerate_ai_metadata(
         try:
             meta = _load_metadata(path)
             if force:
-                meta["title"] = ""
-                meta["description"] = ""
-            meta = _populate_missing_metadata(path, meta)
+                blank_fields = fields or ["title", "description", "caption", "tags"]
+                for f in blank_fields:
+                    if f == "tags":
+                        meta["tags"] = []
+                    else:
+                        meta[f] = ""
+            meta = _populate_missing_metadata(path, meta, only_fields=fields)
             _write_sidecar(path, meta)
             updated.append({"name": fname, "metadata": meta})
         except Exception:
@@ -1339,6 +1403,11 @@ async def update_image_metadata(
     image_name: str,
     title: str = Form(""),
     description: str = Form(""),
+    caption: str = Form(""),
+    tags: str = Form(""),
+    artist: str = Form(""),
+    copyright_info: str = Form("", alias="copyright"),
+    collection: str = Form(""),
     action: str = Form("save"),
     pending_dependency: list[dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
@@ -1361,11 +1430,16 @@ async def update_image_metadata(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
 
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     clean_metadata = {
         "title": title.strip() or image_path.stem,
         "description": description.strip(),
+        "caption": caption.strip(),
+        "tags": tag_list,
+        "artist": artist.strip(),
+        "copyright": copyright_info.strip(),
+        "collection": collection.strip(),
     }
-    # Merge with existing sidecar and mark as approved
     existing = _load_metadata(image_path)
     existing.update(clean_metadata)
     existing["status"] = "approved"
@@ -1441,13 +1515,33 @@ async def artwork_detail(request: Request, image_filename: str):
     artwork_data = {
         "title": metadata.get("title", "Artwork"),
         "description": metadata.get("description", ""),
+        "caption": metadata.get("caption", ""),
+        "tags": metadata.get("tags", []),
+        "artist": metadata.get("artist", ""),
+        "copyright": metadata.get("copyright", ""),
+        "collection": metadata.get("collection", ""),
         "image_url": image_url,
     }
+
+    gallery = get_artwork_files(status_filter="approved")
+    filenames = [item["name"] for item in gallery]
+    prev_artwork = None
+    next_artwork = None
+    if filename in filenames:
+        idx = filenames.index(filename)
+        if idx > 0:
+            prev_artwork = filenames[idx - 1]
+        if idx < len(filenames) - 1:
+            next_artwork = filenames[idx + 1]
 
     return templates.TemplateResponse(
         request,
         "artwork_detail.html",
-        {"artwork": artwork_data},
+        {
+            "artwork": artwork_data,
+            "prev_artwork": prev_artwork,
+            "next_artwork": next_artwork,
+        },
     )
 
 

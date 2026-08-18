@@ -21,7 +21,6 @@
     "ai_details": {
       "type": "object",
       "default": {},
-      "additionalProperties": false,
       "properties": {
         "provider": {
           "type": "string",
@@ -84,6 +83,46 @@
       "type": "number",
       "description": "Unix epoch seconds when the image was first detected.",
       "default": 0
+    },
+    "caption": {
+      "type": "string",
+      "default": "",
+      "description": "Short gallery caption for the artwork."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Descriptive tags for categorization and search."
+    },
+    "artist": {
+      "type": "string",
+      "default": "",
+      "description": "Artist or creator name."
+    },
+    "author": {
+      "type": "string",
+      "default": "",
+      "description": "Deprecated: use artist field instead. Kept for backwards compatibility."
+    },
+    "copyright": {
+      "type": "string",
+      "default": "",
+      "description": "Copyright or license information."
+    },
+    "collection": {
+      "type": "string",
+      "default": "",
+      "description": "Collection or series this artwork belongs to."
+    },
+    "ai_fields": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["title", "caption", "description", "tags"]
+      },
+      "default": [],
+      "description": "Which metadata fields were generated or last updated by AI."
     }
   },
   "required": [
