@@ -96,6 +96,11 @@ def main() -> None:
             errors += 1
             continue
 
+        if not isinstance(data, dict):
+            print(f"[error] {name}: expected JSON object, got {type(data).__name__}")
+            errors += 1
+            continue
+
         data, changed = migrate_sidecar(data)
 
         try:

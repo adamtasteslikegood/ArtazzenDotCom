@@ -1239,7 +1239,11 @@ async def regenerate_ai_metadata(
     force = bool(body.get("force", False))
     fields: list[str] | None = body.get("fields")
     if isinstance(fields, list):
-        fields = [f for f in fields if f in ("title", "description", "caption", "tags")]
+        fields = list(
+            dict.fromkeys(
+                f for f in fields if f in ("title", "description", "caption", "tags")
+            )
+        )
         if not fields:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

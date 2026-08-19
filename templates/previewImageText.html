@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <script>(function(){var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)})()</script>
+    <script>(function(){try{var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)}catch(e){}})()</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Review {{ metadata.title }} &mdash; Artwork Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
         <p class="admin-subheading">Curating metadata for artifact</p>
         <nav class="admin-nav">
             <a href="{{ review_url }}" class="button secondary">Back to pending list</a>
-            <a href="/" class="button secondary">View Public Gallery</a>
+            <a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
         </nav>
     </header>
 

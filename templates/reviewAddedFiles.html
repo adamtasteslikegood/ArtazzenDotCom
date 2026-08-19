@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <script>(function(){var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)})()</script>
+    <script>(function(){try{var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)}catch(e){}})()</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Artwork Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
@@ -185,7 +185,7 @@
     <section id="feedback" class="feedback" role="status" aria-live="polite" hidden></section>
 
     <nav class="admin-bottom-tabs" aria-label="Admin navigation">
-        <button class="admin-bottom-tab active" data-tab="dashboard" aria-label="Dashboard">
+        <button class="admin-bottom-tab active" data-tab="dashboard" aria-label="Queue">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             Queue
         </button>

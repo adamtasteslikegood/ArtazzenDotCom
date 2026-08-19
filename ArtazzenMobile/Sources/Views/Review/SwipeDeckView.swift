@@ -25,7 +25,6 @@ struct SwipeDeckView: View {
                             .rotationEffect(.degrees(isTop ? Double(offset.width) / 20 : 0))
                             .scaleEffect(isTop ? 1.0 : 0.95)
                             .gesture(
-                                isTop ?
                                 DragGesture()
                                     .onChanged { value in
                                         offset = value.translation
@@ -39,8 +38,8 @@ struct SwipeDeckView: View {
                                             withAnimation(.spring()) { offset = .zero }
                                         }
                                     }
-                                : nil
                             )
+                            .allowsHitTesting(isTop)
                             .animation(.spring(), value: offset)
                     }
 
