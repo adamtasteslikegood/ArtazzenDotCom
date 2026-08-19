@@ -118,7 +118,7 @@
         document.querySelectorAll('.field-regen-btn').forEach(function(btn) {
             btn.addEventListener('click', async function() {
                 var field = btn.dataset.field;
-                var imageName = '{{ image_name | e }}';
+                var imageName = {{ image_name | tojson }};
                 btn.disabled = true;
                 btn.textContent = '…';
                 try {

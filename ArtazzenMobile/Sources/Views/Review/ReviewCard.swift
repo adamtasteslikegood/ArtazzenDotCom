@@ -36,7 +36,7 @@ struct ReviewCard: View {
         }
         .background(Color.azParchment)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(radius: 8, y: 4)
+        .shadow(radius: 8, x: 0, y: 4)
         .padding(.horizontal, 20)
     }
 }

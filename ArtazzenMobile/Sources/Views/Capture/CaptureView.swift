@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 struct CaptureView: View {
     @State private var selectedItem: PhotosPickerItem?
