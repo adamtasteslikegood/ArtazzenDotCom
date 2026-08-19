@@ -367,7 +367,9 @@ def test_openai_http_error_details_are_not_exposed(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(gallery_app.httpx, "Client", FailingClient)
 
-    result = gallery_app._request_openai_metadata(image_path, {}, True, True)
+    result = gallery_app._request_openai_metadata(
+        image_path, {}, ["title", "description"]
+    )
     details = result["details"]
 
     assert details["error"] == "OpenAI metadata request failed."
@@ -418,7 +420,183 @@ def test_openai_parse_error_details_are_not_exposed(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(gallery_app.httpx, "Client", InvalidJsonClient)
 
-    result = gallery_app._request_openai_metadata(image_path, {}, True, True)
+    result = gallery_app._request_openai_metadata(
+        image_path, {}, ["title", "description"]
+    )
 
     assert result["details"]["error"] == "OpenAI metadata response could not be parsed."
     assert secret_detail not in result["details"]["error"]
+
+
+# ---------------------------------------------------------------------------
+# Collections API
+# ---------------------------------------------------------------------------
+
+
+def test_collections_requires_auth(client: TestClient):
+    response = client.get("/admin/api/collections")
+    assert response.status_code in (401, 503)
+
+
+def test_collections_returns_distinct_values(authed_client, tmp_path, monkeypatch):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    (image_root / "a.json").write_text(json.dumps({"collection": "Flora"}))
+    (image_root / "b.json").write_text(json.dumps({"collection": "Flora"}))
+    (image_root / "c.json").write_text(json.dumps({"collection": "Fauna"}))
+    (image_root / "d.json").write_text(json.dumps({"collection": ""}))
+
+    response = authed_client.get("/admin/api/collections")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["collections"] == ["Fauna", "Flora"]
+
+
+# ---------------------------------------------------------------------------
+# Per-field regeneration
+# ---------------------------------------------------------------------------
+
+
+def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    img = image_root / "field_test.jpg"
+    img.touch()
+    sidecar = image_root / "field_test.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "title": "Keep",
+                "description": "Keep",
+                "caption": "Keep",
+                "tags": ["keep"],
+                "ai_generated": False,
+                "ai_fields": [],
+                "status": "pending",
+                "detected_at": 0,
+                "ai_details": {},
+            }
+        )
+    )
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app,
+        "_populate_missing_metadata",
+        lambda path, meta, only_fields=None: meta,
+    )
+    monkeypatch.setattr(
+        gallery_app,
+        "_refresh_pending_files",
+        lambda _req: [],
+    )
+
+    body = json.dumps(
+        {"images": ["field_test.jpg"], "fields": ["caption"], "force": True}
+    ).encode()
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/ai/regenerate",
+            "headers": [(b"content-type", b"application/json")],
+            "app": app,
+        },
+        receive,
+    )
+    response = asyncio.run(gallery_app.regenerate_ai_metadata(request, _=None))
+    payload = json.loads(response.body)
+
+    assert len(payload["updated"]) == 1
+    meta = payload["updated"][0]["metadata"]
+    assert meta["title"] == "Keep"
+    assert meta["description"] == "Keep"
+    assert meta["caption"] == ""
+    assert meta["tags"] == ["keep"]
+
+
+# ---------------------------------------------------------------------------
+# Metadata POST persists v2 fields
+# ---------------------------------------------------------------------------
+
+
+def test_metadata_post_persists_v2_fields(authed_client, tmp_path, monkeypatch):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    img = image_root / "v2test.jpg"
+    img.touch()
+    sidecar = image_root / "v2test.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "title": "",
+                "description": "",
+                "caption": "",
+                "tags": [],
+                "artist": "",
+                "copyright": "",
+                "collection": "",
+                "ai_generated": False,
+                "ai_fields": [],
+                "ai_details": {},
+                "status": "pending",
+                "detected_at": 0,
+            }
+        )
+    )
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+
+    response = authed_client.post(
+        "/admin/metadata/v2test.jpg",
+        data={
+            "title": "Bloom",
+            "description": "A flower",
+            "caption": "Delicate petals",
+            "tags": "botanical, flora",
+            "artist": "Ada",
+            "copyright": "2026",
+            "collection": "Garden",
+            "action": "save",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    saved = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert saved["caption"] == "Delicate petals"
+    assert saved["tags"] == ["botanical", "flora"]
+    assert saved["artist"] == "Ada"
+    assert saved["copyright"] == "2026"
+    assert saved["collection"] == "Garden"
+    assert saved["status"] == "approved"
+
+
+def test_regenerate_rejects_unsupported_fields(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "x.jpg").touch()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+
+    body = json.dumps({"images": ["x.jpg"], "fields": ["artist"]}).encode()
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/ai/regenerate",
+            "headers": [(b"content-type", b"application/json")],
+            "app": app,
+        },
+        receive,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(gallery_app.regenerate_ai_metadata(request, _=None))
+    assert exc_info.value.status_code == 400
+    assert "No supported fields" in exc_info.value.detail
