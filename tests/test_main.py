@@ -367,7 +367,9 @@ def test_openai_http_error_details_are_not_exposed(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(gallery_app.httpx, "Client", FailingClient)
 
-    result = gallery_app._request_openai_metadata(image_path, {}, ["title", "description"])
+    result = gallery_app._request_openai_metadata(
+        image_path, {}, ["title", "description"]
+    )
     details = result["details"]
 
     assert details["error"] == "OpenAI metadata request failed."
@@ -418,7 +420,9 @@ def test_openai_parse_error_details_are_not_exposed(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(gallery_app.httpx, "Client", InvalidJsonClient)
 
-    result = gallery_app._request_openai_metadata(image_path, {}, ["title", "description"])
+    result = gallery_app._request_openai_metadata(
+        image_path, {}, ["title", "description"]
+    )
 
     assert result["details"]["error"] == "OpenAI metadata response could not be parsed."
     assert secret_detail not in result["details"]["error"]
@@ -460,28 +464,48 @@ def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
     img = image_root / "field_test.jpg"
     img.touch()
     sidecar = image_root / "field_test.json"
-    sidecar.write_text(json.dumps({
-        "title": "Keep", "description": "Keep", "caption": "Keep",
-        "tags": ["keep"], "ai_generated": False, "ai_fields": [],
-        "status": "pending", "detected_at": 0, "ai_details": {},
-    }))
+    sidecar.write_text(
+        json.dumps(
+            {
+                "title": "Keep",
+                "description": "Keep",
+                "caption": "Keep",
+                "tags": ["keep"],
+                "ai_generated": False,
+                "ai_fields": [],
+                "status": "pending",
+                "detected_at": 0,
+                "ai_details": {},
+            }
+        )
+    )
     monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
     monkeypatch.setattr(
-        gallery_app, "_populate_missing_metadata",
+        gallery_app,
+        "_populate_missing_metadata",
         lambda path, meta, only_fields=None: meta,
     )
     monkeypatch.setattr(
-        gallery_app, "_refresh_pending_files", lambda _req: [],
+        gallery_app,
+        "_refresh_pending_files",
+        lambda _req: [],
     )
 
-    body = json.dumps({"images": ["field_test.jpg"], "fields": ["caption"], "force": True}).encode()
+    body = json.dumps(
+        {"images": ["field_test.jpg"], "fields": ["caption"], "force": True}
+    ).encode()
 
     async def receive():
         return {"type": "http.request", "body": body, "more_body": False}
 
     request = Request(
-        {"type": "http", "method": "POST", "path": "/admin/ai/regenerate",
-         "headers": [(b"content-type", b"application/json")], "app": app},
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/ai/regenerate",
+            "headers": [(b"content-type", b"application/json")],
+            "app": app,
+        },
         receive,
     )
     response = asyncio.run(gallery_app.regenerate_ai_metadata(request, _=None))
@@ -506,12 +530,24 @@ def test_metadata_post_persists_v2_fields(authed_client, tmp_path, monkeypatch):
     img = image_root / "v2test.jpg"
     img.touch()
     sidecar = image_root / "v2test.json"
-    sidecar.write_text(json.dumps({
-        "title": "", "description": "", "caption": "", "tags": [],
-        "artist": "", "copyright": "", "collection": "",
-        "ai_generated": False, "ai_fields": [], "ai_details": {},
-        "status": "pending", "detected_at": 0,
-    }))
+    sidecar.write_text(
+        json.dumps(
+            {
+                "title": "",
+                "description": "",
+                "caption": "",
+                "tags": [],
+                "artist": "",
+                "copyright": "",
+                "collection": "",
+                "ai_generated": False,
+                "ai_fields": [],
+                "ai_details": {},
+                "status": "pending",
+                "detected_at": 0,
+            }
+        )
+    )
     monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
 
     response = authed_client.post(
