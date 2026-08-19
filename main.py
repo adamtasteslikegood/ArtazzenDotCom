@@ -681,7 +681,16 @@ def _populate_missing_metadata(
     ai_eligible = ["title", "description", "caption", "tags"]
 
     if only_fields is not None:
-        needed_fields = [f for f in only_fields if f in ai_eligible]
+        needed_fields = []
+        for f in only_fields:
+            if f not in ai_eligible:
+                continue
+            val = metadata.get(f)
+            if f == "tags":
+                if not val:
+                    needed_fields.append(f)
+            elif not (val or "").strip():
+                needed_fields.append(f)
     else:
         needed_fields = []
         for field in ai_eligible:
@@ -1453,11 +1462,15 @@ async def update_image_metadata(
     }
     existing = _load_metadata(image_path)
     prior_ai = set(existing.get("ai_fields", []))
+    if prior_ai:
+        changed = {
+            f
+            for f in ("title", "description", "caption", "tags")
+            if f in clean_metadata and clean_metadata[f] != existing.get(f)
+        }
+        existing["ai_fields"] = sorted(prior_ai - changed)
     existing.update(clean_metadata)
     existing["status"] = "approved"
-    if prior_ai:
-        edited = {f for f in ("title", "description", "caption", "tags") if f in clean_metadata}
-        existing["ai_fields"] = sorted(prior_ai - edited)
     _write_sidecar(image_path, existing)
 
     return RedirectResponse(
