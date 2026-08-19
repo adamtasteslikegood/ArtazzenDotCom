@@ -1237,11 +1237,20 @@ async def regenerate_ai_metadata(
         body = {}
     images = body.get("images") or []
     force = bool(body.get("force", False))
-    fields: list[str] | None = body.get("fields")
-    if isinstance(fields, list):
+    fields: list[str] | None
+    if "fields" not in body or body.get("fields") is None:
+        fields = None
+    elif not isinstance(body.get("fields"), list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="fields must be a JSON array. Supported values: title, description, caption, tags",
+        )
+    else:
         fields = list(
             dict.fromkeys(
-                f for f in fields if f in ("title", "description", "caption", "tags")
+                f
+                for f in body["fields"]
+                if f in ("title", "description", "caption", "tags")
             )
         )
         if not fields:
@@ -1249,8 +1258,6 @@ async def regenerate_ai_metadata(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No supported fields provided. Use: title, description, caption, tags",
             )
-    else:
-        fields = None
 
     if not isinstance(images, list) or not images:
         raise HTTPException(
