@@ -51,10 +51,9 @@ def migrate_sidecar(data: dict) -> tuple[dict, bool]:
         data["artist"] = data["author"]
         changed = True
 
-    if "ai_fields" in data and not data["ai_fields"]:
-        if data.get("ai_generated"):
-            data["ai_fields"] = ["title", "description"]
-            changed = True
+    if "ai_fields" in data and not data["ai_fields"] and data.get("ai_generated"):
+        data["ai_fields"] = ["title", "description"]
+        changed = True
 
     return data, changed
 
