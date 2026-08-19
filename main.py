@@ -402,8 +402,12 @@ def _build_openai_prompt(
     for key in ("title", "description", "caption", "artist"):
         if metadata.get(key):
             hints.append(f"Existing {key}: {metadata[key]}")
-    if metadata.get("tags"):
-        hints.append(f"Existing tags: {', '.join(metadata['tags'])}")
+    tags = metadata.get("tags")
+    if tags:
+        if isinstance(tags, list):
+            hints.append(f"Existing tags: {', '.join(str(t) for t in tags)}")
+        elif isinstance(tags, str):
+            hints.append(f"Existing tags: {tags}")
     hint_text = "\n".join(hints) if hints else "No reliable text metadata was detected."
 
     field_descriptions: dict[str, str] = {
@@ -1237,7 +1241,10 @@ async def regenerate_ai_metadata(
     if isinstance(fields, list):
         fields = [f for f in fields if f in ("title", "description", "caption", "tags")]
         if not fields:
-            fields = None
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No supported fields provided. Use: title, description, caption, tags",
+            )
     else:
         fields = None
 

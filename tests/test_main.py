@@ -573,3 +573,30 @@ def test_metadata_post_persists_v2_fields(authed_client, tmp_path, monkeypatch):
     assert saved["copyright"] == "2026"
     assert saved["collection"] == "Garden"
     assert saved["status"] == "approved"
+
+
+def test_regenerate_rejects_unsupported_fields(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "x.jpg").touch()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+
+    body = json.dumps({"images": ["x.jpg"], "fields": ["artist"]}).encode()
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/ai/regenerate",
+            "headers": [(b"content-type", b"application/json")],
+            "app": app,
+        },
+        receive,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(gallery_app.regenerate_ai_metadata(request, _=None))
+    assert exc_info.value.status_code == 400
+    assert "No supported fields" in exc_info.value.detail
