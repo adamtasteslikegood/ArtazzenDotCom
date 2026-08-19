@@ -713,6 +713,17 @@ footer {
     color: var(--text-muted);
 }
 
+.field-with-regen {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+.field-with-regen input,
+.field-with-regen textarea {
+    flex: 1;
+    min-width: 0;
+}
+
 /* Per-field AI regenerate button */
 .field-regen-btn {
     font-family: var(--font-mono);

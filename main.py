@@ -654,8 +654,13 @@ def _request_openai_metadata(
     result: dict[str, Any] = {"details": details}
     for field in needed_fields:
         val = parsed.get(field)
-        if field == "tags" and isinstance(val, list):
-            result[field] = [str(t).strip() for t in val if str(t).strip()]
+        if field == "tags":
+            if isinstance(val, list):
+                result[field] = [str(t).strip() for t in val if str(t).strip()]
+            elif isinstance(val, str) and val.strip():
+                result[field] = [t.strip() for t in val.split(",") if t.strip()]
+            else:
+                result[field] = []
         elif val is not None:
             result[field] = str(val).strip()
         else:
@@ -1447,8 +1452,12 @@ async def update_image_metadata(
         "collection": collection.strip(),
     }
     existing = _load_metadata(image_path)
+    prior_ai = set(existing.get("ai_fields", []))
     existing.update(clean_metadata)
     existing["status"] = "approved"
+    if prior_ai:
+        edited = {f for f in ("title", "description", "caption", "tags") if f in clean_metadata}
+        existing["ai_fields"] = sorted(prior_ai - edited)
     _write_sidecar(image_path, existing)
 
     return RedirectResponse(

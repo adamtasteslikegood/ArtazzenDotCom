@@ -60,7 +60,7 @@ actor ArtazzenAPI {
             URLQueryItem(name: "action", value: "save"),
         ]
         let body = components.percentEncodedQuery?.data(using: .utf8)
-        var req = URLRequest(url: baseURL.appendingPathComponent("/admin/metadata/\(artwork.filename)"))
+        var req = URLRequest(url: baseURL.appendingPathComponent("admin/metadata/\(artwork.filename)"))
         req.httpMethod = "POST"
         req.setValue(authHeader(), forHTTPHeaderField: "Authorization")
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -99,7 +99,7 @@ actor ArtazzenAPI {
 
     func upload(imageData: Data, filename: String) async throws {
         let boundary = UUID().uuidString
-        var req = URLRequest(url: baseURL.appendingPathComponent("/admin/upload"))
+        var req = URLRequest(url: baseURL.appendingPathComponent("admin/upload"))
         req.httpMethod = "POST"
         req.setValue(authHeader(), forHTTPHeaderField: "Authorization")
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
