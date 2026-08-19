@@ -31,15 +31,15 @@ Both tracks share a backend contract: schema v2, updated API endpoints, and side
 
 Update the existing schema. New fields (all with defaults for backwards compat):
 
-| Field | Type | Default | Notes |
-|-------|------|---------|-------|
-| `caption` | string | `""` | Already in sidecars, not in schema |
-| `tags` | string[] | `[]` | Already in sidecars, not in schema |
-| `artist` | string | `""` | New canonical name (replaces `author`) |
-| `copyright` | string | `""` | Already in sidecars, not in schema |
-| `collection` | string | `""` | New field |
-| `ai_fields` | string[] (enum: title/caption/description/tags) | `[]` | Tracks which fields AI generated |
-| `author` | string | `""` | **Deprecated** — kept for backwards compat like `reviewed` |
+| Field        | Type                                            | Default | Notes                                                      |
+| ------------ | ----------------------------------------------- | ------- | ---------------------------------------------------------- |
+| `caption`    | string                                          | `""`    | Already in sidecars, not in schema                         |
+| `tags`       | string[]                                        | `[]`    | Already in sidecars, not in schema                         |
+| `artist`     | string                                          | `""`    | New canonical name (replaces `author`)                     |
+| `copyright`  | string                                          | `""`    | Already in sidecars, not in schema                         |
+| `collection` | string                                          | `""`    | New field                                                  |
+| `ai_fields`  | string[] (enum: title/caption/description/tags) | `[]`    | Tracks which fields AI generated                           |
+| `author`     | string                                          | `""`    | **Deprecated** — kept for backwards compat like `reviewed` |
 
 Keep `reviewed` (deprecated). Keep `additionalProperties: false`. Keep `author` as deprecated (do NOT remove — production sidecars on Railway volume would fail validation between deploy and migration run if the field is removed from schema before migration runs).
 
@@ -48,6 +48,7 @@ Keep `reviewed` (deprecated). Keep `additionalProperties: false`. Keep `author` 
 ### 0.2 Sidecar Migration Script
 
 `scripts/migrate_v2.py`:
+
 1. For each `.json` sidecar in IMAGES_DIR:
    - Add missing v2 fields with defaults
    - Copy `author` → `artist` if `author` present and `artist` empty
@@ -109,6 +110,7 @@ All templates that display metadata need the new fields in their context dict. U
 ### 1.1 Mobile-Responsive Layout
 
 Update `Static/css/styles.css`:
+
 - Add mobile breakpoint (`max-width: 600px`) styles
 - Touch targets >= 44x44px
 - Single-column layouts for all views on mobile
@@ -116,6 +118,7 @@ Update `Static/css/styles.css`:
 ### 1.2 Dark Mode
 
 Add `.az-light` / `.az-dark` class scoping:
+
 - Carbon (#121212) <-> Parchment (#F9F7F2) swap
 - CSS custom properties for theme colors
 - JS toggle that sets class on `<html>` and persists to localStorage
@@ -312,15 +315,15 @@ extension Font {
 
 ## Files Modified
 
-| File | Change |
-|------|--------|
-| `ImageSidecar.schema.json` | Add v2 fields, keep `author` deprecated, fix validation |
-| `main.py` | Extended endpoints, new `/admin/api/collections`, expanded AI prompt+parser, `ai_fields` tracking |
-| `manage_sidecars.py` | v2 validation support |
-| `Static/css/styles.css` | Mobile responsive, dark mode, bottom tab bar (admin only), new components |
-| `templates/reviewAddedFiles.html` | Status filter, swipe deck, mobile tab bar, responsive enhancements |
-| `templates/artwork_detail.html` | v2 fields, per-field regen, mobile responsive, remove inline styles |
-| `templates/index.html` | Mobile responsive gallery grid |
-| `templates/previewImageText.html` | v2 fields in review form |
-| `scripts/migrate_v2.py` | New — sidecar migration script |
-| `ArtazzenMobile/` | New — SwiftUI package (Track B) |
+| File                              | Change                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `ImageSidecar.schema.json`        | Add v2 fields, keep `author` deprecated, fix validation                                           |
+| `main.py`                         | Extended endpoints, new `/admin/api/collections`, expanded AI prompt+parser, `ai_fields` tracking |
+| `manage_sidecars.py`              | v2 validation support                                                                             |
+| `Static/css/styles.css`           | Mobile responsive, dark mode, bottom tab bar (admin only), new components                         |
+| `templates/reviewAddedFiles.html` | Status filter, swipe deck, mobile tab bar, responsive enhancements                                |
+| `templates/artwork_detail.html`   | v2 fields, per-field regen, mobile responsive, remove inline styles                               |
+| `templates/index.html`            | Mobile responsive gallery grid                                                                    |
+| `templates/previewImageText.html` | v2 fields in review form                                                                          |
+| `scripts/migrate_v2.py`           | New — sidecar migration script                                                                    |
+| `ArtazzenMobile/`                 | New — SwiftUI package (Track B)                                                                   |
