@@ -14,9 +14,13 @@ actor ArtazzenAPI {
         return "Basic \(encoded)"
     }
 
+    private func resolveURL(_ path: String) -> URL {
+        let clean = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        return URL(string: clean, relativeTo: baseURL) ?? baseURL.appendingPathComponent(clean)
+    }
+
     private func request(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
-        let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        var req = URLRequest(url: baseURL.appendingPathComponent(cleanPath))
+        var req = URLRequest(url: resolveURL(path))
         req.httpMethod = method
         req.setValue(authHeader(), forHTTPHeaderField: "Authorization")
         if let body {
@@ -60,7 +64,7 @@ actor ArtazzenAPI {
             URLQueryItem(name: "action", value: "save"),
         ]
         let body = components.percentEncodedQuery?.data(using: .utf8)
-        var req = URLRequest(url: baseURL.appendingPathComponent("admin/metadata/\(artwork.filename)"))
+        var req = URLRequest(url: resolveURL("admin/metadata/\(artwork.filename)"))
         req.httpMethod = "POST"
         req.setValue(authHeader(), forHTTPHeaderField: "Authorization")
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -99,7 +103,7 @@ actor ArtazzenAPI {
 
     func upload(imageData: Data, filename: String) async throws {
         let boundary = UUID().uuidString
-        var req = URLRequest(url: baseURL.appendingPathComponent("admin/upload"))
+        var req = URLRequest(url: resolveURL("admin/upload"))
         req.httpMethod = "POST"
         req.setValue(authHeader(), forHTTPHeaderField: "Authorization")
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
