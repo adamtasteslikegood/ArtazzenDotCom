@@ -5,10 +5,10 @@ let package = Package(
     name: "ArtazzenMobile",
     platforms: [.iOS(.v17)],
     products: [
-        .library(name: "ArtazzenMobile", targets: ["ArtazzenMobile"]),
+        .executable(name: "ArtazzenMobile", targets: ["ArtazzenMobile"]),
     ],
     targets: [
-        .target(name: "ArtazzenMobile", path: "Sources"),
+        .executableTarget(name: "ArtazzenMobile", path: "Sources"),
         .testTarget(name: "ArtazzenMobileTests", dependencies: ["ArtazzenMobile"], path: "Tests/ArtazzenMobileTests"),
     ]
 )

@@ -1143,7 +1143,7 @@ async def list_collections(_: None = Depends(_verify_admin)) -> JSONResponse:
             json_path = IMAGES_DIR / name
             try:
                 data = json.loads(json_path.read_text(encoding="utf-8"))
-                val = data.get("collection", "").strip()
+                val = str(data.get("collection") or "").strip()
                 if val:
                     collections.add(val)
             except (json.JSONDecodeError, OSError):

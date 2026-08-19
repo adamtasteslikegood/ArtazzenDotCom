@@ -15,7 +15,8 @@ actor ArtazzenAPI {
     }
 
     private func request(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
-        var req = URLRequest(url: baseURL.appendingPathComponent(path))
+        let cleanPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        var req = URLRequest(url: baseURL.appendingPathComponent(cleanPath))
         req.httpMethod = method
         req.setValue(authHeader(), forHTTPHeaderField: "Authorization")
         if let body {
