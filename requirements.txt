@@ -1,4 +1,4 @@
-annotated-types==0.7.0
+annotated-types==0.8.0
 anyio==4.9.0
 ast-serialize==0.8.0
 attrs==25.3.0
