@@ -3,9 +3,10 @@ import SwiftUI
 struct SwipeDeckView: View {
     @State private var pending: [Artwork] = []
     @State private var offset: CGSize = .zero
-    @State private var currentIndex = 0
 
     private let threshold: CGFloat = 120
+
+    private var topID: String? { pending.first?.id }
 
     var body: some View {
         NavigationStack {
@@ -18,12 +19,13 @@ struct SwipeDeckView: View {
                     )
                 } else {
                     ForEach(Array(pending.enumerated().reversed()), id: \.element.id) { index, artwork in
+                        let isTop = (index == 0)
                         ReviewCard(artwork: artwork)
-                            .offset(index == currentIndex ? offset : .zero)
-                            .rotationEffect(.degrees(index == currentIndex ? Double(offset.width) / 20 : 0))
-                            .scaleEffect(index == currentIndex ? 1.0 : 0.95)
+                            .offset(isTop ? offset : .zero)
+                            .rotationEffect(.degrees(isTop ? Double(offset.width) / 20 : 0))
+                            .scaleEffect(isTop ? 1.0 : 0.95)
                             .gesture(
-                                index == currentIndex ?
+                                isTop ?
                                 DragGesture()
                                     .onChanged { value in
                                         offset = value.translation
@@ -69,7 +71,7 @@ struct SwipeDeckView: View {
             offset = CGSize(width: 500, height: 0)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            advanceCard()
+            removeTopCard()
         }
     }
 
@@ -78,16 +80,13 @@ struct SwipeDeckView: View {
             offset = CGSize(width: -500, height: 0)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            advanceCard()
+            removeTopCard()
         }
     }
 
-    private func advanceCard() {
-        guard currentIndex < pending.count - 1 else {
-            pending.removeAll()
-            return
-        }
-        currentIndex += 1
+    private func removeTopCard() {
+        guard !pending.isEmpty else { return }
+        pending.removeFirst()
         offset = .zero
     }
 }

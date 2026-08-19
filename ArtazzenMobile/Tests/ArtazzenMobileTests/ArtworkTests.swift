@@ -32,6 +32,8 @@ final class ArtworkTests: XCTestCase {
         XCTAssertTrue(artwork.aiGenerated)
         XCTAssertEqual(artwork.aiFields, [.title, .description])
         XCTAssertEqual(artwork.id, "test.jpg")
+        XCTAssertNil(artwork.url)
+        XCTAssertNil(artwork.imageURL)
     }
 
     func testEncode() throws {
