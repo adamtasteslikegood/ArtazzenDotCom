@@ -412,7 +412,9 @@ def _build_openai_prompt(
         "caption": "a concise gallery caption (<= 160 characters)",
         "tags": "3-8 descriptive tags for categorization",
     }
-    requested_parts = [field_descriptions[f] for f in needed_fields if f in field_descriptions]
+    requested_parts = [
+        field_descriptions[f] for f in needed_fields if f in field_descriptions
+    ]
     requested = " and ".join(requested_parts)
 
     field_keys = ", ".join(f'"{f}"' for f in needed_fields)
@@ -535,7 +537,11 @@ def _request_openai_metadata(
                 "schema": {
                     "type": "object",
                     "properties": {
-                        f: ({"type": "array", "items": {"type": "string"}} if f == "tags" else {"type": "string"})
+                        f: (
+                            {"type": "array", "items": {"type": "string"}}
+                            if f == "tags"
+                            else {"type": "string"}
+                        )
                         for f in needed_fields
                     },
                     "required": sorted(needed_fields),
