@@ -643,7 +643,6 @@ footer {
     .path-input-row {
         flex-direction: column;
     }
-    .admin-page body,
     body.admin-page {
         padding-bottom: 72px;
     }

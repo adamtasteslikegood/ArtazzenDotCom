@@ -13,7 +13,7 @@
 <body>
 
     <header>
-        <a href="/" class="artwork-meta-label" style="text-decoration: none; color: inherit; margin-bottom: 2rem; display: inline-block;">&larr; Back to Gallery</a>
+        <a href="{{ url_for('read_root') }}" class="artwork-meta-label" style="text-decoration: none; color: inherit; margin-bottom: 2rem; display: inline-block;">&larr; Back to Gallery</a>
         <h1>{{ artwork.title }}</h1>
     </header>
 
@@ -68,12 +68,12 @@
         {% if prev_artwork or next_artwork %}
         <nav style="display: flex; justify-content: space-between; margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
             {% if prev_artwork %}
-            <a href="/artwork/{{ prev_artwork }}" class="button secondary">&larr; Previous</a>
+            <a href="{{ url_for('artwork_detail', image_filename=prev_artwork) }}" class="button secondary">&larr; Previous</a>
             {% else %}
             <span></span>
             {% endif %}
             {% if next_artwork %}
-            <a href="/artwork/{{ next_artwork }}" class="button secondary">Next &rarr;</a>
+            <a href="{{ url_for('artwork_detail', image_filename=next_artwork) }}" class="button secondary">Next &rarr;</a>
             {% endif %}
         </nav>
         {% endif %}
