@@ -14,7 +14,8 @@ import tempfile
 from pathlib import Path
 
 try:
-    from jsonschema import validate as js_validate, ValidationError
+    from jsonschema import ValidationError
+    from jsonschema import validate as js_validate
 except ImportError:
     print("jsonschema not installed. Run: pip install jsonschema", file=sys.stderr)
     sys.exit(1)
