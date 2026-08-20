@@ -561,16 +561,22 @@ def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_admin_config_string_false_disables_ai(authed_client):
+@pytest.fixture
+def isolated_config(monkeypatch, tmp_path):
+    """Point config persistence at a temp file so POSTing /admin/config
+    never rewrites the repo's real ai_config.json during tests."""
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai_config.json")
+    monkeypatch.setattr(gallery_app.config, "runtime_ai_config", {})
+
+
+def test_admin_config_string_false_disables_ai(authed_client, isolated_config):
     """JSON string booleans like \"false\" must not enable via truthiness."""
     response = authed_client.post("/admin/config", json={"ai": {"enabled": "false"}})
     assert response.status_code == 200
     assert response.json()["ai"]["enabled"] is False
-    # Restore
-    authed_client.post("/admin/config", json={"ai": {"enabled": True}})
 
 
-def test_admin_post_rejects_lookalike_origin(authed_client):
+def test_admin_post_rejects_lookalike_origin(authed_client, isolated_config):
     """Origin whose host merely contains ours as a substring is rejected."""
     response = authed_client.post(
         "/admin/config",
@@ -580,7 +586,7 @@ def test_admin_post_rejects_lookalike_origin(authed_client):
     assert response.status_code == 403
 
 
-def test_admin_post_allows_same_origin(authed_client):
+def test_admin_post_allows_same_origin(authed_client, isolated_config):
     response = authed_client.post(
         "/admin/config",
         json={"ai": {}},

@@ -28,11 +28,19 @@ def new_files_detected() -> list[dict[str, Any]]:
     ]
 
     for filename in existing_files:
-        image_path = config.IMAGES_DIR / filename
-        metadata = sidecars._load_metadata(image_path)
-        sidecars._ensure_sidecar(image_path, metadata)
-        metadata = sidecars._load_metadata(image_path)
-        metadata = ai_metadata._populate_missing_metadata(image_path, metadata)
+        # One bad entry (unreadable file, rejected name) must not take down
+        # the whole background scan.
+        try:
+            image_path = config.IMAGES_DIR / filename
+            metadata = sidecars._load_metadata(image_path)
+            sidecars._ensure_sidecar(image_path, metadata)
+            metadata = sidecars._load_metadata(image_path)
+            metadata = ai_metadata._populate_missing_metadata(image_path, metadata)
+        except FileNotFoundError:
+            raise  # handled by the watcher loop's retry
+        except Exception as exc:
+            logger.warning("Skipping %s during watcher scan: %s", filename, exc)
+            continue
         if metadata.get("status", "pending") == "pending":
             pending.append(
                 {

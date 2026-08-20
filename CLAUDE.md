@@ -19,10 +19,12 @@ Gallery: `http://127.0.0.1:8000/` | Admin: `http://127.0.0.1:8000/admin`
 
 ## Architecture
 
-Single-file FastAPI app (`main.py`, ~46KB) serving Jinja2 templates with on-disk image storage.
+Modular FastAPI app serving Jinja2 templates with on-disk image storage. `main.py` is the uvicorn entrypoint and compatibility shim; application code lives in the layered `app/` package (config → sidecars → ai_metadata → watcher → security/routes → factory).
 
 ```
-main.py                  # All routes, models, startup logic
+main.py                  # Entrypoint + compat shim (uvicorn main:app)
+app/                     # Application package: config, sidecars, ai_metadata,
+                         #   watcher, security, routes_admin, routes_public, factory
 manage_sidecars.py       # CLI: validate/migrate sidecar JSON files
 ImageSidecar.schema.json # Authoritative schema for per-image metadata
 templates/               # Jinja2: index, artwork_detail, review views
@@ -70,7 +72,7 @@ tests/test_main.py       # Pytest suite
 
 ## Development Rules
 
-- All code in `main.py` — no splitting into modules unless discussed first.
+- Application code lives in the `app/` package; `main.py` stays a thin entrypoint/shim. Put new code in the module that owns its layer.
 - Sidecar JSON must validate against `ImageSidecar.schema.json`. Run `python manage_sidecars.py validate` after schema changes.
 - `Static/` is capital-S everywhere; FastAPI mounts it at `/static`.
 - Templates use the Techno-Botanical design system from `DESIGN.md`.

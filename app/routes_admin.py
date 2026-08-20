@@ -440,7 +440,7 @@ async def update_image_metadata(
     ai_fields: str = Form(""),
     ai_generated: str = Form(""),
     action: str = Form("save"),
-    pending_dependency: list[dict[str, Any]] = Depends(get_pending_files),
+    _pending_refresh: list[dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
 ) -> RedirectResponse:
     filename = sidecars._sanitize_filename(image_name)

@@ -38,7 +38,7 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
         raise ValueError("JSON destination is outside an approved storage root")
 
     safe_path = Path(candidate_path)
-    text = json.dumps(data, indent=2, ensure_ascii=False)
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     # Unique temp name per writer: a fixed .tmp path lets concurrent
     # processes clobber each other's staging file before the rename.
     fd, tmp_name = tempfile.mkstemp(
