@@ -821,6 +821,24 @@ def test_metadata_post_persists_valid_collections(
     assert saved["collections"] == ["flora"]
 
 
+def test_metadata_post_without_collections_preserves_memberships(
+    authed_client, tmp_path, monkeypatch
+):
+    """A client that doesn't send the collections field must not wipe them."""
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", status="pending", collections=["flora"])
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+
+    response = authed_client.post(
+        "/admin/metadata/a.jpg",
+        data={"title": "T", "action": "save"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    saved = json.loads((image_root / "a.json").read_text())
+    assert saved["collections"] == ["flora"]
+
+
 # ---------------------------------------------------------------------------
 # Module split compatibility
 # ---------------------------------------------------------------------------

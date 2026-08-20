@@ -510,7 +510,7 @@ async def update_image_metadata(
     artist: str = Form(""),
     copyright_info: str = Form("", alias="copyright"),
     collection: str = Form(""),
-    collections: str = Form(""),
+    collections: str | None = Form(None),
     ai_fields: str = Form(""),
     ai_generated: str = Form(""),
     action: str = Form("save"),
@@ -536,14 +536,6 @@ async def update_image_metadata(
         )
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
-    known_slugs = {
-        c.get("id")
-        for c in curation.load_collections().get("collections", [])
-        if c.get("id")
-    }
-    collection_slugs = [
-        s for s in (part.strip() for part in collections.split(",")) if s
-    ]
     clean_metadata = {
         "title": title.strip() or image_path.stem,
         "description": description.strip(),
@@ -552,8 +544,21 @@ async def update_image_metadata(
         "artist": artist.strip(),
         "copyright": copyright_info.strip(),
         "collection": collection.strip(),
-        "collections": [s for s in collection_slugs if s in known_slugs],
     }
+    # Collections are hand-curated: only touch memberships when the field is
+    # actually submitted (absent != empty; "" is a deliberate clear-all).
+    if collections is not None:
+        known_slugs = {
+            c.get("id")
+            for c in curation.load_collections().get("collections", [])
+            if c.get("id")
+        }
+        collection_slugs = [
+            s for s in (part.strip() for part in collections.split(",")) if s
+        ]
+        clean_metadata["collections"] = [
+            s for s in collection_slugs if s in known_slugs
+        ]
     existing = sidecars._load_metadata(image_path)
     prior_ai = set(existing.get("ai_fields", []))
     changed = {
