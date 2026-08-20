@@ -2,7 +2,6 @@
 
 Artwork gallery and curation platform built with FastAPI + Jinja2. Public gallery at `/`, admin dashboard at `/admin`.
 
-
 <!-- Inlined from AGENTS.md -->
 
 # Agent Handbook
@@ -63,7 +62,6 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 Stay deliberate, keep communication tight, and ensure each hand-off leaves the repository healthier than you found it.
 
 <!-- End of AGENTS.md -->
-
 
 <!-- Inlined from DESIGN.md -->
 
@@ -227,7 +225,6 @@ Accessibility is a primary concern. The application must be usable for everyone.
 
 <!-- End of DESIGN.md -->
 
-
 <!-- Inlined from BRANCHING_STRATEGY.md -->
 
 # Branching Strategy
@@ -383,7 +380,6 @@ delete feat/thing branch
 ```
 
 <!-- End of BRANCHING_STRATEGY.md -->
-
 
 ## Quick Start
 
