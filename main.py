@@ -1,6 +1,7 @@
 # main.py
 import asyncio
 import base64
+import copy
 import json
 import logging  # Import logging
 import os
@@ -125,6 +126,10 @@ def _get_ai_config() -> dict[str, Any]:
         max_output_tokens = int(cfg.get("max_output_tokens", 600))
     except (TypeError, ValueError):
         max_output_tokens = 600
+    # Reasoning models spend output tokens on reasoning before emitting text;
+    # too small a budget yields incomplete (empty-text) responses.
+    if model.startswith("gpt-5") and max_output_tokens < 1200:
+        max_output_tokens = 1200
     return {
         "enabled": enabled,
         "model": model,
@@ -472,6 +477,35 @@ def _get_openai_api_key() -> str | None:
     return None
 
 
+def _strip_json_fences(text: str) -> str:
+    """Remove a wrapping markdown code fence (``` or ```json) from a JSON blob."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped[3:]
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:]
+        stripped = stripped.strip()
+        if stripped.endswith("```"):
+            stripped = stripped[:-3].strip()
+    return stripped
+
+
+def _unwrap_nested_json(value: str, field: str) -> str:
+    """If a string field value is itself a JSON object containing the field,
+    return the inner value (models sometimes nest the whole JSON reply inside
+    a single requested field)."""
+    candidate = _strip_json_fences(value)
+    if not candidate.startswith("{"):
+        return value
+    try:
+        inner = json.loads(candidate)
+    except json.JSONDecodeError:
+        return value
+    if isinstance(inner, dict) and isinstance(inner.get(field), str):
+        return inner[field]
+    return value
+
+
 def _request_openai_metadata(
     image_path: Path,
     metadata: dict[str, Any],
@@ -518,8 +552,8 @@ def _request_openai_metadata(
                     {
                         "type": "input_text",
                         "text": (
-                            "You create concise, visitor-friendly metadata for artwork images. "
-                            "Always respond with valid JSON only."
+                            "You create concise, visitor-friendly metadata "
+                            "for artwork images."
                         ),
                     }
                 ],
@@ -583,6 +617,22 @@ def _request_openai_metadata(
     details["response_id"] = payload.get("id", "")
     details["created"] = float(payload.get("created", details["attempted_at"]))
     details["model"] = payload.get("model", model)
+
+    # Truncated/failed responses (e.g. reasoning models exhausting
+    # max_output_tokens) must never be parsed or stored.
+    payload_status = payload.get("status")
+    if payload_status and payload_status != "completed":
+        reason = (payload.get("incomplete_details") or {}).get("reason", "")
+        details["status"] = "error_incomplete"
+        details["error"] = f"OpenAI response status '{payload_status}'" + (
+            f" ({reason})" if reason else ""
+        )
+        details["raw_response"] = {
+            "id": payload.get("id"),
+            "usage": payload.get("usage", {}),
+        }
+        return {"title": "", "description": "", "details": details}
+
     details["status"] = "success"
 
     # Extract JSON from Responses API output; support output_json and output_text
@@ -621,33 +671,39 @@ def _request_openai_metadata(
         elif isinstance(content, str):
             content_text = content
 
-    if parsed is None:
+    if parsed is None and content_text:
         try:
-            parsed = json.loads(content_text) if content_text else None
-        except json.JSONDecodeError as exc:
-            logger.warning("Unable to parse OpenAI metadata response: %s", exc)
-            details["status"] = "error_parse"
-            details["error"] = "OpenAI metadata response could not be parsed."
-            # attach brief output excerpt and types for debugging
-            try:
-                details["raw_response"] = {
-                    "id": payload.get("id"),
-                    "usage": payload.get("usage", {}),
-                    "output_types": [
-                        [
-                            (p or {}).get("type")
-                            for p in ((it or {}).get("content") or [])
-                        ]
-                        for it in (output or [])
-                    ],
-                    "text_excerpt": content_text[:200],
-                }
-            except Exception:
-                details["raw_response"] = {
-                    "id": payload.get("id"),
-                    "usage": payload.get("usage", {}),
-                }
-            return {"title": "", "description": "", "details": details}
+            parsed = json.loads(_strip_json_fences(content_text))
+        except json.JSONDecodeError:
+            parsed = None
+    # Some responses double-encode the JSON object as a string.
+    if isinstance(parsed, str):
+        with suppress(json.JSONDecodeError):
+            parsed = json.loads(_strip_json_fences(parsed))
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "Unable to parse OpenAI metadata response (type=%s)",
+            type(parsed).__name__,
+        )
+        details["status"] = "error_parse"
+        details["error"] = "OpenAI metadata response could not be parsed."
+        # attach brief output excerpt and types for debugging
+        try:
+            details["raw_response"] = {
+                "id": payload.get("id"),
+                "usage": payload.get("usage", {}),
+                "output_types": [
+                    [(p or {}).get("type") for p in ((it or {}).get("content") or [])]
+                    for it in (output or [])
+                ],
+                "text_excerpt": content_text[:200],
+            }
+        except Exception:
+            details["raw_response"] = {
+                "id": payload.get("id"),
+                "usage": payload.get("usage", {}),
+            }
+        return {"title": "", "description": "", "details": details}
 
     # Keep raw id/usage only to avoid bloating sidecar
     details["raw_response"] = {
@@ -658,6 +714,8 @@ def _request_openai_metadata(
     result: dict[str, Any] = {"details": details}
     for field in needed_fields:
         val = parsed.get(field)
+        if isinstance(val, str):
+            val = _unwrap_nested_json(val, field)
         if field == "tags":
             if isinstance(val, list):
                 result[field] = [str(t).strip() for t in val if str(t).strip()]
@@ -676,11 +734,14 @@ def _populate_missing_metadata(
     image_path: Path,
     metadata: dict[str, Any],
     only_fields: list[str] | None = None,
+    *,
+    persist: bool = True,
 ) -> dict[str, Any]:
     """Fill missing metadata using OpenAI when configured.
 
     If only_fields is provided, only regenerate those specific fields.
-    Otherwise, regenerate any empty AI-eligible field.
+    Otherwise, regenerate any empty AI-eligible field. With persist=False the
+    result is returned without writing the sidecar (caller decides).
     """
     ai_eligible = ["title", "description", "caption", "tags"]
 
@@ -739,7 +800,8 @@ def _populate_missing_metadata(
 
     metadata.setdefault("detected_at", time.time())
     metadata.setdefault("status", "pending")
-    _write_sidecar(image_path, metadata)
+    if persist:
+        _write_sidecar(image_path, metadata)
     return metadata
 
 
@@ -1237,6 +1299,7 @@ async def regenerate_ai_metadata(
         body = {}
     images = body.get("images") or []
     force = bool(body.get("force", False))
+    preview = bool(body.get("preview", False))
     fields: list[str] | None
     if "fields" not in body or body.get("fields") is None:
         fields = None
@@ -1276,17 +1339,35 @@ async def regenerate_ai_metadata(
             errors.append({"name": name, "error": "File not found"})
             continue
         try:
-            meta = _load_metadata(path)
+            # Work on a candidate copy so a failed AI call can never blank or
+            # otherwise corrupt the stored sidecar.
+            candidate = copy.deepcopy(_load_metadata(path))
             if force:
                 blank_fields = fields or ["title", "description", "caption", "tags"]
                 for f in blank_fields:
                     if f == "tags":
-                        meta["tags"] = []
+                        candidate["tags"] = []
                     else:
-                        meta[f] = ""
-            meta = _populate_missing_metadata(path, meta, only_fields=fields)
-            _write_sidecar(path, meta)
-            updated.append({"name": fname, "metadata": meta})
+                        candidate[f] = ""
+            candidate = _populate_missing_metadata(
+                path, candidate, only_fields=fields, persist=False
+            )
+            ai_status = (candidate.get("ai_details") or {}).get("status")
+            if force and ai_status != "success":
+                errors.append(
+                    {
+                        "name": fname,
+                        "error": "AI generation failed"
+                        + (f" ({ai_status})" if ai_status else "")
+                        + "; sidecar left unchanged",
+                    }
+                )
+                continue
+            if preview:
+                updated.append({"name": fname, "metadata": candidate, "preview": True})
+            else:
+                _write_sidecar(path, candidate)
+                updated.append({"name": fname, "metadata": candidate})
         except Exception:
             logger.exception("Failed to regenerate metadata for %s", fname)
             errors.append({"name": fname, "error": "Metadata regeneration failed"})
@@ -1446,6 +1527,8 @@ async def update_image_metadata(
     artist: str = Form(""),
     copyright_info: str = Form("", alias="copyright"),
     collection: str = Form(""),
+    ai_fields: str = Form(""),
+    ai_generated: str = Form(""),
     action: str = Form("save"),
     pending_dependency: list[dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
@@ -1480,13 +1563,21 @@ async def update_image_metadata(
     }
     existing = _load_metadata(image_path)
     prior_ai = set(existing.get("ai_fields", []))
-    if prior_ai:
-        changed = {
-            f
-            for f in ("title", "description", "caption", "tags")
-            if f in clean_metadata and clean_metadata[f] != existing.get(f)
-        }
-        existing["ai_fields"] = sorted(prior_ai - changed)
+    changed = {
+        f
+        for f in ("title", "description", "caption", "tags")
+        if f in clean_metadata and clean_metadata[f] != existing.get(f)
+    }
+    # Fields regenerated via preview arrive as a hidden form field; union
+    # them so provenance survives the preview-then-save flow.
+    incoming_ai = {
+        f.strip()
+        for f in ai_fields.split(",")
+        if f.strip() in ("title", "description", "caption", "tags")
+    }
+    existing["ai_fields"] = sorted((prior_ai - changed) | incoming_ai)
+    if incoming_ai or _coerce_bool(ai_generated):
+        existing["ai_generated"] = True
     existing.update(clean_metadata)
     existing["status"] = "approved"
     _write_sidecar(image_path, existing)

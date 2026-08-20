@@ -87,6 +87,8 @@
                     <label for="collection">Collection</label>
                     <input type="text" id="collection" name="collection" value="{{ metadata.get('collection', '') | e }}">
                 </div>
+                <input type="hidden" id="ai_fields" name="ai_fields" value="{{ metadata.get('ai_fields', []) | join(',') }}">
+                <input type="hidden" id="ai_generated" name="ai_generated" value="{{ 'true' if metadata.get('ai_generated') else 'false' }}">
                 {% if metadata.get('ai_fields') %}
                 <p class="ai-status">
                     <span class="badge">AI fields: {{ metadata.ai_fields | join(', ') }}</span>
@@ -94,7 +96,7 @@
                 {% endif %}
                 <div class="form-actions">
                     <button type="submit" name="action" value="save" class="button">Approve &amp; Save</button>
-                    <button type="submit" name="action" value="cancel" class="button secondary">Cancel</button>
+                    <button type="submit" name="action" value="cancel" id="cancel-button" class="button secondary">Cancel</button>
                 </div>
             </form>
         </section>
@@ -116,6 +118,33 @@
                 }
             });
 
+        // Snapshot the form at load so Cancel can revert every field.
+        var FIELD_IDS = ['title', 'description', 'caption', 'tags', 'artist', 'copyright', 'collection', 'ai_fields', 'ai_generated'];
+        var snapshot = {};
+        FIELD_IDS.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) snapshot[id] = el.value;
+        });
+
+        document.getElementById('cancel-button')?.addEventListener('click', function() {
+            FIELD_IDS.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && id in snapshot) el.value = snapshot[id];
+            });
+            // The submit proceeds with action=cancel; the server redirects
+            // without saving. Nothing was persisted during preview regens.
+        });
+
+        function markAiField(field) {
+            var hidden = document.getElementById('ai_fields');
+            if (!hidden) return;
+            var fields = hidden.value.split(',').map(function(f) { return f.trim(); }).filter(Boolean);
+            if (fields.indexOf(field) === -1) fields.push(field);
+            hidden.value = fields.join(',');
+            var gen = document.getElementById('ai_generated');
+            if (gen) gen.value = 'true';
+        }
+
         document.querySelectorAll('.field-regen-btn').forEach(function(btn) {
             btn.addEventListener('click', async function() {
                 var field = btn.dataset.field;
@@ -126,10 +155,11 @@
                     var res = await fetch(ROOT + '/admin/ai/regenerate', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({images: [imageName], fields: [field], force: true})
+                        body: JSON.stringify({images: [imageName], fields: [field], force: true, preview: true})
                     });
                     var data = await res.json();
                     if (!res.ok) throw new Error(data.detail || 'Failed');
+                    if ((data.errors || []).length) throw new Error(data.errors[0].error || 'Failed');
                     var updated = (data.updated || [])[0];
                     if (updated && updated.metadata) {
                         var val = updated.metadata[field];
@@ -137,6 +167,7 @@
                         if (input) {
                             input.value = Array.isArray(val) ? val.join(', ') : (val || '');
                         }
+                        markAiField(field);
                     }
                     btn.textContent = '✓';
                     setTimeout(function() { btn.textContent = 'AI'; btn.disabled = false; }, 2000);
