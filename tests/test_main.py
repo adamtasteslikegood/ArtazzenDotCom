@@ -561,6 +561,36 @@ def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def test_admin_config_string_false_disables_ai(authed_client):
+    """JSON string booleans like \"false\" must not enable via truthiness."""
+    response = authed_client.post(
+        "/admin/config", json={"ai": {"enabled": "false"}}
+    )
+    assert response.status_code == 200
+    assert response.json()["ai"]["enabled"] is False
+    # Restore
+    authed_client.post("/admin/config", json={"ai": {"enabled": True}})
+
+
+def test_admin_post_rejects_lookalike_origin(authed_client):
+    """Origin whose host merely contains ours as a substring is rejected."""
+    response = authed_client.post(
+        "/admin/config",
+        json={"ai": {}},
+        headers={"Origin": "https://testserver.attacker.tld"},
+    )
+    assert response.status_code == 403
+
+
+def test_admin_post_allows_same_origin(authed_client):
+    response = authed_client.post(
+        "/admin/config",
+        json={"ai": {}},
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 200
+
+
 def test_main_shim_exposes_compat_surface():
     """`import main` keeps exposing the pre-split public surface."""
     for name in ("app", "IMAGES_DIR", "_sanitize_filename", "templates"):

@@ -75,10 +75,23 @@ config_lock = threading.Lock()
 runtime_ai_config: dict[str, Any] = {}
 
 
+def _coerce_bool(value: Any) -> bool:
+    """Safely coerce a bool or string to a Python bool.
+
+    Strings like "false"/"0"/"no" become False; plain bool() would treat
+    any non-empty string as True.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
+
+
 def _get_ai_config() -> dict[str, Any]:
     """Return runtime AI config with env fallbacks."""
     cfg = runtime_ai_config
-    enabled = bool(cfg.get("enabled", True))
+    enabled = _coerce_bool(cfg.get("enabled", True))
     model = str(cfg.get("model", os.getenv(OPENAI_MODEL_ENV, OPENAI_DEFAULT_MODEL)))
     try:
         temperature = float(cfg.get("temperature", 0.6))
@@ -149,7 +162,7 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
     out = dict(_default_ai_config_from_env())
     if isinstance(cfg, dict):
         if "enabled" in cfg:
-            out["enabled"] = bool(cfg.get("enabled"))
+            out["enabled"] = _coerce_bool(cfg.get("enabled"))
         if isinstance(cfg.get("model"), str) and cfg.get("model").strip():
             out["model"] = cfg["model"].strip()
         try:

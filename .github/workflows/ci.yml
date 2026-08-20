@@ -85,4 +85,4 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - run: pip install bandit[toml]
-      - run: bandit main.py manage_sidecars.py scripts/ -ll -q
+      - run: bandit -r main.py app/ manage_sidecars.py scripts/ -ll -q

@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import tempfile
 import time
 from contextlib import suppress
 from pathlib import Path
@@ -19,13 +20,9 @@ from app import config
 logger = logging.getLogger(__name__)
 
 
-def _coerce_bool(value: Any) -> bool:
-    """Safely coerce a bool or string to a Python bool."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"true", "1", "yes", "y"}
-    return bool(value)
+# Defined in config (the lowest layer) so every module can use it;
+# aliased here because callers and the main shim import it from sidecars.
+_coerce_bool = config._coerce_bool
 
 
 def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
@@ -41,10 +38,20 @@ def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
         raise ValueError("JSON destination is outside an approved storage root")
 
     safe_path = Path(candidate_path)
-    tmp_path = safe_path.with_suffix(safe_path.suffix + ".tmp")
     text = json.dumps(data, indent=2, ensure_ascii=False)
-    tmp_path.write_text(text, encoding="utf-8")
-    tmp_path.replace(safe_path)
+    # Unique temp name per writer: a fixed .tmp path lets concurrent
+    # processes clobber each other's staging file before the rename.
+    fd, tmp_name = tempfile.mkstemp(
+        dir=safe_path.parent, prefix=safe_path.name + ".", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(text)
+        os.replace(tmp_name, safe_path)
+    except BaseException:
+        with suppress(OSError):
+            os.unlink(tmp_name)
+        raise
 
 
 def _load_schema() -> dict[str, Any]:

@@ -163,7 +163,7 @@ async def update_admin_config(
     cfg = config._get_ai_config()
     if isinstance(ai, dict):
         if "enabled" in ai:
-            cfg["enabled"] = bool(ai["enabled"])
+            cfg["enabled"] = config._coerce_bool(ai["enabled"])
         if "model" in ai and isinstance(ai["model"], str) and ai["model"].strip():
             cfg["model"] = ai["model"].strip()
         if "temperature" in ai:
@@ -204,8 +204,8 @@ async def regenerate_ai_metadata(
     except Exception:
         body = {}
     images = body.get("images") or []
-    force = bool(body.get("force", False))
-    preview = bool(body.get("preview", False))
+    force = config._coerce_bool(body.get("force", False))
+    preview = config._coerce_bool(body.get("preview", False))
     fields: list[str] | None
     if "fields" not in body or body.get("fields") is None:
         fields = None

@@ -2,6 +2,7 @@
 
 import os
 import secrets
+from urllib.parse import urlparse
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -73,8 +74,13 @@ def _verify_admin(
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         origin = request.headers.get("origin") or request.headers.get("referer", "")
         host = request.headers.get("host", "")
-        if origin and host and host not in origin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cross-origin request rejected",
-            )
+        if origin and host:
+            # Compare the parsed authority, not a substring: a substring
+            # check accepts e.g. https://example.com.attacker.tld for host
+            # example.com.
+            origin_host = urlparse(origin).netloc.lower()
+            if origin_host != host.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cross-origin request rejected",
+                )
