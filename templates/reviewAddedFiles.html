@@ -1,26 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <script>(function(){try{var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)}catch(e){}})()</script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Artwork Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
-    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
-</head>
-<body class="admin-page" data-root-path="{{ request.scope.get('root_path', '') }}">
-    <header>
-        <h1>Administration</h1>
-        <p class="admin-subheading">Gallery curation and artwork management</p>
-        <nav class="admin-nav">
-            <a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
-        </nav>
-    </header>
+{% extends "base_admin.html" %}
 
-    <div class="shader-bg"></div>
+{% block title %}Artwork Admin{% endblock %}
 
+{% block content %}
     <nav class="admin-tabs" role="tablist">
         <button class="admin-tab active" role="tab" id="btn-dashboard" aria-selected="true" aria-controls="tab-dashboard" data-tab="dashboard">Dashboard</button>
         <button class="admin-tab" role="tab" id="btn-settings" aria-selected="false" aria-controls="tab-settings" data-tab="settings">Settings</button>
@@ -207,10 +189,9 @@
         </button>
     </nav>
 
-    <footer>
-        <p>Artwork Gallery Administration</p>
-    </footer>
+{% endblock %}
 
+{% block scripts %}
     <script>
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('file-input');
@@ -608,5 +589,4 @@
         fileInput?.click();
     });
     </script>
-</body>
-</html>
+{% endblock %}

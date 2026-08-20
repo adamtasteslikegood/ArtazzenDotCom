@@ -1,27 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <script>(function(){try{var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)}catch(e){}})()</script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review {{ metadata.title }} &mdash; Artwork Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
-    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
-</head>
-<body class="admin-page" data-root-path="{{ request.scope.get('root_path', '') }}">
-    <header>
-        <h1>Review</h1>
-        <p class="admin-subheading">Curating metadata for artifact</p>
-        <nav class="admin-nav">
-            <a href="{{ review_url }}" class="button secondary">Back to pending list</a>
-            <a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
-        </nav>
-    </header>
+{% extends "base_admin.html" %}
 
-    <div class="shader-bg"></div>
+{% block title %}Review {{ metadata.title }} &mdash; Artwork Admin{% endblock %}
+{% block admin_heading %}Review{% endblock %}
+{% block admin_subheading %}Curating metadata for artifact{% endblock %}
 
+{% block admin_nav %}
+<a href="{{ review_url }}" class="button secondary">Back to pending list</a>
+<a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
+{% endblock %}
+
+{% block content %}
     <main class="admin-container single">
         <section class="admin-panel">
             <h2>{{ metadata.title }}</h2>
@@ -101,11 +89,9 @@
             </form>
         </section>
     </main>
+{% endblock %}
 
-    <footer>
-        <p>Artwork Gallery Administration</p>
-    </footer>
-
+{% block scripts %}
     <script>
     (function () {
         var ROOT = document.body.dataset.rootPath || '';
@@ -179,5 +165,4 @@
         });
     })();
     </script>
-</body>
-</html>
+{% endblock %}
