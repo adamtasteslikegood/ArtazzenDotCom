@@ -22,6 +22,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException
 from jsonschema import ValidationError
 from jsonschema import validate as js_validate
 
@@ -51,6 +52,18 @@ def _curation_dir() -> Path:
 
 def _registry_path(filename: str) -> Path:
     return _curation_dir() / filename
+
+
+def _safe_image_path(filename: str) -> Path | None:
+    """Resolve a registry- or user-supplied filename inside IMAGES_DIR.
+
+    Returns None instead of raising when the name is invalid or escapes the
+    images root, so callers can treat bad entries as missing.
+    """
+    try:
+        return sidecars._resolve_image_path(filename)
+    except HTTPException:
+        return None
 
 
 def _load_registry(filename: str, empty: dict[str, Any], key: str) -> dict[str, Any]:
@@ -182,8 +195,8 @@ def _iter_image_sidecars():
 
 def _approved_metadata(filename: str) -> dict[str, Any] | None:
     """Return display metadata (with url/name) for an approved image, else None."""
-    image_path = config.IMAGES_DIR / filename
-    if not image_path.is_file():
+    image_path = _safe_image_path(filename)
+    if image_path is None or not image_path.is_file():
         return None
     meta = sidecars._load_metadata(image_path)
     if meta.get("status", "pending") != "approved":
@@ -206,7 +219,8 @@ def collection_members(slug: str) -> list[dict[str, Any]]:
 def collection_cover_url(entry: dict[str, Any]) -> str:
     """Resolve a collection's cover image URL ('' when it has no artwork)."""
     cover = (entry.get("cover") or "").strip()
-    if cover and (config.IMAGES_DIR / cover).is_file():
+    cover_path = _safe_image_path(cover) if cover else None
+    if cover_path is not None and cover_path.is_file():
         return f"{config.IMAGES_URL_PREFIX}/{cover}"
     members = collection_members(entry["id"])
     if members:
@@ -266,8 +280,8 @@ def membership_counts() -> dict[str, int]:
 
 def collections_for_image(filename: str) -> list[dict[str, Any]]:
     """Collections an image belongs to (registry entries, sorted)."""
-    image_path = config.IMAGES_DIR / filename
-    if not image_path.is_file():
+    image_path = _safe_image_path(filename)
+    if image_path is None or not image_path.is_file():
         return []
     meta = sidecars._load_metadata(image_path)
     by_slug = _by_id(load_collections(), "collections")
@@ -442,7 +456,8 @@ def upsert_series(entry: dict[str, Any]) -> dict[str, Any]:
     images = []
     for filename in images_in:
         name = sidecars._sanitize_filename(str(filename))
-        if name and (config.IMAGES_DIR / name).is_file():
+        member_path = _safe_image_path(name) if name else None
+        if member_path is not None and member_path.is_file():
             images.append(name)
         else:
             logger.warning("Series %s: dropping missing image %r", slug, filename)
@@ -539,7 +554,8 @@ def validate_registries(repair: bool = True) -> dict[str, list[str]]:
             )
         kept = []
         for filename in series.get("images") or []:
-            if (config.IMAGES_DIR / filename).is_file():
+            member_path = _safe_image_path(filename)
+            if member_path is not None and member_path.is_file():
                 kept.append(filename)
             else:
                 warnings.append(
