@@ -624,9 +624,8 @@ def _request_openai_metadata(
     if payload_status and payload_status != "completed":
         reason = (payload.get("incomplete_details") or {}).get("reason", "")
         details["status"] = "error_incomplete"
-        details["error"] = (
-            f"OpenAI response status '{payload_status}'"
-            + (f" ({reason})" if reason else "")
+        details["error"] = f"OpenAI response status '{payload_status}'" + (
+            f" ({reason})" if reason else ""
         )
         details["raw_response"] = {
             "id": payload.get("id"),
@@ -694,10 +693,7 @@ def _request_openai_metadata(
                 "id": payload.get("id"),
                 "usage": payload.get("usage", {}),
                 "output_types": [
-                    [
-                        (p or {}).get("type")
-                        for p in ((it or {}).get("content") or [])
-                    ]
+                    [(p or {}).get("type") for p in ((it or {}).get("content") or [])]
                     for it in (output or [])
                 ],
                 "text_excerpt": content_text[:200],
@@ -1368,9 +1364,7 @@ async def regenerate_ai_metadata(
                 )
                 continue
             if preview:
-                updated.append(
-                    {"name": fname, "metadata": candidate, "preview": True}
-                )
+                updated.append({"name": fname, "metadata": candidate, "preview": True})
             else:
                 _write_sidecar(path, candidate)
                 updated.append({"name": fname, "metadata": candidate})
