@@ -563,9 +563,7 @@ def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
 
 def test_admin_config_string_false_disables_ai(authed_client):
     """JSON string booleans like \"false\" must not enable via truthiness."""
-    response = authed_client.post(
-        "/admin/config", json={"ai": {"enabled": "false"}}
-    )
+    response = authed_client.post("/admin/config", json={"ai": {"enabled": "false"}})
     assert response.status_code == 200
     assert response.json()["ai"]["enabled"] is False
     # Restore
