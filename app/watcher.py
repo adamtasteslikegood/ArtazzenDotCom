@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import threading
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -11,9 +12,24 @@ from app import ai_metadata, config, sidecars
 
 logger = logging.getLogger(__name__)
 
+# Serializes scans across the watcher task and request-triggered refreshes.
+# Overlapping scans could both see the same pending image with missing
+# fields and each fire an OpenAI request for it (duplicate work and spend).
+_scan_lock = threading.Lock()
+
 
 def new_files_detected() -> list[dict[str, Any]]:
-    """Detect pending image files based on their sidecar JSON status."""
+    """Detect pending image files based on their sidecar JSON status.
+
+    Filesystem scanning and the OpenAI metadata calls inside are
+    synchronous/blocking — call this off the event loop (see
+    :func:`get_pending_files` and :func:`_watch_image_directory`).
+    """
+    with _scan_lock:
+        return _scan_pending_files()
+
+
+def _scan_pending_files() -> list[dict[str, Any]]:
     pending: list[dict[str, Any]] = []
     try:
         disk_listing = os.listdir(config.IMAGES_DIR)
@@ -61,7 +77,9 @@ async def _watch_image_directory(app: FastAPI) -> None:
     try:
         while True:
             try:
-                pending = new_files_detected()
+                # The scan blocks (filesystem + synchronous OpenAI calls);
+                # run it in a worker thread so requests keep being served.
+                pending = await asyncio.to_thread(new_files_detected)
                 app.state.pending_images = pending
             except FileNotFoundError:
                 logger.debug(
@@ -76,9 +94,11 @@ async def _watch_image_directory(app: FastAPI) -> None:
 async def get_pending_files(request: Request) -> list[dict[str, Any]]:
     """
     FastAPI dependency to get the list of pending files.
-    This runs before routes that depend on it.
+    This runs before routes that depend on it. The scan is offloaded to a
+    worker thread: running it inline blocked the event loop for the full
+    scan (plus any OpenAI calls), stalling every in-flight request.
     """
-    return _refresh_pending_files(request)
+    return await asyncio.to_thread(_refresh_pending_files, request)
 
 
 def _refresh_pending_files(request: Request) -> list[dict[str, Any]]:

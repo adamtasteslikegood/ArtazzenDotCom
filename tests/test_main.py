@@ -595,6 +595,73 @@ def test_admin_post_allows_same_origin(authed_client, isolated_config):
     assert response.status_code == 200
 
 
+# ---------------------------------------------------------------------------
+# Watcher event-loop offload (issue #69)
+# ---------------------------------------------------------------------------
+
+
+def test_pending_scans_are_serialized(monkeypatch):
+    """Concurrent scans must not overlap (duplicate OpenAI calls)."""
+    import threading
+    import time as _time
+
+    active = {"count": 0, "max": 0}
+    guard = threading.Lock()
+
+    def slow_scan():
+        with guard:
+            active["count"] += 1
+            active["max"] = max(active["max"], active["count"])
+        _time.sleep(0.05)
+        with guard:
+            active["count"] -= 1
+        return []
+
+    monkeypatch.setattr(gallery_app.watcher, "_scan_pending_files", slow_scan)
+    threads = [
+        threading.Thread(target=gallery_app.watcher.new_files_detected)
+        for _ in range(4)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert active["max"] == 1
+
+
+async def test_get_pending_files_does_not_block_event_loop(monkeypatch):
+    """The event loop must keep running while a slow scan is in flight.
+
+    Before the fix, get_pending_files ran the scan inline on the loop, so
+    the ticker below would record zero ticks until the scan finished.
+    """
+    import time as _time
+
+    def slow_refresh(_request):
+        _time.sleep(0.2)
+        return ["scan-result"]
+
+    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", slow_refresh)
+
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    task = asyncio.create_task(ticker())
+    try:
+        result = await gallery_app.watcher.get_pending_files(None)
+        ticks_at_return = ticks
+    finally:
+        task.cancel()
+
+    assert result == ["scan-result"]
+    assert ticks_at_return >= 5
+
+
 def test_main_shim_exposes_compat_surface():
     """`import main` keeps exposing the pre-split public surface."""
     for name in ("app", "IMAGES_DIR", "_sanitize_filename", "templates"):
