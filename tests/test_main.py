@@ -227,7 +227,9 @@ def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_
     def fail_metadata(*_args, **_kwargs):
         raise RuntimeError(secret_detail)
 
-    monkeypatch.setattr(gallery_app.ai_metadata, "_populate_missing_metadata", fail_metadata)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_populate_missing_metadata", fail_metadata
+    )
     monkeypatch.setattr(
         gallery_app.watcher,
         "_refresh_pending_files",
@@ -267,7 +269,9 @@ def test_upload_without_size_attribute_uses_streaming_limit(monkeypatch, tmp_pat
     image_root = tmp_path / "images"
     image_root.mkdir()
     monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
-    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", lambda _request: [])
+    monkeypatch.setattr(
+        gallery_app.watcher, "_refresh_pending_files", lambda _request: []
+    )
 
     class UploadWithoutSize:
         filename = "no-size.png"
@@ -359,7 +363,9 @@ def test_openai_http_error_details_are_not_exposed(monkeypatch, tmp_path):
             )
             raise gallery_app.httpx.ConnectError(secret_detail, request=request)
 
-    monkeypatch.setattr(gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
     monkeypatch.setattr(
         gallery_app.ai_metadata,
         "_prepare_image_for_openai",
@@ -412,7 +418,9 @@ def test_openai_parse_error_details_are_not_exposed(monkeypatch, tmp_path):
         def post(self, *_args, **_kwargs):
             return InvalidJsonResponse()
 
-    monkeypatch.setattr(gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
     monkeypatch.setattr(
         gallery_app.ai_metadata,
         "_prepare_image_for_openai",
@@ -456,7 +464,9 @@ def _patch_openai_transport(monkeypatch, payload):
         def post(self, *_args, **_kwargs):
             return FakeResponse()
 
-    monkeypatch.setattr(gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
     monkeypatch.setattr(
         gallery_app.ai_metadata,
         "_prepare_image_for_openai",

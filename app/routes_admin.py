@@ -270,9 +270,7 @@ async def regenerate_ai_metadata(
                 )
                 continue
             if preview:
-                updated.append(
-                    {"name": fname, "metadata": candidate, "preview": True}
-                )
+                updated.append({"name": fname, "metadata": candidate, "preview": True})
             else:
                 sidecars._write_sidecar(path, candidate)
                 updated.append({"name": fname, "metadata": candidate})

@@ -18,9 +18,7 @@ async def lifespan(app: FastAPI):
     config.runtime_ai_config = config._load_ai_config()
     sidecars._validate_and_migrate_sidecars()
     app.state.pending_images = watcher.new_files_detected()
-    app.state.watcher_task = asyncio.create_task(
-        watcher._watch_image_directory(app)
-    )
+    app.state.watcher_task = asyncio.create_task(watcher._watch_image_directory(app))
     yield
     # Shutdown
     watcher_task = getattr(app.state, "watcher_task", None)
@@ -32,13 +30,9 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Artwork Gallery", lifespan=lifespan)
-    app.mount(
-        "/static", StaticFiles(directory=config.STATIC_DIR), name="static"
-    )
+    app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
     if config._USING_VOLUME:
-        app.mount(
-            "/images", StaticFiles(directory=config.IMAGES_DIR), name="images"
-        )
+        app.mount("/images", StaticFiles(directory=config.IMAGES_DIR), name="images")
     app.add_middleware(_SecurityHeadersMiddleware)
     app.include_router(admin_router)
     app.include_router(public_router)

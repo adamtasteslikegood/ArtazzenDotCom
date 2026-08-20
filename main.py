@@ -11,7 +11,16 @@ are snapshots, not live bindings.
 
 import httpx  # noqa: F401  (legacy patch target: gallery_app.httpx)
 
-from app import ai_metadata, config, sidecars, security, watcher  # noqa: F401
+from app import ai_metadata, config, security, sidecars, watcher  # noqa: F401
+from app.ai_metadata import (  # noqa: F401
+    _build_openai_prompt,
+    _get_openai_api_key,
+    _populate_missing_metadata,
+    _prepare_image_for_openai,
+    _request_openai_metadata,
+    _strip_json_fences,
+    _unwrap_nested_json,
+)
 from app.config import (  # noqa: F401
     ALLOWED_IMAGE_EXTENSIONS,
     BASE_DIR,
@@ -31,42 +40,7 @@ from app.config import (  # noqa: F401
     _save_ai_config,
     templates,
 )
-from app.sidecars import (  # noqa: F401
-    _allowed_image,
-    _apply_schema_defaults,
-    _atomic_write_json,
-    _coerce_bool,
-    _ensure_sidecar,
-    _extract_exif_metadata,
-    _load_metadata,
-    _load_schema,
-    _resolve_image_path,
-    _sanitize_filename,
-    _set_status_sidecar,
-    _validate_and_migrate_sidecars,
-    _write_sidecar,
-    get_artwork_files,
-)
-from app.ai_metadata import (  # noqa: F401
-    _build_openai_prompt,
-    _get_openai_api_key,
-    _populate_missing_metadata,
-    _prepare_image_for_openai,
-    _request_openai_metadata,
-    _strip_json_fences,
-    _unwrap_nested_json,
-)
-from app.watcher import (  # noqa: F401
-    _refresh_pending_files,
-    _watch_image_directory,
-    get_pending_files,
-    new_files_detected,
-)
-from app.security import (  # noqa: F401
-    _SecurityHeadersMiddleware,
-    _http_basic,
-    _verify_admin,
-)
+from app.factory import create_app, lifespan  # noqa: F401
 from app.routes_admin import (  # noqa: F401
     _select_import_files,
     admin_home,
@@ -85,6 +59,32 @@ from app.routes_admin import (  # noqa: F401
     upload_images,
 )
 from app.routes_public import artwork_detail, read_root  # noqa: F401
-from app.factory import create_app, lifespan  # noqa: F401
+from app.security import (  # noqa: F401
+    _http_basic,
+    _SecurityHeadersMiddleware,
+    _verify_admin,
+)
+from app.sidecars import (  # noqa: F401
+    _allowed_image,
+    _apply_schema_defaults,
+    _atomic_write_json,
+    _coerce_bool,
+    _ensure_sidecar,
+    _extract_exif_metadata,
+    _load_metadata,
+    _load_schema,
+    _resolve_image_path,
+    _sanitize_filename,
+    _set_status_sidecar,
+    _validate_and_migrate_sidecars,
+    _write_sidecar,
+    get_artwork_files,
+)
+from app.watcher import (  # noqa: F401
+    _refresh_pending_files,
+    _watch_image_directory,
+    get_pending_files,
+    new_files_detected,
+)
 
 app = create_app()

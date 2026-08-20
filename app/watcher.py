@@ -18,9 +18,7 @@ def new_files_detected() -> list[dict[str, Any]]:
     try:
         disk_listing = os.listdir(config.IMAGES_DIR)
     except OSError as exc:
-        logger.error(
-            "Unable to scan images directory %s: %s", config.IMAGES_DIR, exc
-        )
+        logger.error("Unable to scan images directory %s: %s", config.IMAGES_DIR, exc)
         disk_listing = []
 
     existing_files = [
