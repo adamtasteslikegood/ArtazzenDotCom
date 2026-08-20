@@ -1,6 +1,7 @@
 # main.py
 import asyncio
 import base64
+import copy
 import json
 import logging  # Import logging
 import os
@@ -737,11 +738,14 @@ def _populate_missing_metadata(
     image_path: Path,
     metadata: dict[str, Any],
     only_fields: list[str] | None = None,
+    *,
+    persist: bool = True,
 ) -> dict[str, Any]:
     """Fill missing metadata using OpenAI when configured.
 
     If only_fields is provided, only regenerate those specific fields.
-    Otherwise, regenerate any empty AI-eligible field.
+    Otherwise, regenerate any empty AI-eligible field. With persist=False the
+    result is returned without writing the sidecar (caller decides).
     """
     ai_eligible = ["title", "description", "caption", "tags"]
 
@@ -800,7 +804,8 @@ def _populate_missing_metadata(
 
     metadata.setdefault("detected_at", time.time())
     metadata.setdefault("status", "pending")
-    _write_sidecar(image_path, metadata)
+    if persist:
+        _write_sidecar(image_path, metadata)
     return metadata
 
 
@@ -1298,6 +1303,7 @@ async def regenerate_ai_metadata(
         body = {}
     images = body.get("images") or []
     force = bool(body.get("force", False))
+    preview = bool(body.get("preview", False))
     fields: list[str] | None
     if "fields" not in body or body.get("fields") is None:
         fields = None
@@ -1337,17 +1343,37 @@ async def regenerate_ai_metadata(
             errors.append({"name": name, "error": "File not found"})
             continue
         try:
-            meta = _load_metadata(path)
+            # Work on a candidate copy so a failed AI call can never blank or
+            # otherwise corrupt the stored sidecar.
+            candidate = copy.deepcopy(_load_metadata(path))
             if force:
                 blank_fields = fields or ["title", "description", "caption", "tags"]
                 for f in blank_fields:
                     if f == "tags":
-                        meta["tags"] = []
+                        candidate["tags"] = []
                     else:
-                        meta[f] = ""
-            meta = _populate_missing_metadata(path, meta, only_fields=fields)
-            _write_sidecar(path, meta)
-            updated.append({"name": fname, "metadata": meta})
+                        candidate[f] = ""
+            candidate = _populate_missing_metadata(
+                path, candidate, only_fields=fields, persist=False
+            )
+            ai_status = (candidate.get("ai_details") or {}).get("status")
+            if force and ai_status != "success":
+                errors.append(
+                    {
+                        "name": fname,
+                        "error": "AI generation failed"
+                        + (f" ({ai_status})" if ai_status else "")
+                        + "; sidecar left unchanged",
+                    }
+                )
+                continue
+            if preview:
+                updated.append(
+                    {"name": fname, "metadata": candidate, "preview": True}
+                )
+            else:
+                _write_sidecar(path, candidate)
+                updated.append({"name": fname, "metadata": candidate})
         except Exception:
             logger.exception("Failed to regenerate metadata for %s", fname)
             errors.append({"name": fname, "error": "Metadata regeneration failed"})

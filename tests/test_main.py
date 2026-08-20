@@ -577,6 +577,181 @@ def test_collections_returns_distinct_values(authed_client, tmp_path, monkeypatc
 # ---------------------------------------------------------------------------
 
 
+def _regen_request(body_dict: dict) -> Request:
+    """Build a fake POST request for regenerate_ai_metadata."""
+    body = json.dumps(body_dict).encode()
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/ai/regenerate",
+            "headers": [(b"content-type", b"application/json")],
+            "app": app,
+        },
+        receive,
+    )
+
+
+def _write_regen_sidecar(image_root, name="regen_test"):
+    img = image_root / f"{name}.jpg"
+    img.touch()
+    sidecar = image_root / f"{name}.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "title": "Original Title",
+                "description": "Original description",
+                "caption": "",
+                "tags": [],
+                "ai_generated": False,
+                "ai_fields": [],
+                "status": "approved",
+                "detected_at": 0,
+                "ai_details": {},
+            }
+        )
+    )
+    return sidecar
+
+
+def test_populate_persist_false_leaves_sidecar_unchanged(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    sidecar = _write_regen_sidecar(image_root)
+    before = sidecar.read_bytes()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app,
+        "_request_openai_metadata",
+        lambda path, meta, fields: {
+            "title": "AI Title",
+            "details": {"status": "success"},
+        },
+    )
+
+    meta = {"title": "", "description": "keep", "ai_details": {}}
+    result = gallery_app._populate_missing_metadata(
+        image_root / "regen_test.jpg", meta, only_fields=["title"], persist=False
+    )
+
+    assert result["title"] == "AI Title"
+    assert sidecar.read_bytes() == before
+
+
+def test_regenerate_force_failure_leaves_sidecar_unchanged(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    sidecar = _write_regen_sidecar(image_root)
+    before = sidecar.read_bytes()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app,
+        "_populate_missing_metadata",
+        lambda path, meta, only_fields=None, persist=True: {
+            **meta,
+            "ai_details": {"status": "error_parse"},
+        },
+    )
+    monkeypatch.setattr(gallery_app, "_refresh_pending_files", lambda _req: [])
+
+    response = asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            _regen_request(
+                {"images": ["regen_test.jpg"], "fields": ["title"], "force": True}
+            ),
+            _=None,
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert payload["updated"] == []
+    assert len(payload["errors"]) == 1
+    assert "sidecar left unchanged" in payload["errors"][0]["error"]
+    assert sidecar.read_bytes() == before
+
+
+def test_regenerate_preview_returns_values_without_write(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    sidecar = _write_regen_sidecar(image_root)
+    before = sidecar.read_bytes()
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app,
+        "_populate_missing_metadata",
+        lambda path, meta, only_fields=None, persist=True: {
+            **meta,
+            "title": "AI Title",
+            "ai_details": {"status": "success"},
+        },
+    )
+    monkeypatch.setattr(gallery_app, "_refresh_pending_files", lambda _req: [])
+
+    response = asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            _regen_request(
+                {
+                    "images": ["regen_test.jpg"],
+                    "fields": ["title"],
+                    "force": True,
+                    "preview": True,
+                }
+            ),
+            _=None,
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert len(payload["updated"]) == 1
+    assert payload["updated"][0]["preview"] is True
+    assert payload["updated"][0]["metadata"]["title"] == "AI Title"
+    assert sidecar.read_bytes() == before
+
+
+def test_regenerate_success_writes_once(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    sidecar = _write_regen_sidecar(image_root)
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app,
+        "_populate_missing_metadata",
+        lambda path, meta, only_fields=None, persist=True: {
+            **meta,
+            "title": "AI Title",
+            "ai_details": {"status": "success"},
+        },
+    )
+    monkeypatch.setattr(gallery_app, "_refresh_pending_files", lambda _req: [])
+
+    writes = []
+    orig_write = gallery_app._write_sidecar
+
+    def counting_write(path, meta):
+        writes.append(path.name)
+        return orig_write(path, meta)
+
+    monkeypatch.setattr(gallery_app, "_write_sidecar", counting_write)
+
+    response = asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            _regen_request(
+                {"images": ["regen_test.jpg"], "fields": ["title"], "force": True}
+            ),
+            _=None,
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert len(payload["updated"]) == 1
+    assert writes == ["regen_test.jpg"]
+    assert json.loads(sidecar.read_text())["title"] == "AI Title"
+
+
 def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
     image_root = tmp_path / "images"
     image_root.mkdir()
@@ -602,7 +777,10 @@ def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
     monkeypatch.setattr(
         gallery_app,
         "_populate_missing_metadata",
-        lambda path, meta, only_fields=None: meta,
+        lambda path, meta, only_fields=None, persist=True: {
+            **meta,
+            "ai_details": {"status": "success"},
+        },
     )
     monkeypatch.setattr(
         gallery_app,
@@ -610,24 +788,14 @@ def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
         lambda _req: [],
     )
 
-    body = json.dumps(
-        {"images": ["field_test.jpg"], "fields": ["caption"], "force": True}
-    ).encode()
-
-    async def receive():
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    request = Request(
-        {
-            "type": "http",
-            "method": "POST",
-            "path": "/admin/ai/regenerate",
-            "headers": [(b"content-type", b"application/json")],
-            "app": app,
-        },
-        receive,
+    response = asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            _regen_request(
+                {"images": ["field_test.jpg"], "fields": ["caption"], "force": True}
+            ),
+            _=None,
+        )
     )
-    response = asyncio.run(gallery_app.regenerate_ai_metadata(request, _=None))
     payload = json.loads(response.body)
 
     assert len(payload["updated"]) == 1
