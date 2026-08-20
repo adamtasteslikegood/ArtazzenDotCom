@@ -161,6 +161,52 @@
                     <button type="button" id="dark-mode-toggle" class="dark-mode-toggle">Toggle dark mode</button>
                 </div>
             </section>
+            <section class="admin-panel" id="curation-panel">
+                <h2>Curation</h2>
+                <p class="panel-description">Collections group artwork (nested via parent); series are ordered sets of related edits inside a collection.</p>
+                <h3>Collections</h3>
+                <ul id="collections-list" class="curation-list" aria-live="polite"></ul>
+                <form id="collection-form" class="path-form">
+                    <div class="form-row">
+                        <label for="col-title">Title</label>
+                        <input type="text" id="col-title" required placeholder="Botanical Studies">
+                    </div>
+                    <div class="form-row">
+                        <label for="col-id">Slug (optional)</label>
+                        <input type="text" id="col-id" placeholder="botanical-studies">
+                    </div>
+                    <div class="form-row">
+                        <label for="col-parent">Parent slug (optional)</label>
+                        <input type="text" id="col-parent" placeholder="">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="button">Save collection</button>
+                    </div>
+                </form>
+                <h3>Series</h3>
+                <ul id="series-list" class="curation-list" aria-live="polite"></ul>
+                <form id="series-form" class="path-form">
+                    <div class="form-row">
+                        <label for="ser-title">Title</label>
+                        <input type="text" id="ser-title" required placeholder="Orchid Edits">
+                    </div>
+                    <div class="form-row">
+                        <label for="ser-id">Slug (optional)</label>
+                        <input type="text" id="ser-id" placeholder="orchid-edits">
+                    </div>
+                    <div class="form-row">
+                        <label for="ser-collection">Owning collection slug</label>
+                        <input type="text" id="ser-collection" required placeholder="botanical-studies">
+                    </div>
+                    <div class="form-row">
+                        <label for="ser-images">Images (ordered, comma-separated filenames)</label>
+                        <input type="text" id="ser-images" placeholder="IMG_1.jpg, IMG_2.jpg">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="button">Save series</button>
+                    </div>
+                </form>
+            </section>
         </main>
     </div>
 
@@ -588,5 +634,107 @@
     document.getElementById('capture-tab')?.addEventListener('click', () => {
         fileInput?.click();
     });
+
+    // --- Curation panel (collections + series) ---
+    async function curationMutate(endpoint, action, key, payload) {
+        const res = await fetch(`${ROOT}/admin/api/${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, [key]: payload })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || `${action} failed`);
+        return data;
+    }
+
+    function renderCurationItem(list, label, onDelete) {
+        const li = document.createElement('li');
+        const span = document.createElement('span');
+        span.textContent = label;
+        li.appendChild(span);
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'button danger';
+        del.textContent = 'Delete';
+        del.addEventListener('click', onDelete);
+        li.appendChild(del);
+        list.appendChild(li);
+    }
+
+    async function loadCuration() {
+        const colList = document.getElementById('collections-list');
+        const serList = document.getElementById('series-list');
+        if (!colList || !serList) return;
+        try {
+            const [colRes, serRes] = await Promise.all([
+                fetch(`${ROOT}/admin/api/collections`),
+                fetch(`${ROOT}/admin/api/series`)
+            ]);
+            const collections = (await colRes.json()).collections || [];
+            const series = (await serRes.json()).series || [];
+            colList.innerHTML = '';
+            serList.innerHTML = '';
+            if (!collections.length) colList.innerHTML = '<li class="empty-state">No collections yet.</li>';
+            if (!series.length) serList.innerHTML = '<li class="empty-state">No series yet.</li>';
+            collections.forEach(c => {
+                const parent = c.parent ? ` · in ${c.parent}` : '';
+                renderCurationItem(colList, `${c.title} (${c.id}${parent}) — ${c.count} artwork(s)`, async () => {
+                    if (!confirm(`Delete collection "${c.title}"? Memberships are removed; children re-parent.`)) return;
+                    try {
+                        await curationMutate('collections', 'delete', 'collection', { id: c.id });
+                        showFeedback(`Collection ${c.id} deleted.`, 'success');
+                        await loadCuration();
+                    } catch (e) { showFeedback(e.message, 'error'); }
+                });
+            });
+            series.forEach(s => {
+                renderCurationItem(serList, `${s.title} (${s.id}) — ${(s.images || []).length} image(s) in ${s.collection}`, async () => {
+                    if (!confirm(`Delete series "${s.title}"?`)) return;
+                    try {
+                        await curationMutate('series', 'delete', 'series', { id: s.id });
+                        showFeedback(`Series ${s.id} deleted.`, 'success');
+                        await loadCuration();
+                    } catch (e) { showFeedback(e.message, 'error'); }
+                });
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    document.getElementById('collection-form')?.addEventListener('submit', async e => {
+        e.preventDefault();
+        const payload = {
+            title: document.getElementById('col-title').value.trim(),
+            id: document.getElementById('col-id').value.trim(),
+            parent: document.getElementById('col-parent').value.trim()
+        };
+        if (!payload.id) delete payload.id;
+        try {
+            await curationMutate('collections', 'create', 'collection', payload);
+            showFeedback('Collection saved.', 'success');
+            e.target.reset();
+            await loadCuration();
+        } catch (err) { showFeedback(err.message, 'error'); }
+    });
+
+    document.getElementById('series-form')?.addEventListener('submit', async e => {
+        e.preventDefault();
+        const payload = {
+            title: document.getElementById('ser-title').value.trim(),
+            id: document.getElementById('ser-id').value.trim(),
+            collection: document.getElementById('ser-collection').value.trim(),
+            images: document.getElementById('ser-images').value.split(',').map(s => s.trim()).filter(Boolean)
+        };
+        if (!payload.id) delete payload.id;
+        try {
+            await curationMutate('series', 'create', 'series', payload);
+            showFeedback('Series saved.', 'success');
+            e.target.reset();
+            await loadCuration();
+        } catch (err) { showFeedback(err.message, 'error'); }
+    });
+
+    loadCuration();
     </script>
 {% endblock %}

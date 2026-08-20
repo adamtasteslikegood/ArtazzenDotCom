@@ -689,6 +689,139 @@ def test_series_requires_existing_collection(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Collections and series pages + admin API
+# ---------------------------------------------------------------------------
+
+
+def _curation_fixture(tmp_path, monkeypatch):
+    """Images a/b/c approved + hidden.jpg; collection flora with a series."""
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        _add_image(image_root, name, title=name.split(".")[0].upper())
+    _add_image(image_root, "hidden.jpg", title="Hidden", status="hidden")
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+    # a and c are direct members; hidden too (must not render publicly)
+    for name, slugs in (("a", ["flora"]), ("c", ["flora"]), ("hidden", ["flora"])):
+        path = image_root / f"{name}.json"
+        data = json.loads(path.read_text())
+        data["collections"] = slugs
+        path.write_text(json.dumps(data))
+    # Series owned by flora, ordered b then a; a is ALSO a direct member.
+    gallery_app.curation.upsert_series(
+        {"id": "orchid-edits", "title": "Orchid Edits", "collection": "flora",
+         "images": ["b.jpg", "a.jpg"]}
+    )
+    return image_root
+
+
+def test_collection_page_series_order_anchor_and_dedup(
+    client, tmp_path, monkeypatch
+):
+    _curation_fixture(tmp_path, monkeypatch)
+    response = client.get("/collections/flora")
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="series-orchid-edits"' in html
+    # Registry order preserved: b before a inside the strip.
+    assert html.index("/artwork/b.jpg") < html.index("/artwork/a.jpg")
+    # Dedup: a is in the series AND a direct member — rendered exactly once.
+    assert html.count('href="/artwork/a.jpg"') == 1
+    # c is standalone and renders in the grid; hidden is excluded.
+    assert "/artwork/c.jpg" in html
+    assert "hidden.jpg" not in html
+
+
+def test_collection_breadcrumb_for_nested(client, tmp_path, monkeypatch):
+    _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "root", "title": "Root"})
+    gallery_app.curation.upsert_collection(
+        {"id": "child", "title": "Child", "parent": "root"}
+    )
+    response = client.get("/collections/child")
+    assert response.status_code == 200
+    assert "/collections/root" in response.text
+    assert 'aria-current="page"' in response.text
+
+
+def test_collection_unknown_slug_404(client, tmp_path, monkeypatch):
+    _make_curation_root(tmp_path, monkeypatch)
+    assert client.get("/collections/nope").status_code == 404
+
+
+def test_collections_index_lists_top_level(client, tmp_path, monkeypatch):
+    _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+    gallery_app.curation.upsert_collection(
+        {"id": "hidden-child", "title": "Nested", "parent": "flora"}
+    )
+    response = client.get("/collections")
+    assert response.status_code == 200
+    assert "/collections/flora" in response.text
+    assert "/collections/hidden-child" not in response.text
+
+
+def test_series_api_create_syncs_sidecar_mirrors(
+    authed_client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg")
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+
+    response = authed_client.post(
+        "/admin/api/series",
+        json={
+            "action": "create",
+            "series": {"id": "new-series", "title": "New", "collection": "flora",
+                       "images": ["a.jpg"]},
+        },
+    )
+    assert response.status_code == 200
+    assert json.loads((image_root / "a.json").read_text())["series"] == [
+        "new-series"
+    ]
+
+
+def test_collection_delete_reparents_and_cleans_sidecars(
+    authed_client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", collections=["mid"])
+    gallery_app.curation.upsert_collection({"id": "root", "title": "Root"})
+    gallery_app.curation.upsert_collection(
+        {"id": "mid", "title": "Mid", "parent": "root"}
+    )
+    gallery_app.curation.upsert_collection(
+        {"id": "leaf", "title": "Leaf", "parent": "mid"}
+    )
+
+    response = authed_client.post(
+        "/admin/api/collections",
+        json={"action": "delete", "collection": {"id": "mid"}},
+    )
+    assert response.status_code == 200
+    assert gallery_app.curation.get_collection("mid") is None
+    assert gallery_app.curation.get_collection("leaf")["parent"] == "root"
+    assert json.loads((image_root / "a.json").read_text())["collections"] == []
+
+
+def test_metadata_post_persists_valid_collections(
+    authed_client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", status="pending")
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+
+    response = authed_client.post(
+        "/admin/metadata/a.jpg",
+        data={"title": "T", "collections": "flora, bogus", "action": "save"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    saved = json.loads((image_root / "a.json").read_text())
+    assert saved["collections"] == ["flora"]
+
+
+# ---------------------------------------------------------------------------
 # Module split compatibility
 # ---------------------------------------------------------------------------
 
@@ -787,19 +920,26 @@ def test_collections_requires_auth(client: TestClient):
     assert response.status_code in (401, 503)
 
 
-def test_collections_returns_distinct_values(authed_client, tmp_path, monkeypatch):
+def test_collections_api_returns_registry_with_counts(
+    authed_client, tmp_path, monkeypatch
+):
     image_root = tmp_path / "images"
     image_root.mkdir()
     monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
-    (image_root / "a.json").write_text(json.dumps({"collection": "Flora"}))
-    (image_root / "b.json").write_text(json.dumps({"collection": "Flora"}))
-    (image_root / "c.json").write_text(json.dumps({"collection": "Fauna"}))
-    (image_root / "d.json").write_text(json.dumps({"collection": ""}))
+    for name, slugs in (("a", ["flora"]), ("b", ["flora"]), ("c", ["fauna"])):
+        (image_root / f"{name}.jpg").touch()
+        (image_root / f"{name}.json").write_text(
+            json.dumps({"title": name, "collections": slugs})
+        )
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+    gallery_app.curation.upsert_collection({"id": "fauna", "title": "Fauna"})
 
     response = authed_client.get("/admin/api/collections")
     assert response.status_code == 200
-    data = response.json()
-    assert data["collections"] == ["Fauna", "Flora"]
+    data = {c["id"]: c for c in response.json()["collections"]}
+    assert data["flora"]["title"] == "Flora"
+    assert data["flora"]["count"] == 2
+    assert data["fauna"]["count"] == 1
 
 
 # ---------------------------------------------------------------------------

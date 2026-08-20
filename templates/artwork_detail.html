@@ -38,9 +38,21 @@
                 </div>
                 {% endif %}
 
-                {% if artwork.collection %}
+                {% if collections %}
+                <p class="artwork-meta-label">Collections</p>
+                <p class="artwork-meta-value">
+                    {% for c in collections %}<a href="{{ url_for('collection_detail', slug=c.id) }}">{{ c.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+                </p>
+                {% elif artwork.collection %}
                 <p class="artwork-meta-label">Collection</p>
                 <p class="artwork-meta-value">{{ artwork.collection }}</p>
+                {% endif %}
+
+                {% if series_memberships %}
+                <p class="artwork-meta-label">Series</p>
+                <p class="artwork-meta-value">
+                    {% for s in series_memberships %}<a href="{{ url_for('collection_detail', slug=s.collection) }}#series-{{ s.id }}">{{ s.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+                </p>
                 {% endif %}
 
                 {% if artwork.copyright %}

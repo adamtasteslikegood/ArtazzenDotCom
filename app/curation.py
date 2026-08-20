@@ -259,6 +259,15 @@ def collection_view(slug: str) -> dict[str, Any] | None:
     }
 
 
+def membership_counts() -> dict[str, int]:
+    """Count sidecar memberships (any status) per collection slug."""
+    counts: dict[str, int] = {}
+    for _image_path, _json_path, data in _iter_image_sidecars():
+        for slug in data.get("collections") or []:
+            counts[slug] = counts.get(slug, 0) + 1
+    return counts
+
+
 def collections_for_image(filename: str) -> list[dict[str, Any]]:
     """Collections an image belongs to (registry entries, sorted)."""
     image_path = config.IMAGES_DIR / filename
