@@ -171,7 +171,7 @@ def test_resolve_image_path_rejects_escape_and_symlink(monkeypatch, tmp_path):
     outside = tmp_path / "outside.jpg"
     outside.touch()
     (image_root / "escape.jpg").symlink_to(outside)
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
 
     assert gallery_app._resolve_image_path("safe.jpg") == image_root / "safe.jpg"
     for candidate in ("../outside.jpg", str(outside), "escape.jpg"):
@@ -192,7 +192,7 @@ def test_select_import_files_uses_root_allowlist(monkeypatch, tmp_path):
     outside_file = outside / "secret.jpg"
     outside_file.touch()
     (import_root / "escape.jpg").symlink_to(outside_file)
-    monkeypatch.setattr(gallery_app, "IMPORT_ROOT", import_root)
+    monkeypatch.setattr(gallery_app.config, "IMPORT_ROOT", import_root)
 
     assert gallery_app._select_import_files("batch") == [safe_file]
     assert gallery_app._select_import_files("batch/safe.jpg") == [safe_file]
@@ -206,7 +206,7 @@ def test_select_import_files_uses_root_allowlist(monkeypatch, tmp_path):
 def test_atomic_json_write_rejects_unapproved_destination(monkeypatch, tmp_path):
     image_root = tmp_path / "images"
     image_root.mkdir()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
 
     sidecar = image_root / "safe.json"
     gallery_app._atomic_write_json(sidecar, {"title": "Safe"})
@@ -220,16 +220,16 @@ def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_
     image_root = tmp_path / "images"
     image_root.mkdir()
     (image_root / "safe.jpg").touch()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
 
     secret_detail = "/srv/private/secret-key.txt"
 
     def fail_metadata(*_args, **_kwargs):
         raise RuntimeError(secret_detail)
 
-    monkeypatch.setattr(gallery_app, "_populate_missing_metadata", fail_metadata)
+    monkeypatch.setattr(gallery_app.ai_metadata, "_populate_missing_metadata", fail_metadata)
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.watcher,
         "_refresh_pending_files",
         lambda _request: [{"name": "fresh-state.jpg"}],
     )
@@ -266,8 +266,8 @@ def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_
 def test_upload_without_size_attribute_uses_streaming_limit(monkeypatch, tmp_path):
     image_root = tmp_path / "images"
     image_root.mkdir()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
-    monkeypatch.setattr(gallery_app, "_refresh_pending_files", lambda _request: [])
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", lambda _request: [])
 
     class UploadWithoutSize:
         filename = "no-size.png"
@@ -307,10 +307,10 @@ def test_import_returns_refreshed_pending_state(monkeypatch, tmp_path):
     batch = import_root / "batch"
     batch.mkdir(parents=True)
     (batch / "imported.jpg").touch()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
-    monkeypatch.setattr(gallery_app, "IMPORT_ROOT", import_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMPORT_ROOT", import_root)
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.watcher,
         "_refresh_pending_files",
         lambda _request: [{"name": "fresh-state.jpg"}],
     )
@@ -359,9 +359,9 @@ def test_openai_http_error_details_are_not_exposed(monkeypatch, tmp_path):
             )
             raise gallery_app.httpx.ConnectError(secret_detail, request=request)
 
-    monkeypatch.setattr(gallery_app, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key")
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.ai_metadata,
         "_prepare_image_for_openai",
         lambda _path: "data:image/jpeg;base64,eA==",
     )
@@ -412,9 +412,9 @@ def test_openai_parse_error_details_are_not_exposed(monkeypatch, tmp_path):
         def post(self, *_args, **_kwargs):
             return InvalidJsonResponse()
 
-    monkeypatch.setattr(gallery_app, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key")
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.ai_metadata,
         "_prepare_image_for_openai",
         lambda _path: "data:image/jpeg;base64,eA==",
     )
@@ -456,9 +456,9 @@ def _patch_openai_transport(monkeypatch, payload):
         def post(self, *_args, **_kwargs):
             return FakeResponse()
 
-    monkeypatch.setattr(gallery_app, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key")
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.ai_metadata,
         "_prepare_image_for_openai",
         lambda _path: "data:image/jpeg;base64,eA==",
     )
@@ -538,13 +538,47 @@ def test_request_empty_content_no_crash(monkeypatch, tmp_path):
 def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
     """Reasoning models get a higher max_output_tokens floor."""
     monkeypatch.setattr(
-        app.state,
-        "ai_config",
+        gallery_app.config,
+        "runtime_ai_config",
         {"model": "gpt-5-mini", "max_output_tokens": 624},
-        raising=False,
     )
     cfg = gallery_app._get_ai_config()
     assert cfg["max_output_tokens"] == 1200
+
+
+# ---------------------------------------------------------------------------
+# Module split compatibility
+# ---------------------------------------------------------------------------
+
+
+def test_main_shim_exposes_compat_surface():
+    """`import main` keeps exposing the pre-split public surface."""
+    for name in ("app", "IMAGES_DIR", "_sanitize_filename", "templates"):
+        assert hasattr(gallery_app, name), f"main no longer exposes {name}"
+
+
+def test_all_routes_registered():
+    """Every pre-split route path is still registered on main.app."""
+    expected = {
+        "/",
+        "/artwork/{image_filename}",
+        "/admin",
+        "/admin/review",
+        "/admin/review/{image_name}",
+        "/admin/api/new-files",
+        "/admin/api/collections",
+        "/admin/config",
+        "/admin/config/reset",
+        "/admin/ai/regenerate",
+        "/admin/upload",
+        "/admin/import-path",
+        "/admin/metadata/{image_name}",
+        "/admin/unapprove/{image_name}",
+        "/admin/delete/{image_name}",
+    }
+    registered = {getattr(r, "path", None) for r in app.routes}
+    missing = expected - registered
+    assert not missing, f"routes missing after split: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +594,7 @@ def test_collections_requires_auth(client: TestClient):
 def test_collections_returns_distinct_values(authed_client, tmp_path, monkeypatch):
     image_root = tmp_path / "images"
     image_root.mkdir()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
     (image_root / "a.json").write_text(json.dumps({"collection": "Flora"}))
     (image_root / "b.json").write_text(json.dumps({"collection": "Flora"}))
     (image_root / "c.json").write_text(json.dumps({"collection": "Fauna"}))
@@ -623,9 +657,9 @@ def test_populate_persist_false_leaves_sidecar_unchanged(monkeypatch, tmp_path):
     image_root.mkdir()
     sidecar = _write_regen_sidecar(image_root)
     before = sidecar.read_bytes()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.ai_metadata,
         "_request_openai_metadata",
         lambda path, meta, fields: {
             "title": "AI Title",
@@ -647,16 +681,16 @@ def test_regenerate_force_failure_leaves_sidecar_unchanged(monkeypatch, tmp_path
     image_root.mkdir()
     sidecar = _write_regen_sidecar(image_root)
     before = sidecar.read_bytes()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.ai_metadata,
         "_populate_missing_metadata",
         lambda path, meta, only_fields=None, persist=True: {
             **meta,
             "ai_details": {"status": "error_parse"},
         },
     )
-    monkeypatch.setattr(gallery_app, "_refresh_pending_files", lambda _req: [])
+    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", lambda _req: [])
 
     response = asyncio.run(
         gallery_app.regenerate_ai_metadata(
@@ -679,9 +713,9 @@ def test_regenerate_preview_returns_values_without_write(monkeypatch, tmp_path):
     image_root.mkdir()
     sidecar = _write_regen_sidecar(image_root)
     before = sidecar.read_bytes()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.ai_metadata,
         "_populate_missing_metadata",
         lambda path, meta, only_fields=None, persist=True: {
             **meta,
@@ -689,7 +723,7 @@ def test_regenerate_preview_returns_values_without_write(monkeypatch, tmp_path):
             "ai_details": {"status": "success"},
         },
     )
-    monkeypatch.setattr(gallery_app, "_refresh_pending_files", lambda _req: [])
+    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", lambda _req: [])
 
     response = asyncio.run(
         gallery_app.regenerate_ai_metadata(
@@ -716,9 +750,9 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
     image_root = tmp_path / "images"
     image_root.mkdir()
     sidecar = _write_regen_sidecar(image_root)
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.ai_metadata,
         "_populate_missing_metadata",
         lambda path, meta, only_fields=None, persist=True: {
             **meta,
@@ -726,7 +760,7 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
             "ai_details": {"status": "success"},
         },
     )
-    monkeypatch.setattr(gallery_app, "_refresh_pending_files", lambda _req: [])
+    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", lambda _req: [])
 
     writes = []
     orig_write = gallery_app._write_sidecar
@@ -735,7 +769,7 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
         writes.append(path.name)
         return orig_write(path, meta)
 
-    monkeypatch.setattr(gallery_app, "_write_sidecar", counting_write)
+    monkeypatch.setattr(gallery_app.sidecars, "_write_sidecar", counting_write)
 
     response = asyncio.run(
         gallery_app.regenerate_ai_metadata(
@@ -773,9 +807,9 @@ def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
             }
         )
     )
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.ai_metadata,
         "_populate_missing_metadata",
         lambda path, meta, only_fields=None, persist=True: {
             **meta,
@@ -783,7 +817,7 @@ def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(
-        gallery_app,
+        gallery_app.watcher,
         "_refresh_pending_files",
         lambda _req: [],
     )
@@ -840,7 +874,7 @@ def test_metadata_post_unions_ai_fields(authed_client, tmp_path, monkeypatch):
     image_root = tmp_path / "images"
     image_root.mkdir()
     sidecar = _write_provenance_sidecar(image_root)
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
 
     response = authed_client.post(
         "/admin/metadata/prov_test.jpg",
@@ -864,7 +898,7 @@ def test_metadata_post_drops_invalid_ai_fields(authed_client, tmp_path, monkeypa
     image_root = tmp_path / "images"
     image_root.mkdir()
     sidecar = _write_provenance_sidecar(image_root)
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
 
     response = authed_client.post(
         "/admin/metadata/prov_test.jpg",
@@ -918,7 +952,7 @@ def test_metadata_post_persists_v2_fields(authed_client, tmp_path, monkeypatch):
             }
         )
     )
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
 
     response = authed_client.post(
         "/admin/metadata/v2test.jpg",
@@ -949,7 +983,7 @@ def test_regenerate_rejects_unsupported_fields(monkeypatch, tmp_path):
     image_root = tmp_path / "images"
     image_root.mkdir()
     (image_root / "x.jpg").touch()
-    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
 
     body = json.dumps({"images": ["x.jpg"], "fields": ["artist"]}).encode()
 
