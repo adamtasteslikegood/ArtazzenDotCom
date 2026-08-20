@@ -125,6 +125,10 @@ def _get_ai_config() -> dict[str, Any]:
         max_output_tokens = int(cfg.get("max_output_tokens", 600))
     except (TypeError, ValueError):
         max_output_tokens = 600
+    # Reasoning models spend output tokens on reasoning before emitting text;
+    # too small a budget yields incomplete (empty-text) responses.
+    if model.startswith("gpt-5") and max_output_tokens < 1200:
+        max_output_tokens = 1200
     return {
         "enabled": enabled,
         "model": model,
@@ -472,6 +476,35 @@ def _get_openai_api_key() -> str | None:
     return None
 
 
+def _strip_json_fences(text: str) -> str:
+    """Remove a wrapping markdown code fence (``` or ```json) from a JSON blob."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped[3:]
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:]
+        stripped = stripped.strip()
+        if stripped.endswith("```"):
+            stripped = stripped[:-3].strip()
+    return stripped
+
+
+def _unwrap_nested_json(value: str, field: str) -> str:
+    """If a string field value is itself a JSON object containing the field,
+    return the inner value (models sometimes nest the whole JSON reply inside
+    a single requested field)."""
+    candidate = _strip_json_fences(value)
+    if not candidate.startswith("{"):
+        return value
+    try:
+        inner = json.loads(candidate)
+    except json.JSONDecodeError:
+        return value
+    if isinstance(inner, dict) and isinstance(inner.get(field), str):
+        return inner[field]
+    return value
+
+
 def _request_openai_metadata(
     image_path: Path,
     metadata: dict[str, Any],
@@ -518,8 +551,8 @@ def _request_openai_metadata(
                     {
                         "type": "input_text",
                         "text": (
-                            "You create concise, visitor-friendly metadata for artwork images. "
-                            "Always respond with valid JSON only."
+                            "You create concise, visitor-friendly metadata "
+                            "for artwork images."
                         ),
                     }
                 ],
@@ -583,6 +616,23 @@ def _request_openai_metadata(
     details["response_id"] = payload.get("id", "")
     details["created"] = float(payload.get("created", details["attempted_at"]))
     details["model"] = payload.get("model", model)
+
+    # Truncated/failed responses (e.g. reasoning models exhausting
+    # max_output_tokens) must never be parsed or stored.
+    payload_status = payload.get("status")
+    if payload_status and payload_status != "completed":
+        reason = (payload.get("incomplete_details") or {}).get("reason", "")
+        details["status"] = "error_incomplete"
+        details["error"] = (
+            f"OpenAI response status '{payload_status}'"
+            + (f" ({reason})" if reason else "")
+        )
+        details["raw_response"] = {
+            "id": payload.get("id"),
+            "usage": payload.get("usage", {}),
+        }
+        return {"title": "", "description": "", "details": details}
+
     details["status"] = "success"
 
     # Extract JSON from Responses API output; support output_json and output_text
@@ -621,33 +671,42 @@ def _request_openai_metadata(
         elif isinstance(content, str):
             content_text = content
 
-    if parsed is None:
+    if parsed is None and content_text:
         try:
-            parsed = json.loads(content_text) if content_text else None
-        except json.JSONDecodeError as exc:
-            logger.warning("Unable to parse OpenAI metadata response: %s", exc)
-            details["status"] = "error_parse"
-            details["error"] = "OpenAI metadata response could not be parsed."
-            # attach brief output excerpt and types for debugging
-            try:
-                details["raw_response"] = {
-                    "id": payload.get("id"),
-                    "usage": payload.get("usage", {}),
-                    "output_types": [
-                        [
-                            (p or {}).get("type")
-                            for p in ((it or {}).get("content") or [])
-                        ]
-                        for it in (output or [])
-                    ],
-                    "text_excerpt": content_text[:200],
-                }
-            except Exception:
-                details["raw_response"] = {
-                    "id": payload.get("id"),
-                    "usage": payload.get("usage", {}),
-                }
-            return {"title": "", "description": "", "details": details}
+            parsed = json.loads(_strip_json_fences(content_text))
+        except json.JSONDecodeError:
+            parsed = None
+    # Some responses double-encode the JSON object as a string.
+    if isinstance(parsed, str):
+        with suppress(json.JSONDecodeError):
+            parsed = json.loads(_strip_json_fences(parsed))
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "Unable to parse OpenAI metadata response (type=%s)",
+            type(parsed).__name__,
+        )
+        details["status"] = "error_parse"
+        details["error"] = "OpenAI metadata response could not be parsed."
+        # attach brief output excerpt and types for debugging
+        try:
+            details["raw_response"] = {
+                "id": payload.get("id"),
+                "usage": payload.get("usage", {}),
+                "output_types": [
+                    [
+                        (p or {}).get("type")
+                        for p in ((it or {}).get("content") or [])
+                    ]
+                    for it in (output or [])
+                ],
+                "text_excerpt": content_text[:200],
+            }
+        except Exception:
+            details["raw_response"] = {
+                "id": payload.get("id"),
+                "usage": payload.get("usage", {}),
+            }
+        return {"title": "", "description": "", "details": details}
 
     # Keep raw id/usage only to avoid bloating sidecar
     details["raw_response"] = {
@@ -658,6 +717,8 @@ def _request_openai_metadata(
     result: dict[str, Any] = {"details": details}
     for field in needed_fields:
         val = parsed.get(field)
+        if isinstance(val, str):
+            val = _unwrap_nested_json(val, field)
         if field == "tags":
             if isinstance(val, list):
                 result[field] = [str(t).strip() for t in val if str(t).strip()]

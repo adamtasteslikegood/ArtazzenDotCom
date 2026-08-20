@@ -429,6 +429,125 @@ def test_openai_parse_error_details_are_not_exposed(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# OpenAI response parser hardening
+# ---------------------------------------------------------------------------
+
+
+def _patch_openai_transport(monkeypatch, payload):
+    """Patch key/image/httpx so _request_openai_metadata sees `payload`."""
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return payload
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(gallery_app, "_get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        gallery_app,
+        "_prepare_image_for_openai",
+        lambda _path: "data:image/jpeg;base64,eA==",
+    )
+    monkeypatch.setattr(gallery_app.httpx, "Client", FakeClient)
+
+
+def _output_text_payload(text: str) -> dict:
+    return {
+        "id": "resp_test",
+        "status": "completed",
+        "usage": {},
+        "output": [{"content": [{"type": "output_text", "text": text}]}],
+    }
+
+
+def test_request_incomplete_response_returns_error(monkeypatch, tmp_path):
+    """Truncated (incomplete) responses must not be parsed or stored."""
+    payload = {
+        "id": "resp_test",
+        "status": "incomplete",
+        "incomplete_details": {"reason": "max_output_tokens"},
+        "usage": {},
+        "output": [],
+    }
+    _patch_openai_transport(monkeypatch, payload)
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "error_incomplete"
+    assert "max_output_tokens" in result["details"]["error"]
+    assert result["title"] == ""
+
+
+def test_request_fenced_json_parses(monkeypatch, tmp_path):
+    """A markdown-fenced JSON reply is unwrapped and parsed."""
+    text = '```json\n{"title": "Neon Fern"}\n```'
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert result["title"] == "Neon Fern"
+
+
+def test_request_double_encoded_json_parses(monkeypatch, tmp_path):
+    """A JSON object double-encoded as a JSON string is decoded twice."""
+    text = json.dumps(json.dumps({"title": "Neon Fern"}))
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert result["title"] == "Neon Fern"
+
+
+def test_request_non_dict_parse_errors(monkeypatch, tmp_path):
+    """A parseable but non-object reply is a parse error, not a crash."""
+    _patch_openai_transport(monkeypatch, _output_text_payload("[1, 2, 3]"))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "error_parse"
+    assert result["title"] == ""
+
+
+def test_request_json_inside_title_unwrapped(monkeypatch, tmp_path):
+    """A whole JSON object nested inside the title value is unwrapped."""
+    nested = json.dumps({"title": "Clean Title", "description": "noise"})
+    text = json.dumps({"title": nested})
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert result["title"] == "Clean Title"
+
+
+def test_request_empty_content_no_crash(monkeypatch, tmp_path):
+    """Empty output must produce a parse error, not an AttributeError."""
+    payload = {"id": "resp_test", "status": "completed", "usage": {}, "output": []}
+    _patch_openai_transport(monkeypatch, payload)
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "error_parse"
+    assert result["title"] == ""
+
+
+def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
+    """Reasoning models get a higher max_output_tokens floor."""
+    monkeypatch.setattr(
+        app.state,
+        "ai_config",
+        {"model": "gpt-5-mini", "max_output_tokens": 624},
+        raising=False,
+    )
+    cfg = gallery_app._get_ai_config()
+    assert cfg["max_output_tokens"] == 1200
+
+
+# ---------------------------------------------------------------------------
 # Collections API
 # ---------------------------------------------------------------------------
 
