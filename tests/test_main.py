@@ -601,6 +601,26 @@ def test_main_shim_exposes_compat_surface():
         assert hasattr(gallery_app, name), f"main no longer exposes {name}"
 
 
+def test_base_template_on_public_pages(client: TestClient):
+    """Public pages render through base.html: site nav, footer, theme-init."""
+    for path in ("/", "/artwork/test_image.jpg"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert 'class="site-nav"' in response.text, path
+        assert "<footer>" in response.text, path
+        assert "az-theme" in response.text, path
+
+
+def test_base_template_on_admin_pages(authed_client):
+    """Admin pages render through base_admin.html: admin nav + theme-init."""
+    for path in ("/admin", "/admin/review/test_image.jpg"):
+        response = authed_client.get(path)
+        assert response.status_code == 200
+        assert 'class="admin-nav"' in response.text, path
+        assert 'class="admin-page"' in response.text, path
+        assert "az-theme" in response.text, path
+
+
 def test_all_routes_registered():
     """Every pre-split route path is still registered on main.app."""
     expected = {

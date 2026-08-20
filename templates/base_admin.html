@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block body_class %}admin-page{% endblock %}
+{% block body_attrs %} data-root-path="{{ request.scope.get('root_path', '') }}"{% endblock %}
+
+{% block header %}
+<h1>{% block admin_heading %}Administration{% endblock %}</h1>
+<p class="admin-subheading">{% block admin_subheading %}Gallery curation and artwork management{% endblock %}</p>
+<nav class="admin-nav">
+    {% block admin_nav %}
+    <a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
+    {% endblock %}
+</nav>
+{% endblock %}
+
+{% block footer %}<p>Artwork Gallery Administration</p>{% endblock %}
