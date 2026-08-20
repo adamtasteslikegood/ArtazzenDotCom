@@ -1533,6 +1533,8 @@ async def update_image_metadata(
     artist: str = Form(""),
     copyright_info: str = Form("", alias="copyright"),
     collection: str = Form(""),
+    ai_fields: str = Form(""),
+    ai_generated: str = Form(""),
     action: str = Form("save"),
     pending_dependency: list[dict[str, Any]] = Depends(get_pending_files),
     _: None = Depends(_verify_admin),
@@ -1567,13 +1569,21 @@ async def update_image_metadata(
     }
     existing = _load_metadata(image_path)
     prior_ai = set(existing.get("ai_fields", []))
-    if prior_ai:
-        changed = {
-            f
-            for f in ("title", "description", "caption", "tags")
-            if f in clean_metadata and clean_metadata[f] != existing.get(f)
-        }
-        existing["ai_fields"] = sorted(prior_ai - changed)
+    changed = {
+        f
+        for f in ("title", "description", "caption", "tags")
+        if f in clean_metadata and clean_metadata[f] != existing.get(f)
+    }
+    # Fields regenerated via preview arrive as a hidden form field; union
+    # them so provenance survives the preview-then-save flow.
+    incoming_ai = {
+        f.strip()
+        for f in ai_fields.split(",")
+        if f.strip() in ("title", "description", "caption", "tags")
+    }
+    existing["ai_fields"] = sorted((prior_ai - changed) | incoming_ai)
+    if incoming_ai or _coerce_bool(ai_generated):
+        existing["ai_generated"] = True
     existing.update(clean_metadata)
     existing["status"] = "approved"
     _write_sidecar(image_path, existing)

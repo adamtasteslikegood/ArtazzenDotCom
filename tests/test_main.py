@@ -807,6 +807,89 @@ def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# AI provenance through the preview-then-save flow
+# ---------------------------------------------------------------------------
+
+
+def _write_provenance_sidecar(image_root, name="prov_test"):
+    img = image_root / f"{name}.jpg"
+    img.touch()
+    sidecar = image_root / f"{name}.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "title": "Old",
+                "description": "Old",
+                "caption": "",
+                "tags": [],
+                "artist": "",
+                "copyright": "",
+                "collection": "",
+                "ai_generated": False,
+                "ai_fields": [],
+                "ai_details": {},
+                "status": "pending",
+                "detected_at": 0,
+            }
+        )
+    )
+    return sidecar
+
+
+def test_metadata_post_unions_ai_fields(authed_client, tmp_path, monkeypatch):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    sidecar = _write_provenance_sidecar(image_root)
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+
+    response = authed_client.post(
+        "/admin/metadata/prov_test.jpg",
+        data={
+            "title": "AI Title",
+            "description": "Manually written",
+            "ai_fields": "title,caption",
+            "ai_generated": "true",
+            "action": "save",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    saved = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert saved["ai_fields"] == ["caption", "title"]
+    assert saved["ai_generated"] is True
+
+
+def test_metadata_post_drops_invalid_ai_fields(authed_client, tmp_path, monkeypatch):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    sidecar = _write_provenance_sidecar(image_root)
+    monkeypatch.setattr(gallery_app, "IMAGES_DIR", image_root)
+
+    response = authed_client.post(
+        "/admin/metadata/prov_test.jpg",
+        data={
+            "title": "AI Title",
+            "ai_fields": "title,bogus,__proto__",
+            "action": "save",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    saved = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert saved["ai_fields"] == ["title"]
+
+
+def test_review_page_has_preview_regen_and_hidden_ai_fields(authed_client):
+    response = authed_client.get("/admin/review/test_image.jpg")
+    assert response.status_code == 200
+    assert "preview: true" in response.text
+    assert 'id="ai_fields"' in response.text
+    assert 'id="cancel-button"' in response.text
+
+
+# ---------------------------------------------------------------------------
 # Metadata POST persists v2 fields
 # ---------------------------------------------------------------------------
 
