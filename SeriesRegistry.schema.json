@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/SeriesRegistry.schema.json",
+  "title": "Series Registry",
+  "description": "Registry of artwork series stored at IMAGES_DIR/.curation/series.json. A series is an ordered group of related edits owned by exactly one collection; it always renders inside that collection's page. This registry is authoritative for membership and order; sidecar 'series' arrays are denormalized mirrors.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "series"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "collection"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "Globally unique slug; referenced as /collections/{collection}#series-{id}."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "default": ""
+          },
+          "collection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "Slug of the owning collection (required, non-empty)."
+          },
+          "images": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "description": "Ordered member image filenames; array order is display order."
+          }
+        }
+      }
+    }
+  }
+}

@@ -204,6 +204,21 @@ def validate_and_migrate(images_dir: Path = IMAGES_DIR) -> int:
             changed += 1
 
     print(f"Validated {total} images; updated {changed} sidecars.")
+
+    # Curation registries (collections/series) — validate + repair drift.
+    try:
+        from app import curation
+
+        report = curation.validate_registries(repair=True)
+        for warning in report["warnings"]:
+            print(f"[warn] {warning}")
+        for error in report["errors"]:
+            print(f"[error] {error}")
+        if report["errors"]:
+            return 1
+        print("Curation registries valid.")
+    except ImportError as exc:
+        print(f"[warn] Skipping registry validation (app package unavailable: {exc})")
     return 0
 
 

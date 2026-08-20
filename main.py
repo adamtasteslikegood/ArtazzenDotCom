@@ -11,7 +11,7 @@ are snapshots, not live bindings.
 
 import httpx  # noqa: F401  (legacy patch target: gallery_app.httpx)
 
-from app import ai_metadata, config, security, sidecars, watcher  # noqa: F401
+from app import ai_metadata, config, curation, security, sidecars, watcher  # noqa: F401
 from app.ai_metadata import (  # noqa: F401
     _build_openai_prompt,
     _get_openai_api_key,

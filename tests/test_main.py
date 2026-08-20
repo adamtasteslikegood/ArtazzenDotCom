@@ -557,6 +557,138 @@ def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Collections and series (schema v3 curation)
+# ---------------------------------------------------------------------------
+
+
+def _make_curation_root(tmp_path, monkeypatch):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    return image_root
+
+
+def _add_image(image_root, name, **fields):
+    (image_root / name).touch()
+    sidecar = {
+        "title": fields.pop("title", name),
+        "description": "",
+        "ai_generated": False,
+        "ai_details": {},
+        "ai_fields": [],
+        "status": fields.pop("status", "approved"),
+        "detected_at": 0,
+        "caption": "",
+        "tags": [],
+        "artist": "",
+        "copyright": "",
+        "collection": fields.pop("collection", ""),
+        **fields,
+    }
+    (image_root / name).with_suffix(".json").write_text(json.dumps(sidecar))
+    return sidecar
+
+
+def test_migrate_legacy_collections_idempotent(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", collection="Botanical Studies")
+    _add_image(image_root, "b.jpg", collection="Botanical Studies")
+    _add_image(image_root, "c.jpg", collection="")
+
+    assert gallery_app.curation.migrate_legacy_collections() == 2
+    reg = gallery_app.curation.load_collections()
+    assert [c["id"] for c in reg["collections"]] == ["botanical-studies"]
+    assert reg["collections"][0]["title"] == "Botanical Studies"
+    saved = json.loads((image_root / "a.json").read_text())
+    assert saved["collections"] == ["botanical-studies"]
+    assert saved["collection"] == "Botanical Studies"  # deprecated field kept
+
+    # Second run migrates nothing and changes nothing.
+    assert gallery_app.curation.migrate_legacy_collections() == 0
+    assert gallery_app.curation.load_collections() == reg
+
+
+def test_migrate_slug_collision_first_seen_title_wins(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", collection="Neon Flora")
+    _add_image(image_root, "b.jpg", collection="neon   flora")
+
+    gallery_app.curation.migrate_legacy_collections()
+    reg = gallery_app.curation.load_collections()
+    assert [c["id"] for c in reg["collections"]] == ["neon-flora"]
+    assert reg["collections"][0]["title"] == "Neon Flora"
+    assert json.loads((image_root / "b.json").read_text())["collections"] == [
+        "neon-flora"
+    ]
+
+
+def test_series_mirror_drift_repaired_registry_wins(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg")
+    _add_image(image_root, "b.jpg", series=["stale-series"])
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+    gallery_app.curation.upsert_series(
+        {"id": "orchid-edits", "title": "Orchid Edits", "collection": "flora",
+         "images": ["a.jpg"]}
+    )
+
+    report = gallery_app.curation.validate_registries(repair=True)
+    assert report["errors"] == []
+    assert json.loads((image_root / "a.json").read_text())["series"] == [
+        "orchid-edits"
+    ]
+    assert json.loads((image_root / "b.json").read_text())["series"] == []
+
+
+def test_validate_flags_parent_cycles(tmp_path, monkeypatch):
+    _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.save_collections(
+        {
+            "version": 1,
+            "collections": [
+                {"id": "a", "title": "A", "parent": "b", "cover": "",
+                 "description": "", "order": 0},
+                {"id": "b", "title": "B", "parent": "a", "cover": "",
+                 "description": "", "order": 1},
+            ],
+        }
+    )
+    report = gallery_app.curation.validate_registries(repair=False)
+    assert any("cycle" in e for e in report["errors"])
+
+
+def test_validate_drops_dangling_collection_slugs(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", collections=["ghost-collection"])
+    gallery_app.curation.ensure_registries()
+
+    report = gallery_app.curation.validate_registries(repair=True)
+    assert report["errors"] == []
+    assert any("dangling" in w for w in report["warnings"])
+    assert json.loads((image_root / "a.json").read_text())["collections"] == []
+
+
+def test_upsert_collection_rejects_cycle(tmp_path, monkeypatch):
+    _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "root", "title": "Root"})
+    gallery_app.curation.upsert_collection(
+        {"id": "child", "title": "Child", "parent": "root"}
+    )
+    with pytest.raises(ValueError):
+        gallery_app.curation.upsert_collection(
+            {"id": "root", "title": "Root", "parent": "child"}
+        )
+
+
+def test_series_requires_existing_collection(tmp_path, monkeypatch):
+    _make_curation_root(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        gallery_app.curation.upsert_series(
+            {"id": "loose", "title": "Loose", "collection": "nope", "images": []}
+        )
+
+
+# ---------------------------------------------------------------------------
 # Module split compatibility
 # ---------------------------------------------------------------------------
 

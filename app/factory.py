@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app import config, sidecars, watcher
+from app import config, curation, sidecars, watcher
 from app.routes_admin import router as admin_router
 from app.routes_public import router as public_router
 from app.security import _SecurityHeadersMiddleware
@@ -17,6 +17,9 @@ async def lifespan(app: FastAPI):
     # Startup
     config.runtime_ai_config = config._load_ai_config()
     sidecars._validate_and_migrate_sidecars()
+    curation.ensure_registries()
+    curation.migrate_legacy_collections()
+    curation.sync_series_mirrors()
     app.state.pending_images = watcher.new_files_detected()
     app.state.watcher_task = asyncio.create_task(watcher._watch_image_directory(app))
     yield
