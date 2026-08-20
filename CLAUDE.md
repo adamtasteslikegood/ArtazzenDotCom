@@ -204,7 +204,7 @@ gh api repos/{owner}/{repo}/issues/{number}/comments \
   --jq '.[] | {user: .user.login, body: .body}'
 ```
 
-A PreToolUse hook blocks `gh pr merge` until all comments have been read via these API calls.
+A deterministic PreToolUse hook (`.claude/hooks/pretooluse-pr-review-nudge.sh`) guards this: `gh pr merge` requires confirmation that all comments are addressed, `gh pr view --comments` is denied in favor of the API calls above, and reads/replies get skill nudges. It fires only on matching `gh` commands.
 
 ## Common Commands
 
