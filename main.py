@@ -85,6 +85,7 @@ from app.watcher import (  # noqa: F401
     _watch_image_directory,
     get_pending_files,
     new_files_detected,
+    refresh_pending_files,
 )
 
 app = create_app()

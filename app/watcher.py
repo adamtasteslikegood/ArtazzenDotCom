@@ -94,15 +94,30 @@ async def _watch_image_directory(app: FastAPI) -> None:
 async def get_pending_files(request: Request) -> list[dict[str, Any]]:
     """
     FastAPI dependency to get the list of pending files.
-    This runs before routes that depend on it. The scan is offloaded to a
-    worker thread: running it inline blocked the event loop for the full
-    scan (plus any OpenAI calls), stalling every in-flight request.
+    This runs before routes that depend on it.
     """
-    return await asyncio.to_thread(_refresh_pending_files, request)
+    return await refresh_pending_files(request)
+
+
+async def refresh_pending_files(request: Request) -> list[dict[str, Any]]:
+    """Re-scan pending images and keep the application cache in sync.
+
+    The scan is offloaded to a worker thread — running it inline blocked
+    the event loop for the full scan (plus any OpenAI calls), stalling
+    every in-flight request. The app-state assignment happens back on the
+    event loop so no request state crosses threads.
+    """
+    pending = await asyncio.to_thread(new_files_detected)
+    request.app.state.pending_images = pending
+    return pending
 
 
 def _refresh_pending_files(request: Request) -> list[dict[str, Any]]:
-    """Re-scan pending images and keep the application cache in sync."""
+    """Synchronous variant, retained for compatibility (main shim export).
+
+    App code calls :func:`refresh_pending_files` instead; this blocks the
+    caller for the full scan.
+    """
     pending = new_files_detected()
     request.app.state.pending_images = pending
     return pending

@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+from contextlib import suppress
 
 import pytest
 from fastapi import HTTPException
@@ -232,8 +233,8 @@ def test_regenerate_metadata_does_not_expose_exception_details(monkeypatch, tmp_
     )
     monkeypatch.setattr(
         gallery_app.watcher,
-        "_refresh_pending_files",
-        lambda _request: [{"name": "fresh-state.jpg"}],
+        "new_files_detected",
+        lambda: [{"name": "fresh-state.jpg"}],
     )
     body = json.dumps({"images": ["safe.jpg"]}).encode("utf-8")
 
@@ -269,9 +270,7 @@ def test_upload_without_size_attribute_uses_streaming_limit(monkeypatch, tmp_pat
     image_root = tmp_path / "images"
     image_root.mkdir()
     monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
-    monkeypatch.setattr(
-        gallery_app.watcher, "_refresh_pending_files", lambda _request: []
-    )
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
 
     class UploadWithoutSize:
         filename = "no-size.png"
@@ -315,8 +314,8 @@ def test_import_returns_refreshed_pending_state(monkeypatch, tmp_path):
     monkeypatch.setattr(gallery_app.config, "IMPORT_ROOT", import_root)
     monkeypatch.setattr(
         gallery_app.watcher,
-        "_refresh_pending_files",
-        lambda _request: [{"name": "fresh-state.jpg"}],
+        "new_files_detected",
+        lambda: [{"name": "fresh-state.jpg"}],
     )
     request = Request(
         {
@@ -636,12 +635,14 @@ async def test_get_pending_files_does_not_block_event_loop(monkeypatch):
     the ticker below would record zero ticks until the scan finished.
     """
     import time as _time
+    from types import SimpleNamespace
 
-    def slow_refresh(_request):
+    def slow_scan():
         _time.sleep(0.2)
         return ["scan-result"]
 
-    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", slow_refresh)
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", slow_scan)
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
 
     ticks = 0
 
@@ -653,12 +654,15 @@ async def test_get_pending_files_does_not_block_event_loop(monkeypatch):
 
     task = asyncio.create_task(ticker())
     try:
-        result = await gallery_app.watcher.get_pending_files(None)
+        result = await gallery_app.watcher.get_pending_files(request)
         ticks_at_return = ticks
     finally:
         task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
     assert result == ["scan-result"]
+    assert request.app.state.pending_images == ["scan-result"]
     assert ticks_at_return >= 5
 
 
@@ -801,7 +805,7 @@ def test_regenerate_force_failure_leaves_sidecar_unchanged(monkeypatch, tmp_path
             "ai_details": {"status": "error_parse"},
         },
     )
-    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", lambda _req: [])
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
 
     response = asyncio.run(
         gallery_app.regenerate_ai_metadata(
@@ -834,7 +838,7 @@ def test_regenerate_preview_returns_values_without_write(monkeypatch, tmp_path):
             "ai_details": {"status": "success"},
         },
     )
-    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", lambda _req: [])
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
 
     response = asyncio.run(
         gallery_app.regenerate_ai_metadata(
@@ -871,7 +875,7 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
             "ai_details": {"status": "success"},
         },
     )
-    monkeypatch.setattr(gallery_app.watcher, "_refresh_pending_files", lambda _req: [])
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
 
     writes = []
     orig_write = gallery_app._write_sidecar
@@ -929,8 +933,8 @@ def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         gallery_app.watcher,
-        "_refresh_pending_files",
-        lambda _req: [],
+        "new_files_detected",
+        list,
     )
 
     response = asyncio.run(

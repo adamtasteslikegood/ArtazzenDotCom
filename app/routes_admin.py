@@ -278,7 +278,7 @@ async def regenerate_ai_metadata(
             logger.exception("Failed to regenerate metadata for %s", fname)
             errors.append({"name": fname, "error": "Metadata regeneration failed"})
 
-    pending = watcher._refresh_pending_files(request)
+    pending = await watcher.refresh_pending_files(request)
     return JSONResponse({"updated": updated, "errors": errors, "pending": pending})
 
 
@@ -352,7 +352,7 @@ async def upload_images(
             upload.file.close()
 
     message = "Uploaded files successfully" if saved else "No supported files uploaded"
-    pending = watcher._refresh_pending_files(request)
+    pending = await watcher.refresh_pending_files(request)
     return JSONResponse(
         {"saved": saved, "skipped": skipped, "message": message, "pending": pending}
     )
@@ -386,7 +386,7 @@ async def import_from_path(
         else:
             skipped.append(target_name)
 
-    pending = watcher._refresh_pending_files(request)
+    pending = await watcher.refresh_pending_files(request)
     return JSONResponse({"copied": copied, "skipped": skipped, "pending": pending})
 
 
