@@ -166,14 +166,75 @@ See `.env.example` for the full list. Key vars:
 | `MAX_UPLOAD_SIZE_MB`          | `50`                | Max upload file size                                                   |
 | `PORT`                        | _(uvicorn default)_ | Server port (set by Railway)                                           |
 
-## Behavioral Guidelines
+## Core Principles
 
-Follow the four Karpathy principles:
+Follow the four Karpathy principles for LLM-assisted coding ([full skill](~/.claude/skills/karpathy-guidelines/SKILL.md)):
 
-1. **Think Before Coding** — Understand the full context before making changes.
-2. **Simplicity First** — Prefer the simplest solution that works.
-3. **Surgical Changes** — Minimize diff size; touch only what's needed.
-4. **Goal-Driven Execution** — Stay focused on the stated objective.
+1. **Think Before Coding** — State assumptions before implementing. If a request admits multiple interpretations, list them rather than silently picking one. When something is genuinely unclear, stop and ask.
+2. **Simplicity First** — Write the minimum code that solves the stated problem. No speculative features, premature abstractions, or configuration knobs for one call site.
+3. **Surgical Changes** — Touch only what the task requires. Do not opportunistically refactor adjacent code. Every changed line should be traceable to the user's request.
+4. **Goal-Driven Execution** — Convert vague requests into checkable success criteria before coding. For multi-step tasks, state the plan with verification per step.
+
+## Workflow Instructions
+
+1. **Branch** from `dev` using the appropriate prefix (`feat/`, `fix/`, `docs/`, `chore/`).
+2. **Develop** incrementally — commit often with clear messages.
+3. **Validate** — run `pytest` and `python manage_sidecars.py validate` before pushing.
+4. **Push** and open a PR targeting `dev`. Mark as draft if still in progress.
+5. **Review** — wait for CodeQL and Copilot checks; respond to every comment thread.
+6. **Merge** via rebase or merge commit (squash is not allowed by ruleset).
+
+See [Git Workflow](#git-workflow) and [BRANCHING_STRATEGY.md](BRANCHING_STRATEGY.md) for full details.
+
+## PR Review — Reading Comments
+
+When receiving code review or preparing to merge, use the GitHub API to read **all** feedback. `gh pr view --comments` misses review bodies and suppressed Copilot reviews.
+
+```bash
+# Full review bodies (includes suppressed Copilot reviews)
+gh api repos/{owner}/{repo}/pulls/{number}/reviews \
+  --jq '.[] | {user: .user.login, state: .state, body: .body}'
+
+# Inline review comments (file-level feedback)
+gh api repos/{owner}/{repo}/pulls/{number}/comments \
+  --jq '.[] | {user: .user.login, path: .path, body: .body}'
+
+# General PR comments (top-level discussion)
+gh api repos/{owner}/{repo}/issues/{number}/comments \
+  --jq '.[] | {user: .user.login, body: .body}'
+```
+
+A PreToolUse hook blocks `gh pr merge` until all comments have been read via these API calls.
+
+## Common Commands
+
+```bash
+# Development
+uvicorn main:app --reload                    # Start dev server
+pytest                                       # Run test suite
+python manage_sidecars.py validate           # Validate sidecar JSON
+
+# API probes
+curl http://127.0.0.1:8000/admin/api/new-files
+curl -F "files=@image.jpg" http://127.0.0.1:8000/admin/upload
+curl http://127.0.0.1:8000/admin/config
+
+# Branch management
+bash scripts/ahead-behind.sh                 # Branch divergence vs default
+bash scripts/ahead-behind.sh --base dev      # Branch divergence vs dev
+```
+
+## Quality Checklist
+
+Before submitting a PR, verify:
+
+- [ ] Sidecar JSON validates: `python manage_sidecars.py validate`
+- [ ] Tests pass: `pytest`
+- [ ] Gallery renders correctly at `/`
+- [ ] Admin dashboard loads at `/admin`
+- [ ] Upload flow works end-to-end
+- [ ] No hardcoded secrets or API keys in diff
+- [ ] `Static/` capitalization preserved
 
 ## Skill routing
 

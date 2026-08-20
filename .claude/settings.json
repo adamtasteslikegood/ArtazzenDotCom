@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "prompt",
+            "if": "Bash(gh pr merge*)",
+            "prompt": "STOP before merging. You MUST have read ALL PR review feedback first. This means using the GitHub API — NOT `gh pr view --comments` which misses review bodies and suppressed Copilot comments. Required reads before any merge:\n\n1. Full review bodies: `gh api repos/{owner}/{repo}/pulls/{number}/reviews --jq '.[] | {user: .user.login, state: .state, body: .body}'`\n2. Inline review comments: `gh api repos/{owner}/{repo}/pulls/{number}/comments --jq '.[] | {user: .user.login, path: .path, body: .body}'`\n3. General PR comments: `gh api repos/{owner}/{repo}/issues/{number}/comments --jq '.[] | {user: .user.login, body: .body}'`\n\nThese API calls retrieve suppressed Copilot reviews and full review comment bodies that `gh pr view` omits.\n\nHave ALL review comments (including suppressed Copilot reviews) been read and addressed? If not, BLOCK this merge.",
+            "statusMessage": "Checking PR review comments were read..."
+          }
+        ]
+      }
+    ]
+  }
+}
