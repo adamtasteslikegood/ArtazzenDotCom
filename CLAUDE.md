@@ -59,23 +59,23 @@ Layering (no cycles): `config → sidecars → ai_metadata → curation → watc
 
 ### Route Map
 
-| Path                           | Method   | Purpose                 |
-| ------------------------------ | -------- | ----------------------- |
-| `/`                            | GET      | Public gallery          |
-| `/artwork/{image_filename}`    | GET      | Single artwork detail   |
-| `/admin`                       | GET      | Admin dashboard         |
-| `/admin/review`                | GET      | Review queue            |
-| `/admin/review/{image_name}`   | GET      | Review specific image   |
-| `/admin/api/new-files`         | GET      | JSON: pending files     |
-| `/admin/upload`                | POST     | Upload artwork          |
-| `/admin/import-path`           | POST     | Import from filesystem  |
-| `/admin/metadata/{image_name}` | POST     | Save image metadata     |
-| `/collections`                 | GET      | Collections index       |
-| `/collections/{slug}`          | GET      | Collection page (series strips + grid) |
-| `/admin/api/collections`       | GET/POST | Collections registry CRUD |
-| `/admin/api/series`            | GET/POST | Series registry CRUD    |
-| `/admin/config`                | GET/POST | AI config CRUD          |
-| `/admin/config/reset`          | POST     | Reset AI config         |
+| Path                           | Method   | Purpose                                                 |
+| ------------------------------ | -------- | ------------------------------------------------------- |
+| `/`                            | GET      | Public gallery                                          |
+| `/artwork/{image_filename}`    | GET      | Single artwork detail                                   |
+| `/admin`                       | GET      | Admin dashboard                                         |
+| `/admin/review`                | GET      | Review queue                                            |
+| `/admin/review/{image_name}`   | GET      | Review specific image                                   |
+| `/admin/api/new-files`         | GET      | JSON: pending files                                     |
+| `/admin/upload`                | POST     | Upload artwork                                          |
+| `/admin/import-path`           | POST     | Import from filesystem                                  |
+| `/admin/metadata/{image_name}` | POST     | Save image metadata                                     |
+| `/collections`                 | GET      | Collections index                                       |
+| `/collections/{slug}`          | GET      | Collection page (series strips + grid)                  |
+| `/admin/api/collections`       | GET/POST | Collections registry CRUD                               |
+| `/admin/api/series`            | GET/POST | Series registry CRUD                                    |
+| `/admin/config`                | GET/POST | AI config CRUD                                          |
+| `/admin/config/reset`          | POST     | Reset AI config                                         |
 | `/admin/ai/regenerate`         | POST     | AI regeneration (supports `fields`, `force`, `preview`) |
 
 ## Tech Stack

@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import config, curation  # noqa: E402
+from app import config, curation
 
 
 def main() -> int:

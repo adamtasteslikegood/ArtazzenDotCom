@@ -1,7 +1,6 @@
 """Admin dashboard, review, upload, import, config, and curation routes."""
 
 import copy
-import json
 import logging
 import os
 import shutil
@@ -158,9 +157,7 @@ async def mutate_collections(
             status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found"
         )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="action must be one of: create, update, delete",
@@ -202,10 +199,8 @@ async def mutate_series(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Series not found"
         )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="action must be one of: create, update, reorder, delete",

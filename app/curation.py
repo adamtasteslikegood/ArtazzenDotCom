@@ -40,9 +40,7 @@ _EMPTY_SERIES: dict[str, Any] = {"version": 1, "series": []}
 
 def slugify(value: str) -> str:
     """Turn an arbitrary label into a registry slug."""
-    normalized = (
-        unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
-    )
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
     slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
     return slug or "untitled"
 
@@ -190,9 +188,7 @@ def _approved_metadata(filename: str) -> dict[str, Any] | None:
     meta = sidecars._load_metadata(image_path)
     if meta.get("status", "pending") != "approved":
         return None
-    meta.update(
-        {"url": f"{config.IMAGES_URL_PREFIX}/{filename}", "name": filename}
-    )
+    meta.update({"url": f"{config.IMAGES_URL_PREFIX}/{filename}", "name": filename})
     return meta
 
 
@@ -372,7 +368,9 @@ def upsert_collection(entry: dict[str, Any]) -> dict[str, Any]:
         ),
         "parent": parent,
         "cover": str(entry.get("cover", (existing or {}).get("cover", ""))),
-        "order": int(entry.get("order", (existing or {}).get("order", len(reg["collections"])))),
+        "order": int(
+            entry.get("order", (existing or {}).get("order", len(reg["collections"])))
+        ),
     }
     if existing:
         reg["collections"] = [
@@ -440,7 +438,7 @@ def upsert_series(entry: dict[str, Any]) -> dict[str, Any]:
 
     images_in = entry.get("images", (existing or {}).get("images", []))
     if not isinstance(images_in, list):
-        raise ValueError("Series images must be a list of filenames")
+        raise TypeError("Series images must be a list of filenames")
     images = []
     for filename in images_in:
         name = sidecars._sanitize_filename(str(filename))

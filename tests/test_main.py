@@ -628,15 +628,17 @@ def test_series_mirror_drift_repaired_registry_wins(tmp_path, monkeypatch):
     _add_image(image_root, "b.jpg", series=["stale-series"])
     gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
     gallery_app.curation.upsert_series(
-        {"id": "orchid-edits", "title": "Orchid Edits", "collection": "flora",
-         "images": ["a.jpg"]}
+        {
+            "id": "orchid-edits",
+            "title": "Orchid Edits",
+            "collection": "flora",
+            "images": ["a.jpg"],
+        }
     )
 
     report = gallery_app.curation.validate_registries(repair=True)
     assert report["errors"] == []
-    assert json.loads((image_root / "a.json").read_text())["series"] == [
-        "orchid-edits"
-    ]
+    assert json.loads((image_root / "a.json").read_text())["series"] == ["orchid-edits"]
     assert json.loads((image_root / "b.json").read_text())["series"] == []
 
 
@@ -646,10 +648,22 @@ def test_validate_flags_parent_cycles(tmp_path, monkeypatch):
         {
             "version": 1,
             "collections": [
-                {"id": "a", "title": "A", "parent": "b", "cover": "",
-                 "description": "", "order": 0},
-                {"id": "b", "title": "B", "parent": "a", "cover": "",
-                 "description": "", "order": 1},
+                {
+                    "id": "a",
+                    "title": "A",
+                    "parent": "b",
+                    "cover": "",
+                    "description": "",
+                    "order": 0,
+                },
+                {
+                    "id": "b",
+                    "title": "B",
+                    "parent": "a",
+                    "cover": "",
+                    "description": "",
+                    "order": 1,
+                },
             ],
         }
     )
@@ -708,15 +722,17 @@ def _curation_fixture(tmp_path, monkeypatch):
         path.write_text(json.dumps(data))
     # Series owned by flora, ordered b then a; a is ALSO a direct member.
     gallery_app.curation.upsert_series(
-        {"id": "orchid-edits", "title": "Orchid Edits", "collection": "flora",
-         "images": ["b.jpg", "a.jpg"]}
+        {
+            "id": "orchid-edits",
+            "title": "Orchid Edits",
+            "collection": "flora",
+            "images": ["b.jpg", "a.jpg"],
+        }
     )
     return image_root
 
 
-def test_collection_page_series_order_anchor_and_dedup(
-    client, tmp_path, monkeypatch
-):
+def test_collection_page_series_order_anchor_and_dedup(client, tmp_path, monkeypatch):
     _curation_fixture(tmp_path, monkeypatch)
     response = client.get("/collections/flora")
     assert response.status_code == 200
@@ -760,9 +776,7 @@ def test_collections_index_lists_top_level(client, tmp_path, monkeypatch):
     assert "/collections/hidden-child" not in response.text
 
 
-def test_series_api_create_syncs_sidecar_mirrors(
-    authed_client, tmp_path, monkeypatch
-):
+def test_series_api_create_syncs_sidecar_mirrors(authed_client, tmp_path, monkeypatch):
     image_root = _make_curation_root(tmp_path, monkeypatch)
     _add_image(image_root, "a.jpg")
     gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
@@ -771,14 +785,16 @@ def test_series_api_create_syncs_sidecar_mirrors(
         "/admin/api/series",
         json={
             "action": "create",
-            "series": {"id": "new-series", "title": "New", "collection": "flora",
-                       "images": ["a.jpg"]},
+            "series": {
+                "id": "new-series",
+                "title": "New",
+                "collection": "flora",
+                "images": ["a.jpg"],
+            },
         },
     )
     assert response.status_code == 200
-    assert json.loads((image_root / "a.json").read_text())["series"] == [
-        "new-series"
-    ]
+    assert json.loads((image_root / "a.json").read_text())["series"] == ["new-series"]
 
 
 def test_collection_delete_reparents_and_cleans_sidecars(
@@ -804,9 +820,7 @@ def test_collection_delete_reparents_and_cleans_sidecars(
     assert json.loads((image_root / "a.json").read_text())["collections"] == []
 
 
-def test_metadata_post_persists_valid_collections(
-    authed_client, tmp_path, monkeypatch
-):
+def test_metadata_post_persists_valid_collections(authed_client, tmp_path, monkeypatch):
     image_root = _make_curation_root(tmp_path, monkeypatch)
     _add_image(image_root, "a.jpg", status="pending")
     gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
