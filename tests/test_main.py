@@ -727,6 +727,51 @@ def test_upsert_collection_null_order_falls_back(tmp_path, monkeypatch):
         {"id": "flora", "title": "Flora", "order": "not-a-number"}
     )
     assert isinstance(entry["order"], int)
+    # JSON booleans coerce via int(True) == 1; the schema forbids them.
+    entry = gallery_app.curation.upsert_collection(
+        {"id": "flora", "title": "Flora", "order": 7}
+    )
+    entry = gallery_app.curation.upsert_collection(
+        {"id": "flora", "title": "Flora", "order": True}
+    )
+    assert entry["order"] == 7
+    # 1e999 decodes to infinity; int(inf) raises OverflowError.
+    entry = gallery_app.curation.upsert_collection(
+        {"id": "flora", "title": "Flora", "order": float("inf")}
+    )
+    assert entry["order"] == 7
+
+
+def test_ai_persist_merges_concurrent_sidecar_changes(monkeypatch, tmp_path):
+    """An admin change made during the (slow) AI call must survive the
+    persist — the pre-call snapshot must not be written back wholesale."""
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", title="", status="pending")
+    sidecar = image_root / "a.json"
+
+    def approving_request(path, meta, fields):
+        # Simulate an admin approving the image while the AI call is in
+        # flight: the on-disk sidecar changes under the caller's snapshot.
+        data = json.loads(sidecar.read_text())
+        data["status"] = "approved"
+        data["description"] = "Edited during AI call"
+        sidecar.write_text(json.dumps(data))
+        return {"title": "AI Title", "details": {"status": "success"}}
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", approving_request
+    )
+
+    meta = gallery_app.sidecars._load_metadata(image_root / "a.jpg")
+    result = gallery_app.ai_metadata._populate_missing_metadata(
+        image_root / "a.jpg", meta, only_fields=["title"], persist=True
+    )
+
+    saved = json.loads(sidecar.read_text())
+    assert saved["title"] == "AI Title"  # this call's field applied
+    assert saved["status"] == "approved"  # concurrent approval survives
+    assert saved["description"] == "Edited during AI call"
+    assert result["status"] == "approved"  # caller sees the merged truth
 
 
 def test_preview_regenerate_does_not_trigger_refresh(monkeypatch, tmp_path):

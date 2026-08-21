@@ -66,7 +66,10 @@ logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-sidecar_lock = threading.Lock()
+# RLock: writers that must make a read-merge-write cycle atomic (e.g. the
+# AI populate persist path) hold it across _write_sidecar, which acquires
+# it again.
+sidecar_lock = threading.RLock()
 config_lock = threading.Lock()
 
 # Runtime AI configuration, populated by the app lifespan and the admin

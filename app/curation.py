@@ -41,18 +41,47 @@ _EMPTY_COLLECTIONS: dict[str, Any] = {"version": 1, "collections": []}
 _EMPTY_SERIES: dict[str, Any] = {"version": 1, "series": []}
 
 # Serializes registry read-modify-write cycles so concurrent mutations
-# cannot clobber each other's atomic rename or lose updates. RLock because
-# mutations nest (e.g. upsert_series -> sync_series_mirrors).
+# cannot clobber each other's atomic rename or lose updates. Two layers:
+# an RLock for threads in this process (mutations nest, e.g. upsert_series
+# -> sync_series_mirrors), plus a POSIX flock on .curation/.lock so a
+# second process (another worker, or manage_sidecars.py running against a
+# live app) is excluded too. Deployment targets are Linux (Railway/local);
+# the file lock fails open with a warning where flock is unavailable.
 _registry_lock = threading.RLock()
+_lock_depth = threading.local()
+_LOCKFILE_NAME = ".lock"
+
+
+def _acquire_registry_file_lock():
+    try:
+        import fcntl
+
+        _curation_dir().mkdir(parents=True, exist_ok=True)
+        # The handle must outlive this function: closing it releases the
+        # flock, which _locked_mutation does after the mutation completes.
+        handle = open(_curation_dir() / _LOCKFILE_NAME, "a")  # noqa: SIM115
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        return handle
+    except Exception as exc:  # pragma: no cover - platform dependent
+        logger.warning("Registry file lock unavailable (%s); proceeding", exc)
+        return None
 
 
 def _locked_mutation(fn):
-    """Run a registry mutation under the shared registry lock."""
+    """Run a registry mutation under the thread and file locks."""
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         with _registry_lock:
-            return fn(*args, **kwargs)
+            depth = getattr(_lock_depth, "value", 0)
+            _lock_depth.value = depth + 1
+            handle = _acquire_registry_file_lock() if depth == 0 else None
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                _lock_depth.value = depth
+                if handle is not None:
+                    handle.close()  # closing releases the flock
 
     return wrapper
 
@@ -396,12 +425,17 @@ def upsert_collection(entry: dict[str, Any]) -> dict[str, Any]:
 
     existing = by_slug.get(slug)
     fallback_order = (existing or {}).get("order", len(reg["collections"]))
-    try:
-        order = int(entry.get("order", fallback_order))
-    except (TypeError, ValueError):
-        # null/non-numeric from client JSON keeps the existing/default order
-        # instead of surfacing a 500.
+    order_value = entry.get("order", fallback_order)
+    if isinstance(order_value, bool):
+        # int(True) == 1 would silently accept a boolean the schema forbids.
         order = fallback_order
+    else:
+        try:
+            order = int(order_value)
+        except (TypeError, ValueError, OverflowError):
+            # null/non-numeric/infinite client JSON keeps the existing or
+            # default order instead of surfacing a 500.
+            order = fallback_order
     clean = {
         "id": slug,
         "title": str(entry.get("title") or (existing or {}).get("title") or slug),
@@ -530,6 +564,7 @@ def _load_registry_schema(name: str) -> dict[str, Any] | None:
         return None
 
 
+@_locked_mutation
 def validate_registries(repair: bool = True) -> dict[str, list[str]]:
     """Validate both registries and referential integrity.
 

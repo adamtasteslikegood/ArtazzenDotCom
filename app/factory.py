@@ -23,8 +23,10 @@ async def lifespan(app: FastAPI):
     # Start empty: the watcher task's first cycle runs immediately (off the
     # event loop) and populates the cache; scanning inline here blocked
     # startup — and thus deploy readiness — for a full scan plus any
-    # OpenAI calls. Routes never read this cache directly; they use the
-    # get_pending_files dependency, which performs a fresh scan.
+    # OpenAI calls. Dependency-driven routes use get_pending_files (a fresh
+    # scan); the only direct reader is the regenerate preview path, which
+    # deliberately serves this possibly-stale cache instead of triggering a
+    # scan that could persist other sidecars.
     app.state.pending_images = []
     app.state.watcher_task = asyncio.create_task(watcher._watch_image_directory(app))
     yield
