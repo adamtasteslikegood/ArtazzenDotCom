@@ -19,43 +19,64 @@ Gallery: `http://127.0.0.1:8000/` | Admin: `http://127.0.0.1:8000/admin`
 
 ## Architecture
 
-Single-file FastAPI app (`main.py`, ~46KB) serving Jinja2 templates with on-disk image storage.
+Modular FastAPI app serving Jinja2 templates with on-disk image storage. `main.py` is the uvicorn entrypoint and compatibility shim; the application lives in the layered `app/` package.
 
 ```
-main.py                  # All routes, models, startup logic
-manage_sidecars.py       # CLI: validate/migrate sidecar JSON files
+main.py                  # Entrypoint + compat shim (uvicorn main:app)
+app/
+  config.py              # Paths, env, runtime AI config (single source of truth)
+  sidecars.py            # Schema, path safety, sidecar/metadata I/O
+  ai_metadata.py         # OpenAI prompt/request/populate pipeline
+  curation.py            # Collections + series registries, migration, dedup
+  watcher.py             # Pending-file detection and background poll
+  security.py            # Basic auth dependency + security headers
+  routes_admin.py        # All /admin routes (APIRouter)
+  routes_public.py       # Gallery, artwork detail, collections (APIRouter)
+  factory.py             # create_app: lifespan, mounts, middleware, routers
+manage_sidecars.py       # CLI: validate/migrate sidecars + curation registries
 ImageSidecar.schema.json # Authoritative schema for per-image metadata
-templates/               # Jinja2: index, artwork_detail, review views
+CollectionsRegistry.schema.json  # Schema for .curation/collections.json
+SeriesRegistry.schema.json       # Schema for .curation/series.json
+templates/               # Jinja2: base + base_admin, pages extend them
 Static/                  # Mounted at /static (preserve capital S)
   css/                   # Stylesheets (Techno-Botanical design system)
   images/                # Artwork files + co-located .json sidecars
+    .curation/           # collections.json + series.json registries
 artazzen-design-system/  # Design system spec and tokens
-scripts/ahead-behind.sh  # Branch divergence checker
+scripts/                 # ahead-behind.sh, migrate_v2.py, migrate_v3.py
 tests/test_main.py       # Pytest suite
 ```
 
+Layering (no cycles): `config → sidecars → ai_metadata → curation → watcher → security/routes → factory → main`. Cross-module calls go through module attributes (e.g. `config.IMAGES_DIR`) so tests monkeypatch the defining module.
+
 ### Key Concepts
 
-- **Image sidecars**: Every image in `Static/images/` has a co-located `.json` file conforming to `ImageSidecar.schema.json`. Required fields: `title`, `description`, `ai_generated`, `ai_details`, `reviewed`, `detected_at`. These are the source of truth for artwork metadata.
+- **Image sidecars**: Every image in `Static/images/` has a co-located `.json` file conforming to `ImageSidecar.schema.json`. Required fields: `title`, `description`, `ai_generated`, `ai_details`, `status`, `detected_at`. These are the source of truth for artwork metadata.
+- **Collections (v3)**: Album-like groups. A sidecar's `collections` array of slugs is the authoritative membership record; collection metadata (title, description, `parent` for nesting, `cover`, `order`) lives in `IMAGES_DIR/.curation/collections.json`. The v2 `collection` string is deprecated but kept; `scripts/migrate_v3.py` (and app startup) migrate it.
+- **Series (v3)**: Ordered groups of related edits (usually stylized variants of one source photo) owned by exactly one collection and rendered inside that collection's page (`#series-{id}` anchors). The registry `IMAGES_DIR/.curation/series.json` is authoritative for membership and order; sidecar `series` arrays are mirrors that validation re-syncs (registry wins). On a collection page, an image that is both a direct member and in one of that collection's series renders only in the series strip.
 - **Background watcher**: On startup, scans for new images and queues them for review.
 - **AI metadata**: Optional OpenAI integration generates titles/descriptions. Controlled via `/admin/config`.
 
 ### Route Map
 
-| Path                           | Method   | Purpose                 |
-| ------------------------------ | -------- | ----------------------- |
-| `/`                            | GET      | Public gallery          |
-| `/artwork/{image_filename}`    | GET      | Single artwork detail   |
-| `/admin`                       | GET      | Admin dashboard         |
-| `/admin/review`                | GET      | Review queue            |
-| `/admin/review/{image_name}`   | GET      | Review specific image   |
-| `/admin/api/new-files`         | GET      | JSON: pending files     |
-| `/admin/upload`                | POST     | Upload artwork          |
-| `/admin/import-path`           | POST     | Import from filesystem  |
-| `/admin/metadata/{image_name}` | POST     | Save image metadata     |
-| `/admin/config`                | GET/POST | AI config CRUD          |
-| `/admin/config/reset`          | POST     | Reset AI config         |
-| `/admin/ai/regenerate`         | POST     | Trigger AI regeneration |
+| Path                           | Method   | Purpose                                                 |
+| ------------------------------ | -------- | ------------------------------------------------------- |
+| `/`                            | GET      | Public gallery                                          |
+| `/artwork/{image_filename}`    | GET      | Single artwork detail                                   |
+| `/admin`                       | GET      | Admin dashboard                                         |
+| `/admin/review`                | GET      | Review queue                                            |
+| `/admin/review/{image_name}`   | GET      | Review specific image                                   |
+| `/admin/api/new-files`         | GET      | JSON: pending files                                     |
+| `/admin/upload`                | POST     | Upload artwork                                          |
+| `/admin/import-path`           | POST     | Import from filesystem                                  |
+| `/admin/metadata/{image_name}` | POST     | Save image metadata                                     |
+| `/collections`                 | GET      | Collections index                                       |
+| `/collections/{slug}`          | GET      | Collection page (series strips + grid)                  |
+| `/admin/api/collections`       | GET/POST | Collections registry CRUD                               |
+| `/admin/api/series`            | GET/POST | Series registry CRUD                                    |
+| `/admin/config`                | GET/POST | AI config CRUD                                          |
+| `/admin/config/reset`          | POST     | Reset AI config                                         |
+| `/admin/ai/regenerate`         | POST     | AI regeneration (supports `fields`, `force`, `preview`) |
 
 ## Tech Stack
 
@@ -70,8 +91,8 @@ tests/test_main.py       # Pytest suite
 
 ## Development Rules
 
-- All code in `main.py` — no splitting into modules unless discussed first.
-- Sidecar JSON must validate against `ImageSidecar.schema.json`. Run `python manage_sidecars.py validate` after schema changes.
+- Application code lives in the `app/` package (see Architecture); `main.py` stays a thin entrypoint/shim. Put new code in the module that owns its layer.
+- Sidecar JSON must validate against `ImageSidecar.schema.json`. Run `python manage_sidecars.py validate` after schema changes (also validates the curation registries).
 - `Static/` is capital-S everywhere; FastAPI mounts it at `/static`.
 - Templates use the Techno-Botanical design system from `DESIGN.md`.
 - Python: PEP 8, type hints, `logging.getLogger(__name__)`.

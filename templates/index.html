@@ -1,25 +1,13 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <script>(function(){try{var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)}catch(e){}})()</script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ gallery_title }}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
-    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
-</head>
-<body>
+{% extends "base.html" %}
 
-    <header>
-        <h1>{{ gallery_title }}</h1>
-        <p class="tagline" style="font-family: var(--font-mono); font-size: 0.75rem; text-transform: uppercase; opacity: 0.6; margin-top: 1rem;">Curated Art & Data</p>
-    </header>
+{% block title %}{{ gallery_title }}{% endblock %}
+{% block page_heading %}{{ gallery_title }}{% endblock %}
 
-    <div class="shader-bg"></div>
+{% block header_extra %}
+<p class="tagline" style="font-family: var(--font-mono); font-size: 0.75rem; text-transform: uppercase; opacity: 0.6; margin-top: 1rem;">Curated Art & Data</p>
+{% endblock %}
 
+{% block content %}
     <main>
         {% if artwork_files %}
             <div class="gallery-grid">
@@ -46,10 +34,6 @@
             </p>
         {% endif %}
     </main>
+{% endblock %}
 
-    <footer>
-        <p>Artwork Gallery</p>
-    </footer>
-
-</body>
-</html>
+{% block footer %}<p>Artwork Gallery</p>{% endblock %}

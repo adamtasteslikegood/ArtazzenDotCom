@@ -114,7 +114,25 @@
     "collection": {
       "type": "string",
       "default": "",
-      "description": "Collection or series this artwork belongs to."
+      "description": "Deprecated: use the collections array instead. Kept for backwards compatibility."
+    },
+    "collections": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+      },
+      "default": [],
+      "description": "Slugs of collections this artwork belongs to. Authoritative membership record; collection metadata (title, nesting, order) lives in .curation/collections.json."
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+      },
+      "default": [],
+      "description": "Ids of series this artwork appears in. Denormalized mirror; the series registry (.curation/series.json) is authoritative for membership and order."
     },
     "ai_fields": {
       "type": "array",
