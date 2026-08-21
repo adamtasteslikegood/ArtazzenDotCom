@@ -694,6 +694,29 @@ def test_upsert_collection_rejects_cycle(tmp_path, monkeypatch):
         )
 
 
+def test_manage_sidecars_cli_honors_images_dir_env(tmp_path):
+    """The CLI's sidecar loop and registry validation must target the same
+    root when IMAGES_DIR is set (e.g. the Railway volume)."""
+    import subprocess
+    import sys
+
+    image_root = tmp_path / "volume-images"
+    image_root.mkdir()
+    env = {**os.environ, "IMAGES_DIR": str(image_root)}
+    result = subprocess.run(
+        [sys.executable, "manage_sidecars.py", "validate"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(gallery_app.BASE_DIR),
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Validated 0 images" in result.stdout
+    # Registry validation ran against the same env-configured root.
+    assert (image_root / ".curation" / "collections.json").exists()
+
+
 def test_series_requires_existing_collection(tmp_path, monkeypatch):
     _make_curation_root(tmp_path, monkeypatch)
     with pytest.raises(ValueError):

@@ -34,7 +34,10 @@ def _coerce_bool(value: Any) -> bool:
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "Static"
-IMAGES_DIR = STATIC_DIR / "images"
+# Honor the same IMAGES_DIR env override as the app (app/config.py), so the
+# sidecar loop and the curation-registry validation always target the same
+# root — on Railway the volume lives at /data/images, not Static/images.
+IMAGES_DIR = Path(os.getenv("IMAGES_DIR", STATIC_DIR / "images"))
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 
 ALLOWED_IMAGE_EXTENSIONS = {
