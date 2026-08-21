@@ -2,7 +2,7 @@
 
 Artwork gallery and curation platform built with FastAPI + Jinja2. Public gallery at `/`, admin dashboard at `/admin`.
 
-@AGENTS.md
+@docs/agent-handbook.md
 @DESIGN.md
 @BRANCHING_STRATEGY.md
 
@@ -189,7 +189,7 @@ See `.env.example` for the full list. Key vars:
 
 ## Core Principles
 
-Follow the four Karpathy principles for LLM-assisted coding ([full skill](~/.claude/skills/karpathy-guidelines/SKILL.md)):
+Follow the four Karpathy principles for LLM-assisted coding:
 
 1. **Think Before Coding** — State assumptions before implementing. If a request admits multiple interpretations, list them rather than silently picking one. When something is genuinely unclear, stop and ask.
 2. **Simplicity First** — Write the minimum code that solves the stated problem. No speculative features, premature abstractions, or configuration knobs for one call site.

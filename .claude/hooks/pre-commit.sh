@@ -93,7 +93,7 @@ fi
 
 # 5. Check for potential secrets
 echo -n "  ✓ Checking for hardcoded secrets... "
-if grep -Ei "API_KEY|password|token|secret" CLAUDE.md | grep -v 'example\|sample\|placeholder\|`.*`\|^\|'; then
+if grep -Ei "API_KEY|password|token|secret" CLAUDE.md | grep -Ev 'example|sample|placeholder|`.*`'; then
     echo -e "${RED}FAILED${NC}"
     echo -e "    ${RED}Error: Potential hardcoded secrets found${NC}"
     grep -n -Ei "API_KEY|password|token|secret" CLAUDE.md
