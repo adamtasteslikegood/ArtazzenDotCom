@@ -15,7 +15,14 @@ logger = logging.getLogger(__name__)
 # Serializes scans across the watcher task and request-triggered refreshes.
 # Overlapping scans could both see the same pending image with missing
 # fields and each fire an OpenAI request for it (duplicate work and spend).
-_scan_lock = threading.Lock()
+# RLock so _scan_with_seq can wrap new_files_detected (which also locks).
+_scan_lock = threading.RLock()
+
+# Orders cache updates by scan completion: assignments happen on the event
+# loop after an await, so a slower coroutine could otherwise resume late
+# and overwrite app.state.pending_images with an older snapshot.
+_scan_seq = 0
+_applied_seq = 0
 
 
 def new_files_detected() -> list[dict[str, Any]]:
@@ -27,6 +34,27 @@ def new_files_detected() -> list[dict[str, Any]]:
     """
     with _scan_lock:
         return _scan_pending_files()
+
+
+def _scan_with_seq() -> tuple[int, list[dict[str, Any]]]:
+    """Run a scan and stamp it with a completion-ordered sequence number."""
+    global _scan_seq
+    with _scan_lock:
+        pending = new_files_detected()
+        _scan_seq += 1
+        return _scan_seq, pending
+
+
+def _apply_scan_result(state, seq: int, pending: list[dict[str, Any]]) -> None:
+    """Update the cache only when this scan is newer than the applied one.
+
+    Called on the event loop (single-threaded), so the check-then-set is
+    atomic with respect to other coroutines.
+    """
+    global _applied_seq
+    if seq > _applied_seq:
+        _applied_seq = seq
+        state.pending_images = pending
 
 
 def _scan_pending_files() -> list[dict[str, Any]]:
@@ -79,8 +107,8 @@ async def _watch_image_directory(app: FastAPI) -> None:
             try:
                 # The scan blocks (filesystem + synchronous OpenAI calls);
                 # run it in a worker thread so requests keep being served.
-                pending = await asyncio.to_thread(new_files_detected)
-                app.state.pending_images = pending
+                seq, pending = await asyncio.to_thread(_scan_with_seq)
+                _apply_scan_result(app.state, seq, pending)
             except FileNotFoundError:
                 logger.debug(
                     "File disappeared during watcher scan, will retry next cycle"
@@ -105,10 +133,12 @@ async def refresh_pending_files(request: Request) -> list[dict[str, Any]]:
     The scan is offloaded to a worker thread — running it inline blocked
     the event loop for the full scan (plus any OpenAI calls), stalling
     every in-flight request. The app-state assignment happens back on the
-    event loop so no request state crosses threads.
+    event loop so no request state crosses threads, guarded by a scan
+    sequence so a late-resuming coroutine cannot overwrite the cache with
+    an older snapshot.
     """
-    pending = await asyncio.to_thread(new_files_detected)
-    request.app.state.pending_images = pending
+    seq, pending = await asyncio.to_thread(_scan_with_seq)
+    _apply_scan_result(request.app.state, seq, pending)
     return pending
 
 

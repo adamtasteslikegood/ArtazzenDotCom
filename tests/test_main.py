@@ -986,6 +986,29 @@ async def test_get_pending_files_does_not_block_event_loop(monkeypatch):
     assert ticks_at_return >= 5
 
 
+async def test_stale_scan_result_does_not_overwrite_cache(monkeypatch):
+    """A late-resuming coroutine must not regress the cache to an older
+    scan; updates apply in scan-completion order."""
+    from types import SimpleNamespace
+
+    watcher = gallery_app.watcher
+    state = SimpleNamespace()
+    request = SimpleNamespace(app=SimpleNamespace(state=state))
+
+    # A newer scan (seq 10) was already applied; a stale one (seq 3)
+    # resuming late must not overwrite the cache.
+    monkeypatch.setattr(watcher, "_applied_seq", 10)
+    monkeypatch.setattr(watcher, "_scan_with_seq", lambda: (3, ["stale"]))
+    result = await watcher.refresh_pending_files(request)
+    assert result == ["stale"]  # the caller still gets its own scan result
+    assert not hasattr(state, "pending_images")
+
+    # A genuinely newer scan applies.
+    monkeypatch.setattr(watcher, "_scan_with_seq", lambda: (11, ["fresh"]))
+    await watcher.refresh_pending_files(request)
+    assert state.pending_images == ["fresh"]
+
+
 def test_main_shim_exposes_compat_surface():
     """`import main` keeps exposing the pre-split public surface."""
     for name in ("app", "IMAGES_DIR", "_sanitize_filename", "templates"):
