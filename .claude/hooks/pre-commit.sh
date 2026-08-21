@@ -1,6 +1,7 @@
 #!/bin/bash
-# ClaudeForge Quality Hook - Pre-Commit Validation
-# Validates CLAUDE.md file quality before allowing commits
+# CLAUDE.md Quality Validator
+# Not registered in .claude/settings.json by default — run manually or
+# add a PreCommit hook entry to activate.
 
 set -e
 
@@ -10,11 +11,21 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo "🔍 ClaudeForge Quality Hook: Validating CLAUDE.md..."
+echo "🔍 Validating CLAUDE.md..."
 echo ""
 
-# Check if CLAUDE.md exists
-if [ ! -f "CLAUDE.md" ]; then
+# Prefer the staged (index) version so a secret staged then removed from the
+# working tree is still caught.  Fall back to the working-tree copy when we
+# are not inside a git repository or CLAUDE.md is untracked.
+CLAUDE_SRC=""
+if git rev-parse --git-dir >/dev/null 2>&1 && git show :CLAUDE.md >/dev/null 2>&1; then
+    CLAUDE_TMP="$(mktemp)"
+    git show :CLAUDE.md > "$CLAUDE_TMP"
+    CLAUDE_SRC="$CLAUDE_TMP"
+    trap 'rm -f "$CLAUDE_TMP"' EXIT
+elif [ -f "CLAUDE.md" ]; then
+    CLAUDE_SRC="CLAUDE.md"
+else
     echo -e "${YELLOW}⚠  Warning: CLAUDE.md not found${NC}"
     echo "   Skipping validation (no CLAUDE.md to validate)"
     exit 0
@@ -31,7 +42,7 @@ echo "Running basic validation checks..."
 
 # 1. Check file length
 echo -n "  ✓ Checking file length... "
-LINES=$(wc -l < CLAUDE.md)
+LINES=$(wc -l < "$CLAUDE_SRC")
 if [ $LINES -lt 20 ]; then
     echo -e "${RED}FAILED${NC}"
     echo -e "    ${RED}Error: CLAUDE.md too short ($LINES lines)${NC}"
@@ -51,7 +62,7 @@ echo -n "  ✓ Checking required sections... "
 MISSING_SECTIONS=()
 
 for section in "Core Principles" "Tech Stack" "Workflow"; do
-    if ! grep -qi "$section" CLAUDE.md; then
+    if ! grep -qi "$section" "$CLAUDE_SRC"; then
         MISSING_SECTIONS+=("$section")
     fi
 done
@@ -71,7 +82,7 @@ fi
 
 # 3. Check for code blocks
 echo -n "  ✓ Checking for code examples... "
-CODE_BLOCKS=$(grep -c '```' CLAUDE.md || echo "0")
+CODE_BLOCKS=$(grep -c '```' "$CLAUDE_SRC" || echo "0")
 if [ $CODE_BLOCKS -lt 2 ]; then
     echo -e "${YELLOW}WARNING${NC}"
     echo -e "    ${YELLOW}Warning: Few code examples ($CODE_BLOCKS blocks)${NC}"
@@ -82,10 +93,10 @@ fi
 
 # 4. Check for TODO/FIXME placeholders
 echo -n "  ✓ Checking for placeholders... "
-if grep -qi "TODO\|FIXME\|XXX\|\[TBD\]" CLAUDE.md; then
+if grep -qi "TODO\|FIXME\|XXX\|\[TBD\]" "$CLAUDE_SRC"; then
     echo -e "${YELLOW}WARNING${NC}"
     echo -e "    ${YELLOW}Warning: Found TODO/FIXME placeholders${NC}"
-    grep -n "TODO\|FIXME\|XXX\|\[TBD\]" CLAUDE.md | head -3
+    grep -n "TODO\|FIXME\|XXX\|\[TBD\]" "$CLAUDE_SRC" | head -3
     echo "    Consider completing these before committing"
 else
     echo -e "${GREEN}OK${NC}"
@@ -103,9 +114,16 @@ fi
 echo -n "  ✓ Checking for hardcoded secrets... "
 secret_re='(api[_-]?key|apikey|password|passwd|token|secret)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+-]{8,}'
 placeholder_re='example|sample|placeholder|changeme|your[_-]|xxxx|dummy|redacted|<[^>]*>|\$[A-Za-z{]'
-secret_lines="$(grep -nEi "$secret_re" CLAUDE.md 2>/dev/null \
-    | grep -Eiv "$placeholder_re" \
-    | cut -d: -f1 \
+secret_lines="$(grep -nEi "$secret_re" "$CLAUDE_SRC" 2>/dev/null \
+    | while IFS= read -r match; do
+        lineno="${match%%:*}"
+        # Extract just the value after the assignment operator, so that a
+        # trailing comment like "# example" does not suppress a real secret.
+        value="$(echo "$match" | sed -nE "s/.*($secret_re).*/\1/Ip")"
+        if ! echo "$value" | grep -Eiq "$placeholder_re"; then
+            echo "$lineno"
+        fi
+    done \
     | tr '\n' ' ' \
     | sed 's/ $//')"
 if [ -n "$secret_lines" ]; then
@@ -139,7 +157,7 @@ sys.path.insert(0, '$SKILL_PATH')
 try:
     from validator import BestPracticesValidator
 
-    with open('CLAUDE.md', 'r') as f:
+    with open('$CLAUDE_SRC', 'r') as f:
         content = f.read()
 
     validator = BestPracticesValidator(content)
