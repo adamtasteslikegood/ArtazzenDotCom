@@ -15,8 +15,8 @@ final_test.log
 logs/
 .agent-harness/
 /uv.lock
-.claude/*
-.copilot/*
-.github/instructions/*
-.git/*
+.claude/**
+.copilot/**
+.github/instructions/**
+.git/**
 
