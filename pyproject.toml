@@ -1,5 +1,6 @@
 [tool.ruff]
 target-version = "py311"
+extend-exclude = [".claude/skills"]
 
 [tool.ruff.lint]
 ignore = ["B008", "BLE001", "EXE001"]
