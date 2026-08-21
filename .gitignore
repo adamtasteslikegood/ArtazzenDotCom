@@ -14,3 +14,4 @@ data/
 final_test.log
 logs/
 .agent-harness/
+/uv.lock
