@@ -19,7 +19,6 @@ import json
 import logging
 import os
 import re
-import threading
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -40,50 +39,47 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _EMPTY_COLLECTIONS: dict[str, Any] = {"version": 1, "collections": []}
 _EMPTY_SERIES: dict[str, Any] = {"version": 1, "series": []}
 
-# Serializes registry read-modify-write cycles so concurrent mutations
-# cannot clobber each other's atomic rename or lose updates. Two layers:
-# an RLock for threads in this process (mutations nest, e.g. upsert_series
-# -> sync_series_mirrors), plus a POSIX flock on .curation/.lock so a
-# second process (another worker, or manage_sidecars.py running against a
-# live app) is excluded too. Deployment targets are Linux (Railway/local);
-# the file lock fails open with a warning where flock is unavailable.
-_registry_lock = threading.RLock()
-_lock_depth = threading.local()
+# Serializes registry read-modify-write cycles across threads AND
+# processes (thread RLock + POSIX flock, see sidecars.TwoLayerLock) so
+# concurrent mutations — including a second worker or manage_sidecars.py
+# against a live app — cannot clobber each other or lose updates.
 _LOCKFILE_NAME = ".lock"
-
-
-def _acquire_registry_file_lock():
-    try:
-        import fcntl
-
-        _curation_dir().mkdir(parents=True, exist_ok=True)
-        # The handle must outlive this function: closing it releases the
-        # flock, which _locked_mutation does after the mutation completes.
-        handle = open(_curation_dir() / _LOCKFILE_NAME, "a")  # noqa: SIM115
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        return handle
-    except Exception as exc:  # pragma: no cover - platform dependent
-        logger.warning("Registry file lock unavailable (%s); proceeding", exc)
-        return None
+_registry_lock = sidecars.TwoLayerLock(lambda: _curation_dir() / _LOCKFILE_NAME)
 
 
 def _locked_mutation(fn):
-    """Run a registry mutation under the thread and file locks."""
+    """Run a registry mutation under the registry lock."""
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        with _registry_lock:
-            depth = getattr(_lock_depth, "value", 0)
-            _lock_depth.value = depth + 1
-            handle = _acquire_registry_file_lock() if depth == 0 else None
-            try:
-                return fn(*args, **kwargs)
-            finally:
-                _lock_depth.value = depth
-                if handle is not None:
-                    handle.close()  # closing releases the flock
+        with _registry_lock.held():
+            return fn(*args, **kwargs)
 
     return wrapper
+
+
+def _mutate_sidecar(image_path: Path, json_path: Path, mutate) -> bool:
+    """Re-read a sidecar under the mutation lock, apply, write if changed.
+
+    Loops that iterate sidecar snapshots must not write those snapshots
+    back later — an AI persist or admin edit landing in between would be
+    overwritten. ``mutate(fresh)`` receives the just-read sidecar and
+    returns True when it changed something worth writing.
+    """
+    with sidecars.sidecar_mutation_lock.held():
+        fresh: dict[str, Any] = {}
+        if json_path.exists():
+            try:
+                loaded = json.loads(json_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    fresh = loaded
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("Unable to re-read sidecar %s: %s", json_path, exc)
+                return False
+        if mutate(fresh):
+            sidecars._write_sidecar(image_path, fresh)
+            return True
+    return False
 
 
 def slugify(value: str) -> str:
@@ -357,9 +353,16 @@ def sync_series_mirrors() -> int:
         if not json_path.exists():
             continue
         expected = sorted(membership.get(image_path.name, []))
-        if data.get("series", []) != expected:
-            data["series"] = expected
-            sidecars._write_sidecar(image_path, data)
+        if data.get("series", []) == expected:
+            continue  # snapshot pre-filter; re-verified on the fresh read
+
+        def _apply(fresh, expected=expected):
+            if fresh.get("series", []) != expected:
+                fresh["series"] = expected
+                return True
+            return False
+
+        if _mutate_sidecar(image_path, json_path, _apply):
             changed += 1
     return changed
 
@@ -375,26 +378,34 @@ def migrate_legacy_collections() -> int:
     migrated = 0
     registry_changed = False
 
-    for image_path, _json_path, data in _iter_image_sidecars():
+    for image_path, json_path, data in _iter_image_sidecars():
         legacy = str(data.get("collection") or "").strip()
         if not legacy or data.get("collections"):
-            continue
-        slug = slugify(legacy)
-        data["collections"] = [slug]
-        if slug not in by_slug:
-            entry = {
-                "id": slug,
-                "title": legacy,  # first-seen original title wins
-                "description": "",
-                "parent": "",
-                "cover": "",
-                "order": len(reg["collections"]),
-            }
-            reg["collections"].append(entry)
-            by_slug[slug] = entry
-            registry_changed = True
-        sidecars._write_sidecar(image_path, data)
-        migrated += 1
+            continue  # snapshot pre-filter; re-verified on the fresh read
+
+        def _migrate(fresh):
+            nonlocal registry_changed
+            fresh_legacy = str(fresh.get("collection") or "").strip()
+            if not fresh_legacy or fresh.get("collections"):
+                return False
+            slug = slugify(fresh_legacy)
+            fresh["collections"] = [slug]
+            if slug not in by_slug:
+                entry = {
+                    "id": slug,
+                    "title": fresh_legacy,  # first-seen original title wins
+                    "description": "",
+                    "parent": "",
+                    "cover": "",
+                    "order": len(reg["collections"]),
+                }
+                reg["collections"].append(entry)
+                by_slug[slug] = entry
+                registry_changed = True
+            return True
+
+        if _mutate_sidecar(image_path, json_path, _migrate):
+            migrated += 1
 
     if registry_changed:
         save_collections(reg)
@@ -490,10 +501,17 @@ def delete_collection(slug: str) -> None:
         save_series(series_reg)
 
     for image_path, json_path, data in _iter_image_sidecars():
-        memberships = data.get("collections") or []
-        if slug in memberships:
-            data["collections"] = [m for m in memberships if m != slug]
-            sidecars._write_sidecar(image_path, data)
+        if slug not in (data.get("collections") or []):
+            continue  # snapshot pre-filter; re-verified on the fresh read
+
+        def _remove(fresh):
+            memberships = fresh.get("collections") or []
+            if slug in memberships:
+                fresh["collections"] = [m for m in memberships if m != slug]
+                return True
+            return False
+
+        _mutate_sidecar(image_path, json_path, _remove)
 
 
 @_locked_mutation
@@ -644,8 +662,16 @@ def validate_registries(repair: bool = True) -> dict[str, list[str]]:
                 f"{image_path.name}: dangling collection slugs {dangling} dropped"
             )
             if repair:
-                data["collections"] = kept
-                sidecars._write_sidecar(image_path, data)
+
+                def _drop_dangling(fresh):
+                    current = fresh.get("collections") or []
+                    filtered = [m for m in current if m in by_slug]
+                    if filtered != current:
+                        fresh["collections"] = filtered
+                        return True
+                    return False
+
+                _mutate_sidecar(image_path, json_path, _drop_dangling)
 
     if repair:
         repaired = sync_series_mirrors()

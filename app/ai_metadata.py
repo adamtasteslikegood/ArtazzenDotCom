@@ -441,10 +441,10 @@ def _persist_populated_fields(
     the image meanwhile. Writing the pre-call snapshot back would silently
     revert those changes (e.g. flip status back to pending), so re-read the
     sidecar and overlay only what this call produced. Held under the
-    sidecar lock so the read-merge-write cycle is atomic against other
-    writers in this process.
+    sidecar mutation lock (threads + processes) so the read-merge-write
+    cycle is atomic against other writers.
     """
-    with config.sidecar_lock:
+    with sidecars.sidecar_mutation_lock.held():
         fresh = sidecars._load_metadata(image_path)
         for field in applied_fields:
             fresh[field] = metadata[field]
@@ -453,8 +453,11 @@ def _persist_populated_fields(
             fresh["ai_generated"] = True
         else:
             fresh.setdefault("ai_generated", False)
+        # Union only what THIS call generated: the pre-call snapshot's
+        # ai_fields could resurrect provenance a concurrent admin edit
+        # deliberately removed.
         fresh["ai_fields"] = sorted(
-            set(fresh.get("ai_fields", [])) | set(metadata.get("ai_fields", []))
+            set(fresh.get("ai_fields", [])) | set(applied_fields)
         )
         sidecars._write_sidecar(image_path, fresh)
         return fresh

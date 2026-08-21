@@ -751,10 +751,12 @@ def test_ai_persist_merges_concurrent_sidecar_changes(monkeypatch, tmp_path):
 
     def approving_request(path, meta, fields):
         # Simulate an admin approving the image while the AI call is in
-        # flight: the on-disk sidecar changes under the caller's snapshot.
+        # flight: the on-disk sidecar changes under the caller's snapshot —
+        # including deliberately clearing AI provenance for a hand edit.
         data = json.loads(sidecar.read_text())
         data["status"] = "approved"
         data["description"] = "Edited during AI call"
+        data["ai_fields"] = []
         sidecar.write_text(json.dumps(data))
         return {"title": "AI Title", "details": {"status": "success"}}
 
@@ -771,6 +773,9 @@ def test_ai_persist_merges_concurrent_sidecar_changes(monkeypatch, tmp_path):
     assert saved["title"] == "AI Title"  # this call's field applied
     assert saved["status"] == "approved"  # concurrent approval survives
     assert saved["description"] == "Edited during AI call"
+    # Only this call's provenance is added; the concurrent edit's cleared
+    # ai_fields are not resurrected from the pre-call snapshot.
+    assert saved["ai_fields"] == ["title"]
     assert result["status"] == "approved"  # caller sees the merged truth
 
 
