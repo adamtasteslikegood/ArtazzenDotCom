@@ -405,6 +405,7 @@ def _populate_missing_metadata(
     details = result.get("details", {})
     metadata["ai_details"] = details
 
+    applied_fields: list[str] = []
     if details.get("status") == "success":
         existing_ai_fields = set(metadata.get("ai_fields", []))
         for field in needed_fields:
@@ -412,9 +413,11 @@ def _populate_missing_metadata(
             if field == "tags" and isinstance(val, list) and val:
                 metadata["tags"] = val
                 existing_ai_fields.add("tags")
+                applied_fields.append("tags")
             elif isinstance(val, str) and val:
                 metadata[field] = val
                 existing_ai_fields.add(field)
+                applied_fields.append(field)
         metadata["ai_fields"] = sorted(existing_ai_fields)
         metadata["ai_generated"] = True
     else:
@@ -423,5 +426,38 @@ def _populate_missing_metadata(
     metadata.setdefault("detected_at", time.time())
     metadata.setdefault("status", "pending")
     if persist:
-        sidecars._write_sidecar(image_path, metadata)
+        return _persist_populated_fields(image_path, metadata, applied_fields)
     return metadata
+
+
+def _persist_populated_fields(
+    image_path: Path,
+    metadata: dict[str, Any],
+    applied_fields: list[str],
+) -> dict[str, Any]:
+    """Merge this call's generated fields into the CURRENT sidecar and write.
+
+    The OpenAI request can take many seconds; an admin may approve or edit
+    the image meanwhile. Writing the pre-call snapshot back would silently
+    revert those changes (e.g. flip status back to pending), so re-read the
+    sidecar and overlay only what this call produced. Held under the
+    sidecar mutation lock (threads + processes) so the read-merge-write
+    cycle is atomic against other writers.
+    """
+    with sidecars.sidecar_mutation_lock.held():
+        fresh = sidecars._load_metadata(image_path)
+        for field in applied_fields:
+            fresh[field] = metadata[field]
+        fresh["ai_details"] = metadata.get("ai_details", {})
+        if metadata.get("ai_generated"):
+            fresh["ai_generated"] = True
+        else:
+            fresh.setdefault("ai_generated", False)
+        # Union only what THIS call generated: the pre-call snapshot's
+        # ai_fields could resurrect provenance a concurrent admin edit
+        # deliberately removed.
+        fresh["ai_fields"] = sorted(
+            set(fresh.get("ai_fields", [])) | set(applied_fields)
+        )
+        sidecars._write_sidecar(image_path, fresh)
+        return fresh

@@ -4,8 +4,9 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import time
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,61 @@ logger = logging.getLogger(__name__)
 # Defined in config (the lowest layer) so every module can use it;
 # aliased here because callers and the main shim import it from sidecars.
 _coerce_bool = config._coerce_bool
+
+
+class TwoLayerLock:
+    """Thread RLock plus a POSIX flock, re-entrant per thread.
+
+    Serializes read-modify-write cycles both across threads in this
+    process and across processes sharing the same IMAGES_DIR (a second
+    worker, or manage_sidecars.py run against a live app). The file lock
+    fails open with a warning where flock is unavailable; deployment
+    targets are Linux (Railway/local).
+    """
+
+    def __init__(self, lockfile_getter):
+        self._rlock = threading.RLock()
+        self._depth = threading.local()
+        self._lockfile_getter = lockfile_getter
+
+    def _acquire_file(self):
+        handle = None
+        try:
+            import fcntl
+
+            path = self._lockfile_getter()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # The handle must outlive this method: closing it releases the
+            # flock, which held() does once the critical section ends.
+            handle = open(path, "a")  # noqa: SIM115
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            return handle
+        except Exception as exc:  # pragma: no cover - platform dependent
+            if handle is not None:
+                handle.close()
+            logger.warning("File lock unavailable (%s); proceeding", exc)
+            return None
+
+    @contextmanager
+    def held(self):
+        with self._rlock:
+            depth = getattr(self._depth, "value", 0)
+            self._depth.value = depth + 1
+            handle = self._acquire_file() if depth == 0 else None
+            try:
+                yield
+            finally:
+                self._depth.value = depth
+                if handle is not None:
+                    handle.close()  # closing releases the flock
+
+
+# Guards every sidecar read-modify-write cycle (AI persist merge, status
+# flips, metadata saves, curation mirror/membership loops). The lockfile
+# lives under .curation/, which image-listing loops already skip.
+sidecar_mutation_lock = TwoLayerLock(
+    lambda: config.IMAGES_DIR / ".curation" / ".sidecars.lock"
+)
 
 
 def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
@@ -200,18 +256,19 @@ def _write_sidecar(image_path: Path, metadata: dict[str, Any]) -> None:
 def _set_status_sidecar(image_path: Path, new_status: str) -> None:
     safe_image_path = _resolve_image_path(image_path.name)
     json_path = safe_image_path.with_suffix(".json")
-    data: dict[str, Any] = {}
-    if json_path.exists():
-        with suppress(json.JSONDecodeError, OSError):
-            data = json.loads(json_path.read_text(encoding="utf-8"))
-    data["status"] = new_status
-    data.setdefault("title", "")
-    data.setdefault("description", "")
-    data.setdefault("ai_generated", False)
-    if not isinstance(data.get("ai_details"), dict):
-        data["ai_details"] = {}
-    data.setdefault("detected_at", time.time())
-    _write_sidecar(image_path, data)
+    with sidecar_mutation_lock.held():
+        data: dict[str, Any] = {}
+        if json_path.exists():
+            with suppress(json.JSONDecodeError, OSError):
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+        data["status"] = new_status
+        data.setdefault("title", "")
+        data.setdefault("description", "")
+        data.setdefault("ai_generated", False)
+        if not isinstance(data.get("ai_details"), dict):
+            data["ai_details"] = {}
+        data.setdefault("detected_at", time.time())
+        _write_sidecar(image_path, data)
 
 
 def _load_metadata(image_path: Path) -> dict[str, Any]:

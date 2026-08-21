@@ -1,5 +1,6 @@
 """Admin dashboard, review, upload, import, config, and curation routes."""
 
+import asyncio
 import copy
 import logging
 import os
@@ -146,17 +147,17 @@ async def mutate_collections(
     payload = body.get("collection") or {}
     try:
         if action in ("create", "update"):
-            entry = curation.upsert_collection(payload)
+            entry = await asyncio.to_thread(curation.upsert_collection, payload)
             return JSONResponse({"status": "ok", "collection": entry})
         if action == "delete":
             slug = str(payload.get("id") or "").strip()
-            curation.delete_collection(slug)
+            await asyncio.to_thread(curation.delete_collection, slug)
             return JSONResponse({"status": "ok", "deleted": slug})
     except KeyError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found"
         )
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -189,11 +190,11 @@ async def mutate_series(
     payload = body.get("series") or {}
     try:
         if action in ("create", "update", "reorder"):
-            entry = curation.upsert_series(payload)
+            entry = await asyncio.to_thread(curation.upsert_series, payload)
             return JSONResponse({"status": "ok", "series": entry})
         if action == "delete":
             slug = str(payload.get("id") or "").strip()
-            curation.delete_series(slug)
+            await asyncio.to_thread(curation.delete_series, slug)
             return JSONResponse({"status": "ok", "deleted": slug})
     except KeyError:
         raise HTTPException(
@@ -346,7 +347,13 @@ async def regenerate_ai_metadata(
             logger.exception("Failed to regenerate metadata for %s", fname)
             errors.append({"name": fname, "error": "Metadata regeneration failed"})
 
-    pending = await watcher.refresh_pending_files(request)
+    if preview:
+        # A preview must not write anything — refresh_pending_files scans,
+        # and the scan may AI-populate and persist OTHER pending sidecars.
+        # Serve the cached list instead (the watcher keeps it fresh).
+        pending = getattr(request.app.state, "pending_images", [])
+    else:
+        pending = await watcher.refresh_pending_files(request)
     return JSONResponse({"updated": updated, "errors": errors, "pending": pending})
 
 
@@ -554,13 +561,6 @@ async def update_image_metadata(
         clean_metadata["collections"] = [
             s for s in collection_slugs if s in known_slugs
         ]
-    existing = sidecars._load_metadata(image_path)
-    prior_ai = set(existing.get("ai_fields", []))
-    changed = {
-        f
-        for f in ("title", "description", "caption", "tags")
-        if f in clean_metadata and clean_metadata[f] != existing.get(f)
-    }
     # Fields regenerated via preview arrive as a hidden form field; union
     # them so provenance survives the preview-then-save flow.
     incoming_ai = {
@@ -568,12 +568,29 @@ async def update_image_metadata(
         for f in ai_fields.split(",")
         if f.strip() in ("title", "description", "caption", "tags")
     }
-    existing["ai_fields"] = sorted((prior_ai - changed) | incoming_ai)
-    if incoming_ai or sidecars._coerce_bool(ai_generated):
-        existing["ai_generated"] = True
-    existing.update(clean_metadata)
-    existing["status"] = "approved"
-    sidecars._write_sidecar(image_path, existing)
+    mark_generated = bool(incoming_ai) or sidecars._coerce_bool(ai_generated)
+
+    def _save_metadata() -> None:
+        # Read-modify-write under the sidecar mutation lock (and off the
+        # event loop): a concurrent AI persist or curation sync must not
+        # land between our read and write, and the file lock must never
+        # block request handling.
+        with sidecars.sidecar_mutation_lock.held():
+            existing = sidecars._load_metadata(image_path)
+            prior_ai = set(existing.get("ai_fields", []))
+            changed = {
+                f
+                for f in ("title", "description", "caption", "tags")
+                if f in clean_metadata and clean_metadata[f] != existing.get(f)
+            }
+            existing["ai_fields"] = sorted((prior_ai - changed) | incoming_ai)
+            if mark_generated:
+                existing["ai_generated"] = True
+            existing.update(clean_metadata)
+            existing["status"] = "approved"
+            sidecars._write_sidecar(image_path, existing)
+
+    await asyncio.to_thread(_save_metadata)
 
     return RedirectResponse(
         url=request.url_for("review_added_files"),
@@ -592,7 +609,7 @@ async def unapprove_image(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
-    sidecars._set_status_sidecar(image_path, "pending")
+    await asyncio.to_thread(sidecars._set_status_sidecar, image_path, "pending")
     return JSONResponse({"status": "ok", "image": image_name, "new_status": "pending"})
 
 

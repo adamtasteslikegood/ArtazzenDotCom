@@ -14,6 +14,7 @@ Railway volume and are skipped by every image-listing loop.
 """
 
 import copy
+import functools
 import json
 import logging
 import os
@@ -37,6 +38,48 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 _EMPTY_COLLECTIONS: dict[str, Any] = {"version": 1, "collections": []}
 _EMPTY_SERIES: dict[str, Any] = {"version": 1, "series": []}
+
+# Serializes registry read-modify-write cycles across threads AND
+# processes (thread RLock + POSIX flock, see sidecars.TwoLayerLock) so
+# concurrent mutations — including a second worker or manage_sidecars.py
+# against a live app — cannot clobber each other or lose updates.
+_LOCKFILE_NAME = ".lock"
+_registry_lock = sidecars.TwoLayerLock(lambda: _curation_dir() / _LOCKFILE_NAME)
+
+
+def _locked_mutation(fn):
+    """Run a registry mutation under the registry lock."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _registry_lock.held():
+            return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def _mutate_sidecar(image_path: Path, json_path: Path, mutate) -> bool:
+    """Re-read a sidecar under the mutation lock, apply, write if changed.
+
+    Loops that iterate sidecar snapshots must not write those snapshots
+    back later — an AI persist or admin edit landing in between would be
+    overwritten. ``mutate(fresh)`` receives the just-read sidecar and
+    returns True when it changed something worth writing.
+    """
+    with sidecars.sidecar_mutation_lock.held():
+        fresh: dict[str, Any] = {}
+        if json_path.exists():
+            try:
+                loaded = json.loads(json_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    fresh = loaded
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("Unable to re-read sidecar %s: %s", json_path, exc)
+                return False
+        if mutate(fresh):
+            sidecars._write_sidecar(image_path, fresh)
+            return True
+    return False
 
 
 def slugify(value: str) -> str:
@@ -292,6 +335,7 @@ def collections_for_image(filename: str) -> list[dict[str, Any]]:
 # --- Mutations (single writer; callers hold no locks) ----------------------
 
 
+@_locked_mutation
 def sync_series_mirrors() -> int:
     """Re-sync every sidecar's ``series`` array from the registry.
 
@@ -309,13 +353,21 @@ def sync_series_mirrors() -> int:
         if not json_path.exists():
             continue
         expected = sorted(membership.get(image_path.name, []))
-        if data.get("series", []) != expected:
-            data["series"] = expected
-            sidecars._write_sidecar(image_path, data)
+        if data.get("series", []) == expected:
+            continue  # snapshot pre-filter; re-verified on the fresh read
+
+        def _apply(fresh, expected=expected):
+            if fresh.get("series", []) != expected:
+                fresh["series"] = expected
+                return True
+            return False
+
+        if _mutate_sidecar(image_path, json_path, _apply):
             changed += 1
     return changed
 
 
+@_locked_mutation
 def migrate_legacy_collections() -> int:
     """v2 -> v3: convert non-empty ``collection`` strings into ``collections``
     slugs plus registry entries. Idempotent; the deprecated string is kept.
@@ -326,32 +378,41 @@ def migrate_legacy_collections() -> int:
     migrated = 0
     registry_changed = False
 
-    for image_path, _json_path, data in _iter_image_sidecars():
+    for image_path, json_path, data in _iter_image_sidecars():
         legacy = str(data.get("collection") or "").strip()
         if not legacy or data.get("collections"):
-            continue
-        slug = slugify(legacy)
-        data["collections"] = [slug]
-        if slug not in by_slug:
-            entry = {
-                "id": slug,
-                "title": legacy,  # first-seen original title wins
-                "description": "",
-                "parent": "",
-                "cover": "",
-                "order": len(reg["collections"]),
-            }
-            reg["collections"].append(entry)
-            by_slug[slug] = entry
-            registry_changed = True
-        sidecars._write_sidecar(image_path, data)
-        migrated += 1
+            continue  # snapshot pre-filter; re-verified on the fresh read
+
+        def _migrate(fresh):
+            nonlocal registry_changed
+            fresh_legacy = str(fresh.get("collection") or "").strip()
+            if not fresh_legacy or fresh.get("collections"):
+                return False
+            slug = slugify(fresh_legacy)
+            fresh["collections"] = [slug]
+            if slug not in by_slug:
+                entry = {
+                    "id": slug,
+                    "title": fresh_legacy,  # first-seen original title wins
+                    "description": "",
+                    "parent": "",
+                    "cover": "",
+                    "order": len(reg["collections"]),
+                }
+                reg["collections"].append(entry)
+                by_slug[slug] = entry
+                registry_changed = True
+            return True
+
+        if _mutate_sidecar(image_path, json_path, _migrate):
+            migrated += 1
 
     if registry_changed:
         save_collections(reg)
     return migrated
 
 
+@_locked_mutation
 def upsert_collection(entry: dict[str, Any]) -> dict[str, Any]:
     """Create or update a collection registry entry."""
     slug = str(entry.get("id") or "").strip() or slugify(str(entry.get("title", "")))
@@ -374,6 +435,18 @@ def upsert_collection(entry: dict[str, Any]) -> dict[str, Any]:
             current = by_slug.get(current, {}).get("parent", "")
 
     existing = by_slug.get(slug)
+    fallback_order = (existing or {}).get("order", len(reg["collections"]))
+    order_value = entry.get("order", fallback_order)
+    if isinstance(order_value, bool):
+        # int(True) == 1 would silently accept a boolean the schema forbids.
+        order = fallback_order
+    else:
+        try:
+            order = int(order_value)
+        except (TypeError, ValueError, OverflowError):
+            # null/non-numeric/infinite client JSON keeps the existing or
+            # default order instead of surfacing a 500.
+            order = fallback_order
     clean = {
         "id": slug,
         "title": str(entry.get("title") or (existing or {}).get("title") or slug),
@@ -382,9 +455,7 @@ def upsert_collection(entry: dict[str, Any]) -> dict[str, Any]:
         ),
         "parent": parent,
         "cover": str(entry.get("cover", (existing or {}).get("cover", ""))),
-        "order": int(
-            entry.get("order", (existing or {}).get("order", len(reg["collections"])))
-        ),
+        "order": order,
     }
     if existing:
         reg["collections"] = [
@@ -396,6 +467,7 @@ def upsert_collection(entry: dict[str, Any]) -> dict[str, Any]:
     return clean
 
 
+@_locked_mutation
 def delete_collection(slug: str) -> None:
     """Delete a collection: children re-parent to its parent; sidecar
     memberships are removed. Refuses when it owns series and has no parent
@@ -429,12 +501,20 @@ def delete_collection(slug: str) -> None:
         save_series(series_reg)
 
     for image_path, json_path, data in _iter_image_sidecars():
-        memberships = data.get("collections") or []
-        if slug in memberships:
-            data["collections"] = [m for m in memberships if m != slug]
-            sidecars._write_sidecar(image_path, data)
+        if slug not in (data.get("collections") or []):
+            continue  # snapshot pre-filter; re-verified on the fresh read
+
+        def _remove(fresh):
+            memberships = fresh.get("collections") or []
+            if slug in memberships:
+                fresh["collections"] = [m for m in memberships if m != slug]
+                return True
+            return False
+
+        _mutate_sidecar(image_path, json_path, _remove)
 
 
+@_locked_mutation
 def upsert_series(entry: dict[str, Any]) -> dict[str, Any]:
     """Create or update a series registry entry; re-syncs sidecar mirrors."""
     slug = str(entry.get("id") or "").strip() or slugify(str(entry.get("title", "")))
@@ -480,6 +560,7 @@ def upsert_series(entry: dict[str, Any]) -> dict[str, Any]:
     return clean
 
 
+@_locked_mutation
 def delete_series(slug: str) -> None:
     reg = load_series()
     if slug not in _by_id(reg, "series"):
@@ -501,6 +582,7 @@ def _load_registry_schema(name: str) -> dict[str, Any] | None:
         return None
 
 
+@_locked_mutation
 def validate_registries(repair: bool = True) -> dict[str, list[str]]:
     """Validate both registries and referential integrity.
 
@@ -580,8 +662,16 @@ def validate_registries(repair: bool = True) -> dict[str, list[str]]:
                 f"{image_path.name}: dangling collection slugs {dangling} dropped"
             )
             if repair:
-                data["collections"] = kept
-                sidecars._write_sidecar(image_path, data)
+
+                def _drop_dangling(fresh):
+                    current = fresh.get("collections") or []
+                    filtered = [m for m in current if m in by_slug]
+                    if filtered != current:
+                        fresh["collections"] = filtered
+                        return True
+                    return False
+
+                _mutate_sidecar(image_path, json_path, _drop_dangling)
 
     if repair:
         repaired = sync_series_mirrors()
