@@ -9,7 +9,7 @@ click==8.2.1
 coverage==7.15.4
 dnspython==2.7.0
 email-validator==2.2.0
-fastapi==0.1.17
+fastapi==0.116.1
 fastapi-cli==0.0.8
 fastapi-cloud-cli==0.1.4
 greenlet==3.5.5
