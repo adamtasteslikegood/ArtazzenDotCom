@@ -1,6 +1,14 @@
+[project]
+name = "artazzen"
+version = "0.1.0"
+requires-python = ">=3.11"
+
 [tool.ruff]
 target-version = "py311"
 extend-exclude = [".claude/skills"]
 
 [tool.ruff.lint]
 ignore = ["B008", "BLE001", "EXE001"]
+
+[tool.black]
+extend-exclude = '.claude/skills'
