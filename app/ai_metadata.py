@@ -114,17 +114,25 @@ def _strip_json_fences(text: str) -> str:
 
 def _unwrap_nested_json(value: str, field: str) -> str:
     """If a string field value is itself a JSON object containing the field,
-    return the inner value (models sometimes nest the whole JSON reply inside
-    a single requested field)."""
-    candidate = _strip_json_fences(value)
-    if not candidate.startswith("{"):
+    return the inner value.  Loops to handle double-nesting and falls back to
+    the first string value when the expected key is absent."""
+    for _ in range(5):
+        candidate = _strip_json_fences(value)
+        if not candidate.startswith("{"):
+            return value
+        try:
+            inner = json.loads(candidate)
+        except json.JSONDecodeError:
+            return value
+        if not isinstance(inner, dict):
+            return value
+        if isinstance(inner.get(field), str):
+            value = inner[field]
+            continue
+        for v in inner.values():
+            if isinstance(v, str) and v.strip():
+                return v
         return value
-    try:
-        inner = json.loads(candidate)
-    except json.JSONDecodeError:
-        return value
-    if isinstance(inner, dict) and isinstance(inner.get(field), str):
-        return inner[field]
     return value
 
 

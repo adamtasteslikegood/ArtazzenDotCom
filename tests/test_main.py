@@ -535,6 +535,26 @@ def test_request_json_inside_title_unwrapped(monkeypatch, tmp_path):
     assert result["title"] == "Clean Title"
 
 
+def test_request_double_nested_json_title_unwrapped(monkeypatch, tmp_path):
+    """Double-nested JSON inside the title value is fully unwrapped."""
+    inner = json.dumps({"title": "Clean Title"})
+    outer = json.dumps({"title": inner})
+    _patch_openai_transport(monkeypatch, _output_text_payload(outer))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert result["title"] == "Clean Title"
+
+
+def test_request_nested_json_wrong_key_unwrapped(monkeypatch, tmp_path):
+    """Nested JSON with a different key name still extracts the string value."""
+    inner = json.dumps({"name": "Sunset Over Fields"})
+    outer = json.dumps({"title": inner})
+    _patch_openai_transport(monkeypatch, _output_text_payload(outer))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert result["title"] == "Sunset Over Fields"
+
+
 def test_request_empty_content_no_crash(monkeypatch, tmp_path):
     """Empty output must produce a parse error, not an AttributeError."""
     payload = {"id": "resp_test", "status": "completed", "usage": {}, "output": []}
