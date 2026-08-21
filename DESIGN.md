@@ -151,7 +151,16 @@ Accessibility is a primary concern. The application must be usable for everyone.
   - The clicked artwork thumbnail should be the origin of the transition.
   - For browsers that do not support the View Transitions API, a simple CSS fade-in/fade-out should be used as a fallback.
   - All transitions must respect the `prefers-reduced-motion` media query and be disabled (or reduced to a simple fade) when it is active.
-    |------|----------|-----------|
-    | 2026-04-20 | Initial design system created | Tailored to "Techno-Botanical" art style and Claude Design workflow. |
 
-> @artazzen-design-system/ theses got cut off before claude design got too implment our DESIGN.md right int he middle
+## Changelog
+
+| Date       | Change                        | Notes                                                                |
+| ---------- | ----------------------------- | -------------------------------------------------------------------- |
+| 2026-04-20 | Initial design system created | Tailored to "Techno-Botanical" art style and Claude Design workflow. |
+
+## Known Gaps
+
+> **Note:** The tokens under `artazzen-design-system/` are incomplete — that
+> content was truncated partway through, before Claude Design finished
+> implementing this DESIGN.md. Treat the sections above as authoritative and
+> re-generate the token files before relying on them.

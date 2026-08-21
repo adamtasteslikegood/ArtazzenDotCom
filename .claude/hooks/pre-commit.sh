@@ -1,0 +1,193 @@
+#!/bin/bash
+# CLAUDE.md Quality Validator
+# Not registered in .claude/settings.json by default — run manually or
+# add a PreCommit hook entry to activate.
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "🔍 Validating CLAUDE.md..."
+echo ""
+
+# Prefer the staged (index) version so a secret staged then removed from the
+# working tree is still caught.  Fall back to the working-tree copy when we
+# are not inside a git repository or CLAUDE.md is untracked.
+CLAUDE_SRC=""
+if git rev-parse --git-dir >/dev/null 2>&1 && git show :CLAUDE.md >/dev/null 2>&1; then
+    CLAUDE_TMP="$(mktemp)"
+    git show :CLAUDE.md > "$CLAUDE_TMP"
+    CLAUDE_SRC="$CLAUDE_TMP"
+    trap 'rm -f "$CLAUDE_TMP"' EXIT
+elif [ -f "CLAUDE.md" ]; then
+    CLAUDE_SRC="CLAUDE.md"
+else
+    echo -e "${YELLOW}⚠  Warning: CLAUDE.md not found${NC}"
+    echo "   Skipping validation (no CLAUDE.md to validate)"
+    exit 0
+fi
+
+# Check if skill modules are available (for advanced validation)
+SKILL_AVAILABLE=false
+if [ -f ".claude/skills/claudeforge-skill/validator.py" ] || [ -f "skill/validator.py" ] || [ -f "$HOME/.claude/skills/claudeforge-skill/validator.py" ]; then
+    SKILL_AVAILABLE=true
+fi
+
+# Basic Validation (always run)
+echo "Running basic validation checks..."
+
+# 1. Check file length
+echo -n "  ✓ Checking file length... "
+LINES=$(wc -l < "$CLAUDE_SRC")
+if [ $LINES -lt 20 ]; then
+    echo -e "${RED}FAILED${NC}"
+    echo -e "    ${RED}Error: CLAUDE.md too short ($LINES lines)${NC}"
+    echo "    Minimum: 20 lines recommended"
+    exit 1
+elif [ $LINES -gt 400 ]; then
+    echo -e "${YELLOW}WARNING${NC}"
+    echo -e "    ${YELLOW}Warning: CLAUDE.md very long ($LINES lines)${NC}"
+    echo "    Recommended: <300 lines (or use modular architecture)"
+    echo "    Continuing anyway..."
+else
+    echo -e "${GREEN}OK${NC} ($LINES lines)"
+fi
+
+# 2. Check required sections
+echo -n "  ✓ Checking required sections... "
+MISSING_SECTIONS=()
+
+for section in "Core Principles" "Tech Stack" "Workflow"; do
+    if ! grep -qi "$section" "$CLAUDE_SRC"; then
+        MISSING_SECTIONS+=("$section")
+    fi
+done
+
+if [ ${#MISSING_SECTIONS[@]} -gt 0 ]; then
+    echo -e "${RED}FAILED${NC}"
+    echo -e "    ${RED}Missing required sections:${NC}"
+    for section in "${MISSING_SECTIONS[@]}"; do
+        echo "      - $section"
+    done
+    echo ""
+    echo "  Run: /enhance-claude-md to add missing sections"
+    exit 1
+else
+    echo -e "${GREEN}OK${NC}"
+fi
+
+# 3. Check for code blocks
+echo -n "  ✓ Checking for code examples... "
+CODE_BLOCKS=$(grep -c '```' "$CLAUDE_SRC" || echo "0")
+if [ $CODE_BLOCKS -lt 2 ]; then
+    echo -e "${YELLOW}WARNING${NC}"
+    echo -e "    ${YELLOW}Warning: Few code examples ($CODE_BLOCKS blocks)${NC}"
+    echo "    Recommended: Include code examples in your CLAUDE.md"
+else
+    echo -e "${GREEN}OK${NC} ($CODE_BLOCKS blocks)"
+fi
+
+# 4. Check for TODO/FIXME placeholders
+echo -n "  ✓ Checking for placeholders... "
+if grep -qi "TODO\|FIXME\|XXX\|\[TBD\]" "$CLAUDE_SRC"; then
+    echo -e "${YELLOW}WARNING${NC}"
+    echo -e "    ${YELLOW}Warning: Found TODO/FIXME placeholders${NC}"
+    grep -n "TODO\|FIXME\|XXX\|\[TBD\]" "$CLAUDE_SRC" | head -3
+    echo "    Consider completing these before committing"
+else
+    echo -e "${GREEN}OK${NC}"
+fi
+
+# 5. Check for potential secrets
+#
+# Matches an assignment carrying a real-looking value (KEY=<8+ chars>), not a
+# bare mention of the word. Substring matching tripped on ordinary prose in
+# CLAUDE.md -- "Design system spec and tokens" and "No hardcoded secrets or
+# API keys in diff" both contain a keyword but no secret.
+#
+# Values are NEVER printed. Only line numbers are reported, so a genuine key
+# cannot leak into the terminal or into a CI log that captures hook output.
+echo -n "  ✓ Checking for hardcoded secrets... "
+secret_re='(api[_-]?key|apikey|password|passwd|token|secret)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+-]{8,}'
+placeholder_re='example|sample|placeholder|changeme|your[_-]|xxxx|dummy|redacted|<[^>]*>|\$[A-Za-z{]'
+secret_lines="$(grep -nEi "$secret_re" "$CLAUDE_SRC" 2>/dev/null \
+    | while IFS= read -r match; do
+        lineno="${match%%:*}"
+        # Extract just the value after the assignment operator, so that a
+        # trailing comment like "# example" does not suppress a real secret.
+        value="$(echo "$match" | sed -nE "s/.*($secret_re).*/\1/Ip")"
+        if ! echo "$value" | grep -Eiq "$placeholder_re"; then
+            echo "$lineno"
+        fi
+    done \
+    | tr '\n' ' ' \
+    | sed 's/ $//')"
+if [ -n "$secret_lines" ]; then
+    echo -e "${RED}FAILED${NC}"
+    echo -e "    ${RED}Error: Potential hardcoded secret on line(s): ${secret_lines}${NC}"
+    echo -e "    ${RED}Values withheld -- inspect CLAUDE.md locally.${NC}"
+    exit 1
+else
+    echo -e "${GREEN}OK${NC}"
+fi
+
+# Advanced Validation (if skill modules available)
+if [ "$SKILL_AVAILABLE" = true ]; then
+    echo ""
+    echo "Running advanced validation (using ClaudeForge skill)..."
+
+    # Determine skill path (prefer project-local over home-level)
+    if [ -f ".claude/skills/claudeforge-skill/validator.py" ]; then
+        SKILL_PATH=".claude/skills/claudeforge-skill"
+    elif [ -f "skill/validator.py" ]; then
+        SKILL_PATH="skill"
+    else
+        SKILL_PATH="$HOME/.claude/skills/claudeforge-skill"
+    fi
+
+    # Run Python validation
+    python3 << EOF
+import sys
+sys.path.insert(0, '$SKILL_PATH')
+
+try:
+    from validator import BestPracticesValidator
+
+    with open('$CLAUDE_SRC', 'r') as f:
+        content = f.read()
+
+    validator = BestPracticesValidator(content)
+    results = validator.validate_all()
+
+    passed = results['pass_count']
+    total = passed + results['fail_count']
+
+    print(f"  ✓ Advanced validation: {passed}/{total} checks passed")
+
+    if not results['valid']:
+        print(f"\n  \033[0;31mError: Validation failed ({results['fail_count']} checks failed)\033[0m")
+        for err in results.get('errors', []):
+            print(f"    - {err}")
+        print("  Run: /enhance-claude-md to improve quality")
+        sys.exit(1)
+
+except Exception as e:
+    print(f"  ⚠  Advanced validation skipped (error: {e})")
+    pass
+EOF
+
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+fi
+
+# All checks passed
+echo ""
+echo -e "${GREEN}✅ CLAUDE.md validation passed!${NC}"
+echo ""
+echo "Proceeding with commit..."
+exit 0
