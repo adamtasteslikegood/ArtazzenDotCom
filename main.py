@@ -11,7 +11,7 @@ are snapshots, not live bindings.
 
 import httpx  # noqa: F401  (legacy patch target: gallery_app.httpx)
 
-from app import ai_metadata, config, security, sidecars, watcher  # noqa: F401
+from app import ai_metadata, config, curation, security, sidecars, watcher  # noqa: F401
 from app.ai_metadata import (  # noqa: F401
     _build_openai_prompt,
     _get_openai_api_key,
@@ -48,6 +48,9 @@ from app.routes_admin import (  # noqa: F401
     get_admin_config,
     import_from_path,
     list_collections,
+    list_series,
+    mutate_collections,
+    mutate_series,
     preview_image_metadata,
     regenerate_ai_metadata,
     reset_admin_config,
@@ -58,7 +61,12 @@ from app.routes_admin import (  # noqa: F401
     update_image_metadata,
     upload_images,
 )
-from app.routes_public import artwork_detail, read_root  # noqa: F401
+from app.routes_public import (  # noqa: F401
+    artwork_detail,
+    collection_detail,
+    collections_index,
+    read_root,
+)
 from app.security import (  # noqa: F401
     _http_basic,
     _SecurityHeadersMiddleware,

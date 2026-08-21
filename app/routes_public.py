@@ -6,11 +6,47 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from starlette import status
 
-from app import config, sidecars
+from app import config, curation, sidecars
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/collections", response_class=HTMLResponse)
+async def collections_index(request: Request):
+    """Top-level collections grid."""
+    collections = [
+        {**entry, "cover_url": curation.collection_cover_url(entry)}
+        for entry in curation.top_level_collections()
+    ]
+    return config.templates.TemplateResponse(
+        request,
+        "collections_index.html",
+        {"collections": collections, "gallery_title": config.GALLERY_TITLE},
+    )
+
+
+@router.get("/collections/{slug}", response_class=HTMLResponse)
+async def collection_detail(request: Request, slug: str):
+    """A collection page: breadcrumb, sub-collections, series strips, grid."""
+    view = curation.collection_view(slug)
+    if view is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found"
+        )
+    return config.templates.TemplateResponse(
+        request,
+        "collection_detail.html",
+        {
+            "collection": view["collection"],
+            "breadcrumb": view["breadcrumb"],
+            "children": view["children"],
+            "series_list": view["series"],
+            "artworks": view["artworks"],
+            "gallery_title": config.GALLERY_TITLE,
+        },
+    )
 
 
 @router.get("/artwork/{image_filename}", response_class=HTMLResponse)
@@ -62,6 +98,8 @@ async def artwork_detail(request: Request, image_filename: str):
             "artwork": artwork_data,
             "prev_artwork": prev_artwork,
             "next_artwork": next_artwork,
+            "collections": curation.collections_for_image(filename),
+            "series_memberships": curation.series_for_image(filename),
         },
     )
 

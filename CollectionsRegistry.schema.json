@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/CollectionsRegistry.schema.json",
+  "title": "Collections Registry",
+  "description": "Registry of artwork collections stored at IMAGES_DIR/.curation/collections.json. Nesting is expressed through the parent slug chain; sidecars record membership by slug.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "collections"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "collections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "Globally unique slug; URLs use /collections/{id} regardless of nesting."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "default": ""
+          },
+          "parent": {
+            "type": "string",
+            "default": "",
+            "description": "Slug of the parent collection, or empty for top-level."
+          },
+          "cover": {
+            "type": "string",
+            "default": "",
+            "description": "Image filename used as the collection cover, or empty for the first member."
+          },
+          "order": {
+            "type": "integer",
+            "default": 0,
+            "description": "Sort key for index pages."
+          }
+        }
+      }
+    }
+  }
+}
