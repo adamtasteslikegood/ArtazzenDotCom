@@ -16,5 +16,7 @@ logs/
 .agent-harness/
 /uv.lock
 .claude/*
+.copilot/*
+.github/instructions/*
 .git/*
 
