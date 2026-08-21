@@ -1,24 +1,13 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ artwork.title }} &mdash; Artazzen</title>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
-    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
-    <script>(function(){try{var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)}catch(e){}})()</script>
-</head>
-<body>
+{% extends "base.html" %}
 
-    <header>
-        <a href="{{ url_for('read_root') }}" class="artwork-meta-label" style="text-decoration: none; color: inherit; margin-bottom: 2rem; display: inline-block;">&larr; Back to Gallery</a>
-        <h1>{{ artwork.title }}</h1>
-    </header>
+{% block title %}{{ artwork.title }} &mdash; Artazzen{% endblock %}
+{% block page_heading %}{{ artwork.title }}{% endblock %}
 
-    <div class="shader-bg"></div>
+{% block header_pre %}
+<a href="{{ url_for('read_root') }}" class="artwork-meta-label" style="text-decoration: none; color: inherit; margin-bottom: 2rem; display: inline-block;">&larr; Back to Gallery</a>
+{% endblock %}
 
+{% block content %}
     <main>
         <div class="artwork-detail-grid">
             <div>
@@ -49,9 +38,21 @@
                 </div>
                 {% endif %}
 
-                {% if artwork.collection %}
+                {% if collections %}
+                <p class="artwork-meta-label">Collections</p>
+                <p class="artwork-meta-value">
+                    {% for c in collections %}<a href="{{ url_for('collection_detail', slug=c.id) }}">{{ c.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+                </p>
+                {% elif artwork.collection %}
                 <p class="artwork-meta-label">Collection</p>
                 <p class="artwork-meta-value">{{ artwork.collection }}</p>
+                {% endif %}
+
+                {% if series_memberships %}
+                <p class="artwork-meta-label">Series</p>
+                <p class="artwork-meta-value">
+                    {% for s in series_memberships %}<a href="{{ url_for('collection_detail', slug=s.collection) }}#series-{{ s.id }}">{{ s.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+                </p>
                 {% endif %}
 
                 {% if artwork.copyright %}
@@ -78,10 +79,6 @@
         </nav>
         {% endif %}
     </main>
+{% endblock %}
 
-    <footer>
-        <p>Artazzen / {{ artwork.title }}</p>
-    </footer>
-
-</body>
-</html>
+{% block footer %}<p>Artazzen / {{ artwork.title }}</p>{% endblock %}

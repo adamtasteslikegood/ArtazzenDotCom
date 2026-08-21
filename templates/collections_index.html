@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Collections &mdash; {{ gallery_title }}{% endblock %}
+{% block page_heading %}Collections{% endblock %}
+
+{% block content %}
+    <main>
+        {% if collections %}
+            <div class="gallery-grid collections-grid">
+                {% for collection in collections %}
+                    <div class="artwork-item collection-card">
+                        <a href="{{ url_for('collection_detail', slug=collection.id) }}" title="View collection: {{ collection.title }}">
+                            {% if collection.cover_url %}
+                            <img src="{{ collection.cover_url }}" alt="{{ collection.title }}" loading="lazy">
+                            {% else %}
+                            <div class="collection-cover-placeholder" aria-hidden="true"></div>
+                            {% endif %}
+                        </a>
+                        <p class="artwork-title">{{ collection.title }}</p>
+                        {% if collection.description %}
+                        <p class="artwork-description">{{ collection.description }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="no-artwork-message">No collections yet.</p>
+        {% endif %}
+    </main>
+{% endblock %}
+
+{% block footer %}<p>Artwork Gallery</p>{% endblock %}

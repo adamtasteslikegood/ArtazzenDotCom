@@ -34,7 +34,10 @@ def _coerce_bool(value: Any) -> bool:
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "Static"
-IMAGES_DIR = STATIC_DIR / "images"
+# Honor the same IMAGES_DIR env override as the app (app/config.py), so the
+# sidecar loop and the curation-registry validation always target the same
+# root — on Railway the volume lives at /data/images, not Static/images.
+IMAGES_DIR = Path(os.getenv("IMAGES_DIR", STATIC_DIR / "images"))
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 
 ALLOWED_IMAGE_EXTENSIONS = {
@@ -204,6 +207,21 @@ def validate_and_migrate(images_dir: Path = IMAGES_DIR) -> int:
             changed += 1
 
     print(f"Validated {total} images; updated {changed} sidecars.")
+
+    # Curation registries (collections/series) — validate + repair drift.
+    try:
+        from app import curation
+
+        report = curation.validate_registries(repair=True)
+        for warning in report["warnings"]:
+            print(f"[warn] {warning}")
+        for error in report["errors"]:
+            print(f"[error] {error}")
+        if report["errors"]:
+            return 1
+        print("Curation registries valid.")
+    except ImportError as exc:
+        print(f"[warn] Skipping registry validation (app package unavailable: {exc})")
     return 0
 
 

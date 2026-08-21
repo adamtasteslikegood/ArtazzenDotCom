@@ -13,3 +13,4 @@ data/
 /imports/
 final_test.log
 logs/
+.agent-harness/

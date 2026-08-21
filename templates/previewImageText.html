@@ -1,27 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <script>(function(){try{var t=localStorage.getItem('az-theme');if(t)document.documentElement.classList.add(t)}catch(e){}})()</script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review {{ metadata.title }} &mdash; Artwork Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
-    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
-</head>
-<body class="admin-page" data-root-path="{{ request.scope.get('root_path', '') }}">
-    <header>
-        <h1>Review</h1>
-        <p class="admin-subheading">Curating metadata for artifact</p>
-        <nav class="admin-nav">
-            <a href="{{ review_url }}" class="button secondary">Back to pending list</a>
-            <a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
-        </nav>
-    </header>
+{% extends "base_admin.html" %}
 
-    <div class="shader-bg"></div>
+{% block title %}Review {{ metadata.title }} &mdash; Artwork Admin{% endblock %}
+{% block admin_heading %}Review{% endblock %}
+{% block admin_subheading %}Curating metadata for artifact{% endblock %}
 
+{% block admin_nav %}
+<a href="{{ review_url }}" class="button secondary">Back to pending list</a>
+<a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
+{% endblock %}
+
+{% block content %}
     <main class="admin-container single">
         <section class="admin-panel">
             <h2>{{ metadata.title }}</h2>
@@ -84,9 +72,15 @@
                     <input type="text" id="copyright" name="copyright" value="{{ metadata.get('copyright', '') | e }}">
                 </div>
                 <div class="form-field">
-                    <label for="collection">Collection</label>
+                    <label for="collections">Collections</label>
+                    <input type="text" id="collections" name="collections" value="{{ metadata.get('collections', []) | join(', ') }}" placeholder="Comma-separated collection slugs">
+                </div>
+                <div class="form-field">
+                    <label for="collection">Collection (legacy)</label>
                     <input type="text" id="collection" name="collection" value="{{ metadata.get('collection', '') | e }}">
                 </div>
+                <input type="hidden" id="ai_fields" name="ai_fields" value="{{ metadata.get('ai_fields', []) | join(',') }}">
+                <input type="hidden" id="ai_generated" name="ai_generated" value="{{ 'true' if metadata.get('ai_generated') else 'false' }}">
                 {% if metadata.get('ai_fields') %}
                 <p class="ai-status">
                     <span class="badge">AI fields: {{ metadata.ai_fields | join(', ') }}</span>
@@ -94,16 +88,14 @@
                 {% endif %}
                 <div class="form-actions">
                     <button type="submit" name="action" value="save" class="button">Approve &amp; Save</button>
-                    <button type="submit" name="action" value="cancel" class="button secondary">Cancel</button>
+                    <button type="submit" name="action" value="cancel" id="cancel-button" class="button secondary">Cancel</button>
                 </div>
             </form>
         </section>
     </main>
+{% endblock %}
 
-    <footer>
-        <p>Artwork Gallery Administration</p>
-    </footer>
-
+{% block scripts %}
     <script>
     (function () {
         var ROOT = document.body.dataset.rootPath || '';
@@ -116,6 +108,33 @@
                 }
             });
 
+        // Snapshot the form at load so Cancel can revert every field.
+        var FIELD_IDS = ['title', 'description', 'caption', 'tags', 'artist', 'copyright', 'collection', 'collections', 'ai_fields', 'ai_generated'];
+        var snapshot = {};
+        FIELD_IDS.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) snapshot[id] = el.value;
+        });
+
+        document.getElementById('cancel-button')?.addEventListener('click', function() {
+            FIELD_IDS.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && id in snapshot) el.value = snapshot[id];
+            });
+            // The submit proceeds with action=cancel; the server redirects
+            // without saving. Nothing was persisted during preview regens.
+        });
+
+        function markAiField(field) {
+            var hidden = document.getElementById('ai_fields');
+            if (!hidden) return;
+            var fields = hidden.value.split(',').map(function(f) { return f.trim(); }).filter(Boolean);
+            if (fields.indexOf(field) === -1) fields.push(field);
+            hidden.value = fields.join(',');
+            var gen = document.getElementById('ai_generated');
+            if (gen) gen.value = 'true';
+        }
+
         document.querySelectorAll('.field-regen-btn').forEach(function(btn) {
             btn.addEventListener('click', async function() {
                 var field = btn.dataset.field;
@@ -126,10 +145,11 @@
                     var res = await fetch(ROOT + '/admin/ai/regenerate', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({images: [imageName], fields: [field], force: true})
+                        body: JSON.stringify({images: [imageName], fields: [field], force: true, preview: true})
                     });
                     var data = await res.json();
                     if (!res.ok) throw new Error(data.detail || 'Failed');
+                    if ((data.errors || []).length) throw new Error(data.errors[0].error || 'Failed');
                     var updated = (data.updated || [])[0];
                     if (updated && updated.metadata) {
                         var val = updated.metadata[field];
@@ -137,6 +157,7 @@
                         if (input) {
                             input.value = Array.isArray(val) ? val.join(', ') : (val || '');
                         }
+                        markAiField(field);
                     }
                     btn.textContent = '✓';
                     setTimeout(function() { btn.textContent = 'AI'; btn.disabled = false; }, 2000);
@@ -148,5 +169,4 @@
         });
     })();
     </script>
-</body>
-</html>
+{% endblock %}
