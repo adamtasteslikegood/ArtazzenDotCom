@@ -716,6 +716,68 @@ def test_manage_sidecars_cli_honors_images_dir_env(tmp_path):
     assert (image_root / ".curation" / "collections.json").exists()
 
 
+def test_upsert_collection_null_order_falls_back(tmp_path, monkeypatch):
+    """A null/non-numeric order from client JSON must not raise."""
+    _make_curation_root(tmp_path, monkeypatch)
+    entry = gallery_app.curation.upsert_collection(
+        {"id": "flora", "title": "Flora", "order": None}
+    )
+    assert isinstance(entry["order"], int)
+    entry = gallery_app.curation.upsert_collection(
+        {"id": "flora", "title": "Flora", "order": "not-a-number"}
+    )
+    assert isinstance(entry["order"], int)
+
+
+def test_preview_regenerate_does_not_trigger_refresh(monkeypatch, tmp_path):
+    """A preview request must not run the pending refresh, whose scan can
+    AI-populate and persist other pending sidecars."""
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", status="pending")
+    monkeypatch.setattr(
+        gallery_app.ai_metadata,
+        "_populate_missing_metadata",
+        lambda path, meta, only_fields=None, persist=True: {
+            **meta,
+            "title": "AI Title",
+            "ai_details": {"status": "success"},
+        },
+    )
+    refresh_calls = []
+
+    async def recording_refresh(request):
+        refresh_calls.append(True)
+        return []
+
+    monkeypatch.setattr(gallery_app.watcher, "refresh_pending_files", recording_refresh)
+
+    response = asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            _regen_request(
+                {
+                    "images": ["a.jpg"],
+                    "fields": ["title"],
+                    "force": True,
+                    "preview": True,
+                }
+            ),
+            _=None,
+        )
+    )
+    payload = json.loads(response.body)
+    assert payload["updated"][0]["preview"] is True
+    assert refresh_calls == []
+
+    # Non-preview still refreshes.
+    asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            _regen_request({"images": ["a.jpg"], "fields": ["title"], "force": True}),
+            _=None,
+        )
+    )
+    assert refresh_calls == [True]
+
+
 def test_series_requires_existing_collection(tmp_path, monkeypatch):
     _make_curation_root(tmp_path, monkeypatch)
     with pytest.raises(ValueError):

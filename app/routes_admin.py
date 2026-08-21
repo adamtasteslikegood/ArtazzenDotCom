@@ -156,7 +156,7 @@ async def mutate_collections(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found"
         )
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -346,7 +346,13 @@ async def regenerate_ai_metadata(
             logger.exception("Failed to regenerate metadata for %s", fname)
             errors.append({"name": fname, "error": "Metadata regeneration failed"})
 
-    pending = await watcher.refresh_pending_files(request)
+    if preview:
+        # A preview must not write anything — refresh_pending_files scans,
+        # and the scan may AI-populate and persist OTHER pending sidecars.
+        # Serve the cached list instead (the watcher keeps it fresh).
+        pending = getattr(request.app.state, "pending_images", [])
+    else:
+        pending = await watcher.refresh_pending_files(request)
     return JSONResponse({"updated": updated, "errors": errors, "pending": pending})
 
 
