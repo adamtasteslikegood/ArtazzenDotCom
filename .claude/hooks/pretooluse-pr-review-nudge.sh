@@ -50,6 +50,15 @@ tool_name="$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null ||
 
 cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null || true)"
 
+# Command-position prefix. `gh` is not always the first token: leading
+# VAR=value assignments and wrappers like env/command/exec run the very same
+# binary, so `env gh pr merge`, `GH_PAGER=cat gh pr merge` and
+# `command gh pr merge` must be matched too -- otherwise they slip past every
+# guard below and merge unguarded. _AT matches "start of a command, then any
+# number of benign prefixes", and is reused by every pattern in this file.
+_PFX='(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|time|stdbuf|setsid|nice|ionice)[[:space:]]+)*'
+_AT='(^|[;&|(]|\$\()[[:space:]]*'"$_PFX"
+
 # ===================================================================
 # BLOCKING branches first — a match here must win over the informational
 # nudges below even when the triggering subcommand is chained after one.
@@ -59,7 +68,7 @@ cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null
 # Single regex so the --comments/-c flag is scoped to THIS `gh pr view`
 # invocation: `[^&|;]*` cannot cross a command separator, so a later
 # `bash -c` / `grep -c` in a compound command no longer false-positives.
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|\$\()[[:space:]]*gh[[:space:]]+pr[[:space:]]+view[[:space:]]([^&|;]*[[:space:]])?(--comments|-c)([[:space:]]|$)'; then
+if printf '%s' "$cmd" | grep -Eq "$_AT"'gh[[:space:]]+pr[[:space:]]+view[[:space:]]([^&|;]*[[:space:]])?(--comments|-c)([[:space:]]|$)'; then
   cat <<'JSON'
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Use gh api instead -- gh pr view --comments misses review-body comments and suppressed co-pilot reviews","additionalContext":"WRONG TOOL: `gh pr view --comments` only shows issue-style comments, NOT inline review comments or suppressed co-pilot reviews. Use ALL THREE gh api endpoints (add `--paginate` to each so nothing past page 1 is missed): `gh api --paginate repos/{owner}/{repo}/pulls/{number}/comments` (inline diff comments), `gh api --paginate repos/{owner}/{repo}/issues/{number}/comments` (top-level conversation comments), and `gh api --paginate repos/{owner}/{repo}/pulls/{number}/reviews` (submitted review summaries -- prose feedback in a review `.body` with no inline comments appears in NONE of the others; check both `.body` and `.state`)."}}
 JSON
@@ -67,7 +76,7 @@ JSON
 fi
 
 # --- Merge guard — ASK (blocks until user confirms) ---
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|\$\()[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)'; then
+if printf '%s' "$cmd" | grep -Eq "$_AT"'gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)'; then
   cat <<'JSON'
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merge guard: have all review comments been addressed?","additionalContext":"STOP -- you are about to merge a PR. Before merging, you MUST check for unanswered review comments. Use ALL THREE endpoints (add `--paginate` to each so nothing past page 1 is missed): `gh api --paginate repos/{owner}/{repo}/pulls/{number}/comments` (inline diff comments), `gh api --paginate repos/{owner}/{repo}/issues/{number}/comments` (top-level conversation comments), AND `gh api --paginate repos/{owner}/{repo}/pulls/{number}/reviews` (submitted review summaries -- a COMMENTED/CHANGES_REQUESTED review can carry prose feedback in its `.body` with no inline comments, invisible to the other two endpoints; check both `.body` and `.state`). This is where suppressed co-pilot reviews hide. NOT `gh pr view --comments`, which misses all of these. Every comment must be addressed with either a fix commit or a concrete technical rebuttal. If any comment is unanswered, deny this merge and address it first."}}
 JSON
@@ -79,7 +88,7 @@ fi
 # ===================================================================
 
 # --- Reply nudge (gh pr comment/review) ---
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|\$\()[[:space:]]*gh[[:space:]]+pr[[:space:]]+(comment|review)([[:space:]]|$)'; then
+if printf '%s' "$cmd" | grep -Eq "$_AT"'gh[[:space:]]+pr[[:space:]]+(comment|review)([[:space:]]|$)'; then
   cat <<'JSON'
 {"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"You are about to post a reply to PR review feedback. Per the PR workflow rules: if you have not already this turn, invoke the superpowers:receiving-code-review skill and evaluate this feedback with technical rigor -- verify each claim against the code, then either push a fix commit or give a concrete technical rebuttal (never performative agreement, never silently ignore). End the reply with the attribution line: _Replied by Claude on Adam's behalf_"}}
 JSON
@@ -87,7 +96,7 @@ JSON
 fi
 
 # --- Reply nudge (gh api ...pulls/*/comments POST) ---
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|\$\()[[:space:]]*gh[[:space:]]+api[[:space:]]' \
+if printf '%s' "$cmd" | grep -Eq "$_AT"'gh[[:space:]]+api[[:space:]]' \
   && printf '%s' "$cmd" | grep -Eq 'pulls/[0-9]+/comments' \
   && printf '%s' "$cmd" | grep -Eq '(-X[[:space:]]*POST|--method[[:space:]]*POST|-f[[:space:]]|-F[[:space:]]|--field[[:space:]]|--input[[:space:]])'; then
   cat <<'JSON'
@@ -97,7 +106,7 @@ JSON
 fi
 
 # --- Reading PR comments (load receiving-code-review skill) ---
-if printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|\$\()[[:space:]]*gh[[:space:]]+api[[:space:]]' \
+if printf '%s' "$cmd" | grep -Eq "$_AT"'gh[[:space:]]+api[[:space:]]' \
   && printf '%s' "$cmd" | grep -Eq 'pulls/[0-9]+/comments' \
   && ! printf '%s' "$cmd" | grep -Eq '(-X[[:space:]]*POST|--method[[:space:]]*POST|-f[[:space:]]|-F[[:space:]]|--field[[:space:]]|--input[[:space:]])'; then
   cat <<'JSON'

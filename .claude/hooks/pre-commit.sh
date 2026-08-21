@@ -92,11 +92,26 @@ else
 fi
 
 # 5. Check for potential secrets
+#
+# Matches an assignment carrying a real-looking value (KEY=<8+ chars>), not a
+# bare mention of the word. Substring matching tripped on ordinary prose in
+# CLAUDE.md -- "Design system spec and tokens" and "No hardcoded secrets or
+# API keys in diff" both contain a keyword but no secret.
+#
+# Values are NEVER printed. Only line numbers are reported, so a genuine key
+# cannot leak into the terminal or into a CI log that captures hook output.
 echo -n "  ✓ Checking for hardcoded secrets... "
-if grep -Ei "API_KEY|password|token|secret" CLAUDE.md | grep -Ev 'example|sample|placeholder|`.*`'; then
+secret_re='(api[_-]?key|apikey|password|passwd|token|secret)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_./+-]{8,}'
+placeholder_re='example|sample|placeholder|changeme|your[_-]|xxxx|dummy|redacted|<[^>]*>|\$[A-Za-z{]'
+secret_lines="$(grep -nEi "$secret_re" CLAUDE.md 2>/dev/null \
+    | grep -Eiv "$placeholder_re" \
+    | cut -d: -f1 \
+    | tr '\n' ' ' \
+    | sed 's/ $//')"
+if [ -n "$secret_lines" ]; then
     echo -e "${RED}FAILED${NC}"
-    echo -e "    ${RED}Error: Potential hardcoded secrets found${NC}"
-    grep -n -Ei "API_KEY|password|token|secret" CLAUDE.md
+    echo -e "    ${RED}Error: Potential hardcoded secret on line(s): ${secret_lines}${NC}"
+    echo -e "    ${RED}Values withheld -- inspect CLAUDE.md locally.${NC}"
     exit 1
 else
     echo -e "${GREEN}OK${NC}"
