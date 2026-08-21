@@ -1,7 +1,6 @@
 """Admin dashboard, review, upload, import, config, and curation routes."""
 
 import copy
-import json
 import logging
 import os
 import shutil
@@ -13,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette import status
 
-from app import ai_metadata, config, sidecars, watcher
+from app import ai_metadata, config, curation, sidecars, watcher
 from app.security import _verify_admin
 from app.watcher import get_pending_files
 
@@ -120,23 +119,92 @@ async def api_new_files(
 
 @router.get("/admin/api/collections", response_class=JSONResponse)
 async def list_collections(_: None = Depends(_verify_admin)) -> JSONResponse:
-    """Return distinct collection values from all sidecars."""
-    collections: set[str] = set()
+    """Return the collections registry with per-collection member counts."""
+    counts = curation.membership_counts()
+    entries = [
+        {**entry, "count": counts.get(entry.get("id", ""), 0)}
+        for entry in curation.load_collections().get("collections", [])
+    ]
+    return JSONResponse({"collections": entries})
+
+
+@router.post("/admin/api/collections", response_class=JSONResponse)
+async def mutate_collections(
+    request: Request,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Create/update/delete a collection registry entry.
+
+    Body: {"action": "create"|"update"|"delete", "collection": {...}}
+    Delete removes the slug from all sidecars and re-parents children.
+    """
     try:
-        for name in os.listdir(config.IMAGES_DIR):
-            if not name.lower().endswith(".json"):
-                continue
-            json_path = config.IMAGES_DIR / name
-            try:
-                data = json.loads(json_path.read_text(encoding="utf-8"))
-                val = str(data.get("collection") or "").strip()
-                if val:
-                    collections.add(val)
-            except (json.JSONDecodeError, OSError):
-                continue
-    except OSError:
-        pass
-    return JSONResponse({"collections": sorted(collections)})
+        body = await request.json()
+    except Exception:
+        body = {}
+    action = str(body.get("action") or "").strip()
+    payload = body.get("collection") or {}
+    try:
+        if action in ("create", "update"):
+            entry = curation.upsert_collection(payload)
+            return JSONResponse({"status": "ok", "collection": entry})
+        if action == "delete":
+            slug = str(payload.get("id") or "").strip()
+            curation.delete_collection(slug)
+            return JSONResponse({"status": "ok", "deleted": slug})
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="action must be one of: create, update, delete",
+    )
+
+
+@router.get("/admin/api/series", response_class=JSONResponse)
+async def list_series(_: None = Depends(_verify_admin)) -> JSONResponse:
+    """Return the series registry."""
+    return JSONResponse({"series": curation.load_series().get("series", [])})
+
+
+@router.post("/admin/api/series", response_class=JSONResponse)
+async def mutate_series(
+    request: Request,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Create/update/delete/reorder a series registry entry.
+
+    Body: {"action": "create"|"update"|"delete", "series": {...}}
+    Updates (including reorders via the ordered images list) re-sync the
+    sidecar series mirrors of every affected image.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    action = str(body.get("action") or "").strip()
+    payload = body.get("series") or {}
+    try:
+        if action in ("create", "update", "reorder"):
+            entry = curation.upsert_series(payload)
+            return JSONResponse({"status": "ok", "series": entry})
+        if action == "delete":
+            slug = str(payload.get("id") or "").strip()
+            curation.delete_series(slug)
+            return JSONResponse({"status": "ok", "deleted": slug})
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Series not found"
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="action must be one of: create, update, reorder, delete",
+    )
 
 
 @router.get("/admin/config", response_class=JSONResponse)
@@ -437,6 +505,7 @@ async def update_image_metadata(
     artist: str = Form(""),
     copyright_info: str = Form("", alias="copyright"),
     collection: str = Form(""),
+    collections: str | None = Form(None),
     ai_fields: str = Form(""),
     ai_generated: str = Form(""),
     action: str = Form("save"),
@@ -471,6 +540,20 @@ async def update_image_metadata(
         "copyright": copyright_info.strip(),
         "collection": collection.strip(),
     }
+    # Collections are hand-curated: only touch memberships when the field is
+    # actually submitted (absent != empty; "" is a deliberate clear-all).
+    if collections is not None:
+        known_slugs = {
+            c.get("id")
+            for c in curation.load_collections().get("collections", [])
+            if c.get("id")
+        }
+        collection_slugs = [
+            s for s in (part.strip() for part in collections.split(",")) if s
+        ]
+        clean_metadata["collections"] = [
+            s for s in collection_slugs if s in known_slugs
+        ]
     existing = sidecars._load_metadata(image_path)
     prior_ai = set(existing.get("ai_fields", []))
     changed = {

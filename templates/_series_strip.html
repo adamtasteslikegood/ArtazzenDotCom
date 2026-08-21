@@ -1,0 +1,16 @@
+<section class="series-strip" id="series-{{ series.id }}">
+    <h3 class="series-title">{{ series.title }}</h3>
+    {% if series.description %}
+    <p class="series-description">{{ series.description }}</p>
+    {% endif %}
+    <div class="series-track">
+        {% for artwork in series.artworks %}
+        <div class="series-item">
+            <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
+                <img src="{{ artwork.url }}" alt="{{ artwork.title }}" loading="lazy">
+            </a>
+            <p class="artwork-title">{{ artwork.title }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
