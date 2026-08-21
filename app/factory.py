@@ -20,7 +20,12 @@ async def lifespan(app: FastAPI):
     curation.ensure_registries()
     curation.migrate_legacy_collections()
     curation.sync_series_mirrors()
-    app.state.pending_images = watcher.new_files_detected()
+    # Start empty: the watcher task's first cycle runs immediately (off the
+    # event loop) and populates the cache; scanning inline here blocked
+    # startup — and thus deploy readiness — for a full scan plus any
+    # OpenAI calls. Routes never read this cache directly; they use the
+    # get_pending_files dependency, which performs a fresh scan.
+    app.state.pending_images = []
     app.state.watcher_task = asyncio.create_task(watcher._watch_image_directory(app))
     yield
     # Shutdown
