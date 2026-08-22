@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: npx --yes prettier --check "**/*.{md,yml,yaml,json}" --ignore-path .gitignore
+      - run: npx --yes prettier --check "**/*.{md,yml,yaml,json}"
 
   security:
     name: Security scan
