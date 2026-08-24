@@ -84,6 +84,48 @@ def test_artwork_detail(client: TestClient):
 
 
 # ---------------------------------------------------------------------------
+# SEO: robots.txt, sitemap.xml, canonical tags
+# ---------------------------------------------------------------------------
+
+
+def test_robots_txt(client: TestClient):
+    response = client.get("/robots.txt")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert "Disallow: /admin/" in response.text
+    assert "Sitemap:" in response.text
+    assert "sitemap.xml" in response.text
+
+
+def test_sitemap_xml(client: TestClient):
+    response = client.get("/sitemap.xml")
+    assert response.status_code == 200
+    assert "application/xml" in response.headers["content-type"]
+    assert "<urlset" in response.text
+    assert "<loc>" in response.text
+
+
+def test_sitemap_contains_only_approved_artworks(client: TestClient, tmp_path, monkeypatch):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    _add_image(image_root, "visible.jpg", status="approved")
+    _add_image(image_root, "hidden.jpg", status="pending")
+    gallery_app.curation.ensure_registries()
+
+    response = client.get("/sitemap.xml")
+    assert response.status_code == 200
+    assert "/artwork/visible.jpg" in response.text
+    assert "/artwork/hidden.jpg" not in response.text
+
+
+def test_canonical_tag_on_public_pages(client: TestClient):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'rel="canonical"' in response.text
+
+
+# ---------------------------------------------------------------------------
 # Security headers
 # ---------------------------------------------------------------------------
 
@@ -1229,6 +1271,8 @@ def test_all_routes_registered():
     """Every pre-split route path is still registered on main.app."""
     expected = {
         "/",
+        "/robots.txt",
+        "/sitemap.xml",
         "/artwork/{image_filename}",
         "/admin",
         "/admin/review",

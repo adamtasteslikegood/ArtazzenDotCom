@@ -19,6 +19,7 @@ _USING_VOLUME = IMAGES_DIR != STATIC_DIR / "images"
 IMAGES_URL_PREFIX = "/images" if _USING_VOLUME else "/static/images"
 IMPORT_ROOT = Path(os.getenv("IMPORT_ROOT", BASE_DIR / "imports"))
 GALLERY_TITLE = os.getenv("GALLERY_TITLE", "Artazzen Gallery")
+SITE_URL = os.getenv("SITE_URL", "https://artazzen.com").rstrip("/")
 TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 CONFIG_PATH = BASE_DIR / "ai_config.json"
@@ -65,6 +66,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.globals["site_url"] = SITE_URL
 
 # RLock: writers that must make a read-merge-write cycle atomic (e.g. the
 # AI populate persist path) hold it across _write_sidecar, which acquires
