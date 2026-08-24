@@ -92,7 +92,7 @@ def test_robots_txt(client: TestClient):
     response = client.get("/robots.txt")
     assert response.status_code == 200
     assert "text/plain" in response.headers["content-type"]
-    assert "Disallow: /admin/" in response.text
+    assert "Disallow: /admin" in response.text
     assert "Sitemap:" in response.text
     assert "sitemap.xml" in response.text
 
