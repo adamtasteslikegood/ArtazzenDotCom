@@ -41,7 +41,7 @@ pydantic-core==2.33.2
 pydantic-extra-types==2.10.5
 pydantic-settings==2.10.1
 pyee==13.0.1
-pygments==2.19.2
+pygments==2.21.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
