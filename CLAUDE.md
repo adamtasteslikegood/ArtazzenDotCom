@@ -206,7 +206,14 @@ Follow the four Karpathy principles for LLM-assisted coding:
 
 1. **Branch** from `dev` using the appropriate prefix (`feat/`, `fix/`, `docs/`, `chore/`).
 2. **Develop** incrementally — commit often with clear messages.
-3. **Validate** — run `pytest` and `python manage_sidecars.py validate` before pushing.
+3. **Validate** — run the CI checks locally before pushing:
+   ```bash
+   pytest tests/test_main.py -q                          # Tests
+   python manage_sidecars.py validate                     # Sidecar JSON
+   ruff check .                                           # Lint
+   black --check --target-version py311 .                 # Format (Python)
+   npx --yes prettier --check "**/*.{md,yml,yaml,json}"   # Format (docs/config)
+   ```
 4. **Push** and open a PR targeting `dev`. Mark as draft if still in progress.
 5. **Review** — wait for CodeQL and Copilot checks; respond to every comment thread.
 6. **Merge** via rebase or merge commit (squash is not allowed by ruleset).

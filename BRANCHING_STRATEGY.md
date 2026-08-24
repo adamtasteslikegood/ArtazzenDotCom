@@ -13,11 +13,11 @@ main (production)          ← deployed to Railway production environment
 
 ### Branch Roles
 
-| Branch                                 | Purpose                   | Deploys To                            | Protected                               |
-| -------------------------------------- | ------------------------- | ------------------------------------- | --------------------------------------- |
-| `main`                                 | Production-ready code     | Railway production                    | Yes — PR required, all threads resolved |
-| `dev`                                  | Integration and staging   | Railway staging (when configured)     | Yes — PR required                       |
-| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews                   | No                                      |
+| Branch                                 | Purpose                   | Deploys To                        | Protected                               |
+| -------------------------------------- | ------------------------- | --------------------------------- | --------------------------------------- |
+| `main`                                 | Production-ready code     | Railway production                | Yes — PR required, all threads resolved |
+| `dev`                                  | Integration and staging   | Railway staging (when configured) | Yes — PR required                       |
+| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews               | No                                      |
 
 ### Rules
 
