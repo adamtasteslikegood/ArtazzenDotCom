@@ -105,7 +105,9 @@ def test_sitemap_xml(client: TestClient):
     assert "<loc>" in response.text
 
 
-def test_sitemap_contains_only_approved_artworks(client: TestClient, tmp_path, monkeypatch):
+def test_sitemap_contains_only_approved_artworks(
+    client: TestClient, tmp_path, monkeypatch
+):
     image_root = tmp_path / "images"
     image_root.mkdir()
     monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
