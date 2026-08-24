@@ -4,7 +4,7 @@ ast-serialize==0.8.0
 attrs==25.3.0
 bandit==1.9.4
 black==26.5.1
-certifi==2025.7.14
+certifi==2026.7.22
 click==8.2.1
 coverage==7.15.4
 dnspython==2.7.0
