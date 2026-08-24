@@ -585,9 +585,7 @@ def test_stuffed_title_rejected(monkeypatch, tmp_path):
     )
     text = json.dumps({"title": stuffed})
     _patch_openai_transport(monkeypatch, _output_text_payload(text))
-    result = gallery_app._request_openai_metadata(
-        tmp_path / "x.jpg", {}, ["title"]
-    )
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
     assert result["details"]["status"] == "error_field_validation"
     assert result["title"] == ""
 
@@ -596,9 +594,7 @@ def test_clean_title_not_rejected(monkeypatch, tmp_path):
     """A normal title value passes validation."""
     text = json.dumps({"title": "Rising Tulips by the Sea"})
     _patch_openai_transport(monkeypatch, _output_text_payload(text))
-    result = gallery_app._request_openai_metadata(
-        tmp_path / "x.jpg", {}, ["title"]
-    )
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
     assert result["details"]["status"] == "success"
     assert result["title"] == "Rising Tulips by the Sea"
 
@@ -607,9 +603,7 @@ def test_overlong_title_rejected(monkeypatch, tmp_path):
     """A title exceeding the length cap is rejected even without embedded keys."""
     text = json.dumps({"title": "A" * 400})
     _patch_openai_transport(monkeypatch, _output_text_payload(text))
-    result = gallery_app._request_openai_metadata(
-        tmp_path / "x.jpg", {}, ["title"]
-    )
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
     assert result["details"]["status"] == "error_field_validation"
     assert result["title"] == ""
 

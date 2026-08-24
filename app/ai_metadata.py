@@ -384,7 +384,8 @@ def _request_openai_metadata(
             if _looks_like_stuffed_response(cleaned, field):
                 logger.warning(
                     "Rejected AI %s for %s: looks like a stuffed response",
-                    field, image_path.name,
+                    field,
+                    image_path.name,
                 )
                 details["status"] = "error_field_validation"
                 details["error"] = (
