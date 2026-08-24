@@ -38,9 +38,7 @@ async def sitemap_xml():
     for item in sidecars.get_artwork_files(status_filter="approved"):
         name = item.get("name", "")
         if name:
-            urls.append(
-                f"  <url><loc>{site}/artwork/{quote(name)}</loc></url>"
-            )
+            urls.append(f"  <url><loc>{site}/artwork/{quote(name)}</loc></url>")
 
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
