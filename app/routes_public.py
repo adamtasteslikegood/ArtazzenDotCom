@@ -19,7 +19,7 @@ async def robots_txt():
     return (
         "User-agent: *\n"
         "Allow: /\n"
-        "Disallow: /admin/\n"
+        "Disallow: /admin\n"
         f"\nSitemap: {config.SITE_URL}/sitemap.xml\n"
     )
 
