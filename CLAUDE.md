@@ -68,6 +68,8 @@ Layering (no cycles): `config → sidecars → ai_metadata → curation → watc
 | Path                           | Method   | Purpose                                                 |
 | ------------------------------ | -------- | ------------------------------------------------------- |
 | `/`                            | GET      | Public gallery                                          |
+| `/robots.txt`                  | GET      | SEO: robots.txt with sitemap directive                  |
+| `/sitemap.xml`                 | GET      | SEO: dynamic XML sitemap (approved artworks+collections)|
 | `/artwork/{image_filename}`    | GET      | Single artwork detail                                   |
 | `/admin`                       | GET      | Admin dashboard                                         |
 | `/admin/review`                | GET      | Review queue                                            |
@@ -183,6 +185,7 @@ See `.env.example` for the full list. Key vars:
 
 | Variable                      | Default             | Description                                                            |
 | ----------------------------- | ------------------- | ---------------------------------------------------------------------- |
+| `SITE_URL`                    | `https://artazzen.com` | Canonical site URL for SEO (sitemap, robots.txt, canonical tags)    |
 | `IMAGES_DIR`                  | `Static/images`     | Image storage path. Set to `/data/images` on Railway                   |
 | `IMPORT_ROOT`                 | `imports`           | Only server directory allowed as a source for admin filesystem imports |
 | `ADMIN_USERNAME`              | `admin`             | Basic auth username for admin                                          |
