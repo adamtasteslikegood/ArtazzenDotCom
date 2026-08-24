@@ -218,7 +218,7 @@ def _request_openai_metadata(
             }
         },
     }
-    # Some models (e.g., gpt-5-mini) do not accept 'temperature'
+    # GPT-5.x models do not accept 'temperature' via the Responses API
     if not str(model).startswith("gpt-5"):
         request_body["temperature"] = ai_cfg["temperature"]
 

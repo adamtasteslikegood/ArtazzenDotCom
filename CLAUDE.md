@@ -188,7 +188,7 @@ See `.env.example` for the full list. Key vars:
 | `ADMIN_USERNAME`              | `admin`             | Basic auth username for admin                                          |
 | `ADMIN_PASSWORD`              | _(none)_            | Basic auth password (**required** for admin)                           |
 | `MY_OPENAI_API_KEY`           | _(none)_            | OpenAI API key for AI metadata                                         |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini`       | Model for AI descriptions                                              |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`      | Model for AI descriptions                                              |
 | `OPENAI_TIMEOUT_SECONDS`      | `30`                | Timeout for OpenAI calls                                               |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                | Max upload file size                                                   |
 | `PORT`                        | _(uvicorn default)_ | Server port (set by Railway)                                           |

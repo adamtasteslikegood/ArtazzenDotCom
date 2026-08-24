@@ -35,7 +35,7 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 
 - Python code follows PEP 8, uses type hints, and logs through `logging.getLogger(__name__)`.
 - Functions use `snake_case`; classes use `PascalCase`.
-- Sidecar files must conform to `ImageSidecar.schema.json` (the authoritative source). Required fields: `title`, `description`, `ai_generated`, `ai_details`, `reviewed`, `detected_at`.
+- Sidecar files must conform to `ImageSidecar.schema.json` (the authoritative source). Required fields: `title`, `description`, `ai_generated`, `ai_details`, `status`, `detected_at`.
 - Template filenames stay aligned with existing naming (`index.html`, `reviewAddedFiles.html`, etc.).
 
 ## Documentation & Communication
@@ -261,7 +261,7 @@ main (production)          ← deployed to Railway production environment
 | -------------------------------------- | ------------------------- | ------------------------------------- | --------------------------------------- |
 | `main`                                 | Production-ready code     | Railway production                    | Yes — PR required, all threads resolved |
 | `dev`                                  | Integration and staging   | Railway staging (when configured)     | Yes — PR required                       |
-| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews (when configured) | No                                      |
+| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews                   | No                                      |
 
 ### Rules
 
@@ -360,7 +360,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 | `ADMIN_USERNAME`              | `admin`                                                      | `admin`                       |
 | `ADMIN_PASSWORD`              | production secret                                            | shared test password          |
 | `MY_OPENAI_API_KEY`           | production key                                               | test key or unset             |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini`                                                | `gpt-4o-mini`                 |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`                                               | `gpt-5.6-luna`                |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                          |
 | `PORT`                        | set by Railway                                               | set by Railway                |
 
@@ -578,7 +578,7 @@ See `.env.example` for the full list. Key vars:
 | `ADMIN_USERNAME`              | `admin`             | Basic auth username for admin                                          |
 | `ADMIN_PASSWORD`              | _(none)_            | Basic auth password (**required** for admin)                           |
 | `MY_OPENAI_API_KEY`           | _(none)_            | OpenAI API key for AI metadata                                         |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini`       | Model for AI descriptions                                              |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`      | Model for AI descriptions                                              |
 | `OPENAI_TIMEOUT_SECONDS`      | `30`                | Timeout for OpenAI calls                                               |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                | Max upload file size                                                   |
 | `PORT`                        | _(uvicorn default)_ | Server port (set by Railway)                                           |
