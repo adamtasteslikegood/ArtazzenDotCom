@@ -143,7 +143,7 @@ def _unwrap_nested_json(value: str, field: str) -> str:
 
 
 _EMBEDDED_KEY_RE = re.compile(
-    r"""['"](?:tags|description|caption|title)['"]\s*:\s*[\['"{}]"""
+    r"""['"](?:tags|description|caption|title)['"]\s*:\s*[\['"{]"""
 )
 
 _FIELD_MAX_LEN: dict[str, int] = {
