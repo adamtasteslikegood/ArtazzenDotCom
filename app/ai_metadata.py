@@ -397,13 +397,6 @@ def _request_openai_metadata(
         else:
             result[field] = "" if field != "tags" else []
 
-    if details["status"] == "error_field_validation":
-        for field in needed_fields:
-            if field != "tags":
-                result.setdefault(field, "")
-            else:
-                result.setdefault(field, [])
-
     return result
 
 

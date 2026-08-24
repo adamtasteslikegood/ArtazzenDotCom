@@ -603,6 +603,17 @@ def test_clean_title_not_rejected(monkeypatch, tmp_path):
     assert result["title"] == "Rising Tulips by the Sea"
 
 
+def test_overlong_title_rejected(monkeypatch, tmp_path):
+    """A title exceeding the length cap is rejected even without embedded keys."""
+    text = json.dumps({"title": "A" * 400})
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(
+        tmp_path / "x.jpg", {}, ["title"]
+    )
+    assert result["details"]["status"] == "error_field_validation"
+    assert result["title"] == ""
+
+
 def test_prompt_excludes_tags_instruction_for_title_only():
     """When only generating a title, the prompt must not mention tags format."""
     from pathlib import Path
