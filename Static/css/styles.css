@@ -525,6 +525,18 @@ footer {
     opacity: 0.6;
 }
 
+.dup-dialog {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    max-width: 360px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+.dup-dialog::backdrop {
+    background: rgba(0,0,0,0.5);
+}
+
 .dropzone {
     border: 2px dashed var(--border-color);
     padding: 2rem;

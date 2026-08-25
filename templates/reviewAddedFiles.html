@@ -251,6 +251,16 @@
         </button>
     </nav>
 
+    <dialog id="dup-dialog" class="dup-dialog">
+        <h3>Duplicate detected</h3>
+        <p id="dup-dialog-msg"></p>
+        <img id="dup-dialog-thumb" alt="Existing file" style="max-width:280px;max-height:200px;border-radius:4px;margin:1rem 0;">
+        <div style="display:flex;gap:1rem;justify-content:flex-end;">
+            <button type="button" id="dup-cancel" class="button secondary">Cancel</button>
+            <button type="button" id="dup-replace" class="button">Replace</button>
+        </div>
+    </dialog>
+
 {% endblock %}
 
 {% block scripts %}
@@ -537,6 +547,17 @@
         }
     }
 
+    function confirmDuplicate(dup) {
+        return new Promise(function(resolve) {
+            var dlg = document.getElementById('dup-dialog');
+            document.getElementById('dup-dialog-msg').textContent = '"' + dup.name + '" already exists with the same file size.';
+            document.getElementById('dup-dialog-thumb').src = dup.existing_url || '';
+            document.getElementById('dup-replace').onclick = function() { dlg.close(); resolve(true); };
+            document.getElementById('dup-cancel').onclick = function() { dlg.close(); resolve(false); };
+            dlg.showModal();
+        });
+    }
+
     async function uploadFiles(fileList, force) {
         var files = Array.isArray(fileList) ? fileList : Array.from(fileList);
         if (!files.length) return;
@@ -550,7 +571,7 @@
 
         if (data.duplicates?.length && files.length === 1 && !force) {
             var dup = data.duplicates[0];
-            if (confirm('"' + dup.name + '" already exists with the same file size. Replace it?')) {
+            if (await confirmDuplicate(dup)) {
                 return uploadFiles(files, true);
             }
             showFeedback('Skipped duplicate: ' + dup.name, 'success');
@@ -613,7 +634,7 @@
 
             if (data.confirm_duplicates && data.duplicates?.length && !force) {
                 var dup = data.duplicates[0];
-                if (confirm('"' + dup.name + '" already exists with the same file size. Replace it?')) {
+                if (await confirmDuplicate(dup)) {
                     return doImport(true);
                 }
                 showFeedback('Skipped duplicate: ' + dup.name, 'success');

@@ -19,7 +19,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette import status
 
 from app import ai_metadata, config, curation, sidecars, watcher
@@ -714,12 +714,12 @@ async def soft_delete_image(
     return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
 
 
-@router.get("/admin/api/sidecar/{image_name}", response_class=JSONResponse)
+@router.get("/admin/api/sidecar/{image_name}")
 async def get_sidecar_json(
     image_name: str,
     _: None = Depends(_verify_admin),
-) -> JSONResponse:
-    """Return the sidecar JSON for an image (admin-only, keeps path private)."""
+) -> Response:
+    """Return verbatim sidecar JSON for an image (admin-only, keeps path private)."""
     filename = sidecars._sanitize_filename(image_name)
     if not filename or not sidecars._allowed_image(filename):
         raise HTTPException(
@@ -730,8 +730,15 @@ async def get_sidecar_json(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
-    metadata = sidecars._load_metadata(image_path)
-    return JSONResponse(metadata)
+    json_path = image_path.with_suffix(".json")
+    if not json_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Sidecar not found"
+        )
+    return Response(
+        content=json_path.read_text(encoding="utf-8"),
+        media_type="application/json",
+    )
 
 
 @router.post("/admin/api/accept-all", response_class=JSONResponse)
