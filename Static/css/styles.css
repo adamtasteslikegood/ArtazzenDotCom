@@ -519,6 +519,12 @@ footer {
     opacity: 0.5;
 }
 
+.ai-meta-detail {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    opacity: 0.6;
+}
+
 .dropzone {
     border: 2px dashed var(--border-color);
     padding: 2rem;

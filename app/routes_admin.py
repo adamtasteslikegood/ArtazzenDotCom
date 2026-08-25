@@ -9,7 +9,16 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette import status
 
@@ -247,6 +256,10 @@ async def update_admin_config(
                 cfg["max_output_tokens"] = max(16, min(4000, tok))
             except (TypeError, ValueError):
                 pass
+        if "default_artist" in ai and isinstance(ai["default_artist"], str):
+            cfg["default_artist"] = ai["default_artist"].strip()
+        if "default_copyright" in ai and isinstance(ai["default_copyright"], str):
+            cfg["default_copyright"] = ai["default_copyright"].strip()
     config.runtime_ai_config = cfg
     config._save_ai_config(cfg)
     return JSONResponse({"ai": cfg, "message": "Configuration updated and saved"})
@@ -361,6 +374,7 @@ async def regenerate_ai_metadata(
 async def upload_images(
     request: Request,
     files: list[UploadFile] = File(...),
+    force: bool = Query(False),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     if not files:
@@ -370,6 +384,7 @@ async def upload_images(
 
     saved: list[str] = []
     skipped: list[str] = []
+    duplicates: list[dict[str, Any]] = []
 
     for upload in files:
         filename = sidecars._sanitize_filename(upload.filename)
@@ -381,6 +396,21 @@ async def upload_images(
             continue
 
         destination = sidecars._resolve_image_path(filename)
+
+        if not force and destination.exists() and sidecars._allowed_image(filename):
+            existing_size = destination.stat().st_size
+            upload_size_check = getattr(upload, "size", None)
+            if upload_size_check is not None and upload_size_check == existing_size:
+                duplicates.append(
+                    {
+                        "name": filename,
+                        "existing_url": f"{config.IMAGES_URL_PREFIX}/{filename}",
+                        "existing_size": existing_size,
+                    }
+                )
+                upload.file.close()
+                continue
+
         try:
             # Fast pre-check using Content-Length / spooled size when available
             upload_size = getattr(upload, "size", None)
@@ -429,7 +459,13 @@ async def upload_images(
     message = "Uploaded files successfully" if saved else "No supported files uploaded"
     pending = await watcher.refresh_pending_files(request)
     return JSONResponse(
-        {"saved": saved, "skipped": skipped, "message": message, "pending": pending}
+        {
+            "saved": saved,
+            "skipped": skipped,
+            "duplicates": duplicates,
+            "message": message,
+            "pending": pending,
+        }
     )
 
 
@@ -437,12 +473,14 @@ async def upload_images(
 async def import_from_path(
     request: Request,
     path: str = Form(...),
+    force: bool = Query(False),
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     source_files = _select_import_files(path)
 
     copied: list[str] = []
     skipped: list[str] = []
+    duplicates: list[dict[str, Any]] = []
 
     for file_path in source_files:
         target_name = sidecars._sanitize_filename(file_path.name)
@@ -450,6 +488,20 @@ async def import_from_path(
             sidecars._allowed_image(target_name) or file_path.suffix.lower() == ".json"
         ):
             target = sidecars._resolve_image_path(target_name)
+
+            if not force and target.exists() and sidecars._allowed_image(target_name):
+                source_size = file_path.stat().st_size
+                existing_size = target.stat().st_size
+                if source_size == existing_size:
+                    duplicates.append(
+                        {
+                            "name": target_name,
+                            "existing_url": f"{config.IMAGES_URL_PREFIX}/{target_name}",
+                            "existing_size": existing_size,
+                        }
+                    )
+                    continue
+
             try:
                 shutil.copy2(file_path, target)
                 copied.append(target_name)
@@ -461,8 +513,17 @@ async def import_from_path(
         else:
             skipped.append(target_name)
 
+    confirm_duplicates = len(source_files) == 1 and len(duplicates) == 1 and not force
     pending = await watcher.refresh_pending_files(request)
-    return JSONResponse({"copied": copied, "skipped": skipped, "pending": pending})
+    return JSONResponse(
+        {
+            "copied": copied,
+            "skipped": skipped,
+            "duplicates": duplicates,
+            "confirm_duplicates": confirm_duplicates,
+            "pending": pending,
+        }
+    )
 
 
 @router.get("/admin/review/{image_name}", response_class=HTMLResponse)
@@ -489,6 +550,18 @@ async def preview_image_metadata(
         image_path, sidecars._load_metadata(image_path)
     )
 
+    current_status = metadata.get("status", "pending")
+    siblings = sidecars.get_artwork_files(status_filter=current_status)
+    sibling_names = [item["name"] for item in siblings]
+    prev_image = None
+    next_image = None
+    if filename in sibling_names:
+        idx = sibling_names.index(filename)
+        if idx > 0:
+            prev_image = sibling_names[idx - 1]
+        if idx < len(sibling_names) - 1:
+            next_image = sibling_names[idx + 1]
+
     return config.templates.TemplateResponse(
         request,
         "previewImageText.html",
@@ -497,6 +570,8 @@ async def preview_image_metadata(
             "image_url": f"{config.IMAGES_URL_PREFIX}/{filename}",
             "metadata": metadata,
             "review_url": request.url_for("review_added_files"),
+            "prev_image": prev_image,
+            "next_image": next_image,
         },
     )
 
@@ -637,3 +712,49 @@ async def soft_delete_image(
         shutil.move(str(sidecar_path), str(trash_dir / trash_sidecar))
     logger.info("Soft-deleted %s to .trash/", image_name)
     return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
+
+
+@router.get("/admin/api/sidecar/{image_name}", response_class=JSONResponse)
+async def get_sidecar_json(
+    image_name: str,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Return the sidecar JSON for an image (admin-only, keeps path private)."""
+    filename = sidecars._sanitize_filename(image_name)
+    if not filename or not sidecars._allowed_image(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    image_path = sidecars._resolve_image_path(filename)
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    metadata = sidecars._load_metadata(image_path)
+    return JSONResponse(metadata)
+
+
+@router.post("/admin/api/accept-all", response_class=JSONResponse)
+async def accept_all_pending(
+    request: Request,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Approve all pending images with their current metadata."""
+    pending = getattr(request.app.state, "pending_images", None)
+    if pending is None:
+        pending = await watcher.refresh_pending_files(request)
+    approved: list[str] = []
+    for item in pending:
+        name = item.get("name", "")
+        if not name:
+            continue
+        try:
+            image_path = sidecars._resolve_image_path(name)
+            if image_path.exists():
+                await asyncio.to_thread(
+                    sidecars._set_status_sidecar, image_path, "approved"
+                )
+                approved.append(name)
+        except Exception:
+            logger.warning("Failed to approve %s", name, exc_info=True)
+    return JSONResponse({"approved": approved, "count": len(approved)})

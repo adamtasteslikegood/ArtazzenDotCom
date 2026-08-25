@@ -242,6 +242,11 @@ def _ensure_sidecar(image_path: Path, metadata: dict[str, Any]) -> None:
         "approved" if _coerce_bool(metadata.get("reviewed", False)) else "pending",
     )
     sidecar_data["detected_at"] = float(metadata.get("detected_at", now))
+    ai_cfg = config._get_ai_config()
+    if not sidecar_data.get("artist") and ai_cfg.get("default_artist"):
+        sidecar_data["artist"] = ai_cfg["default_artist"]
+    if not sidecar_data.get("copyright") and ai_cfg.get("default_copyright"):
+        sidecar_data["copyright"] = ai_cfg["default_copyright"]
     with config.sidecar_lock:
         _atomic_write_json(json_path, sidecar_data)
 
