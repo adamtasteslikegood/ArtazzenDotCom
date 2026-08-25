@@ -575,6 +575,64 @@ def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
     assert cfg["max_output_tokens"] == 1200
 
 
+def test_stuffed_title_rejected(monkeypatch, tmp_path):
+    """A title value containing embedded JSON keys is rejected, not injected."""
+    stuffed = (
+        "Backlit Scarlet Tulips Rising Over the Sea','tags':['tulips',"
+        "'seascape','low-angle','backlit','silhouette','vibrant color',"
+        "'coastal','horizon','botanical','landscape','contrast',"
+        "'sculptural']}Editor's note: there is a formatting error"
+    )
+    text = json.dumps({"title": stuffed})
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "error_field_validation"
+    assert result["title"] == ""
+
+
+def test_clean_title_not_rejected(monkeypatch, tmp_path):
+    """A normal title value passes validation."""
+    text = json.dumps({"title": "Rising Tulips by the Sea"})
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert result["title"] == "Rising Tulips by the Sea"
+
+
+def test_overlong_title_rejected(monkeypatch, tmp_path):
+    """A title exceeding the length cap is rejected even without embedded keys."""
+    text = json.dumps({"title": "A" * 400})
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "error_field_validation"
+    assert result["title"] == ""
+
+
+def test_prompt_excludes_tags_instruction_for_title_only():
+    """When only generating a title, the prompt must not mention tags format."""
+    from pathlib import Path
+
+    prompt = gallery_app.ai_metadata._build_openai_prompt(
+        Path("test.jpg"),
+        {"description": "A flower", "tags": ["tulips"]},
+        ["title"],
+    )
+    assert "array of lowercase" not in prompt
+    assert '"title"' in prompt
+
+
+def test_prompt_includes_tags_instruction_when_tags_requested():
+    """When tags are in needed_fields, the tags instruction is present."""
+    from pathlib import Path
+
+    prompt = gallery_app.ai_metadata._build_openai_prompt(
+        Path("test.jpg"),
+        {},
+        ["title", "tags"],
+    )
+    assert "array of lowercase" in prompt
+
+
 # ---------------------------------------------------------------------------
 # Collections and series (schema v3 curation)
 # ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+import re
 import textwrap
 import time
 from contextlib import suppress
@@ -49,13 +50,18 @@ def _build_openai_prompt(
     requested = " and ".join(requested_parts)
 
     field_keys = ", ".join(f'"{f}"' for f in needed_fields)
+    tags_instruction = (
+        " For tags, return an array of lowercase strings."
+        if "tags" in needed_fields
+        else ""
+    )
     return textwrap.dedent(f"""
         You are assisting with cataloging artwork. Analyze the provided image
         named '{image_path.name}'. {hint_text}
-        Generate {requested}. Respond with JSON containing the keys {field_keys}
-        with concise English text suitable for a public art gallery. For tags,
-        return an array of lowercase strings. Avoid mentioning that information
-        is guessed or unavailable.
+        Generate {requested}. Respond with JSON containing only the keys
+        {field_keys} with concise English text suitable for a public art
+        gallery.{tags_instruction} Avoid mentioning that information is guessed
+        or unavailable.
         """).strip()
 
 
@@ -134,6 +140,26 @@ def _unwrap_nested_json(value: str, field: str) -> str:
                 return v
         return value
     return value
+
+
+_EMBEDDED_KEY_RE = re.compile(
+    r"""['"](?:tags|description|caption|title)['"]\s*:\s*[\['"{]"""
+)
+
+_FIELD_MAX_LEN: dict[str, int] = {
+    "title": 320,
+    "description": 1600,
+    "caption": 640,
+}
+
+
+def _looks_like_stuffed_response(value: str, field: str) -> bool:
+    """Return True when a string value looks like the model crammed
+    multiple fields into a single JSON string value."""
+    max_len = _FIELD_MAX_LEN.get(field)
+    if max_len and len(value) > max_len:
+        return True
+    return bool(_EMBEDDED_KEY_RE.search(value))
 
 
 def _request_openai_metadata(
@@ -354,9 +380,24 @@ def _request_openai_metadata(
             else:
                 result[field] = []
         elif val is not None:
-            result[field] = str(val).strip()
+            cleaned = str(val).strip()
+            if _looks_like_stuffed_response(cleaned, field):
+                logger.warning(
+                    "Rejected AI %s for %s: looks like a stuffed response",
+                    field,
+                    image_path.name,
+                )
+                details["status"] = "error_field_validation"
+                details["error"] = (
+                    f"AI returned a {field} containing embedded JSON "
+                    f"or exceeding length limits"
+                )
+                result[field] = ""
+            else:
+                result[field] = cleaned
         else:
             result[field] = "" if field != "tags" else []
+
     return result
 
 
