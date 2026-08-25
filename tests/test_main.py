@@ -1842,9 +1842,7 @@ def test_import_duplicate_preserves_paired_sidecar(monkeypatch, tmp_path):
         }
     )
     response = asyncio.run(
-        gallery_app.import_from_path(
-            request, path="batch", force=False, _=None
-        )
+        gallery_app.import_from_path(request, path="batch", force=False, _=None)
     )
     data = json.loads(response.body)
 
