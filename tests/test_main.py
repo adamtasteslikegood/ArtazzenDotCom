@@ -1811,6 +1811,50 @@ def test_upload_duplicate_force_overwrites(monkeypatch, tmp_path):
     assert "dup.png" in data["saved"]
 
 
+def test_import_duplicate_preserves_paired_sidecar(monkeypatch, tmp_path):
+    """Rejecting a duplicate image must not overwrite its existing sidecar."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    import_root = tmp_path / "imports"
+    batch = import_root / "batch"
+    batch.mkdir(parents=True)
+
+    image_bytes = b"same image bytes"
+    existing_sidecar = b'{"title":"Existing metadata","status":"approved"}'
+    (image_root / "dup.jpg").write_bytes(image_bytes)
+    (image_root / "dup.json").write_bytes(existing_sidecar)
+    (batch / "dup.jpg").write_bytes(image_bytes)
+    (batch / "dup.json").write_text(
+        '{"title":"Incoming metadata","status":"pending"}', encoding="utf-8"
+    )
+
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMPORT_ROOT", import_root)
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/import-path",
+            "headers": [],
+            "app": app,
+        }
+    )
+    response = asyncio.run(
+        gallery_app.import_from_path(
+            request, path="batch", force=False, _=None
+        )
+    )
+    data = json.loads(response.body)
+
+    assert [item["name"] for item in data["duplicates"]] == ["dup.jpg"]
+    assert data["copied"] == []
+    assert data["skipped"] == ["dup.json"]
+    assert (image_root / "dup.jpg").read_bytes() == image_bytes
+    assert (image_root / "dup.json").read_bytes() == existing_sidecar
+
+
 # ---------------------------------------------------------------------------
 # Accept All endpoint
 # ---------------------------------------------------------------------------

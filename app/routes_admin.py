@@ -482,12 +482,33 @@ async def import_from_path(
     skipped: list[str] = []
     duplicates: list[dict[str, Any]] = []
 
+    # Treat an imported image and its same-stem sidecar as one unit. Without
+    # this pre-pass, a duplicate image could be skipped while the later .json
+    # copy silently replaced the existing artwork's metadata.
+    duplicate_image_stems: set[str] = set()
+    if not force:
+        for file_path in source_files:
+            target_name = sidecars._sanitize_filename(file_path.name)
+            if not target_name or not sidecars._allowed_image(target_name):
+                continue
+            target = sidecars._resolve_image_path(target_name)
+            if target.exists() and file_path.stat().st_size == target.stat().st_size:
+                duplicate_image_stems.add(Path(target_name).stem)
+
     for file_path in source_files:
         target_name = sidecars._sanitize_filename(file_path.name)
         if target_name and (
             sidecars._allowed_image(target_name) or file_path.suffix.lower() == ".json"
         ):
             target = sidecars._resolve_image_path(target_name)
+
+            if (
+                not force
+                and file_path.suffix.lower() == ".json"
+                and Path(target_name).stem in duplicate_image_stems
+            ):
+                skipped.append(target_name)
+                continue
 
             if not force and target.exists() and sidecars._allowed_image(target_name):
                 source_size = file_path.stat().st_size

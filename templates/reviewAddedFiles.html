@@ -550,10 +550,21 @@
     function confirmDuplicate(dup) {
         return new Promise(function(resolve) {
             var dlg = document.getElementById('dup-dialog');
+            var settled = false;
+            function finish(value) {
+                if (settled) return;
+                settled = true;
+                dlg.removeEventListener('cancel', cancelDialog);
+                resolve(value);
+            }
+            function cancelDialog() {
+                finish(false);
+            }
             document.getElementById('dup-dialog-msg').textContent = '"' + dup.name + '" already exists with the same file size.';
             document.getElementById('dup-dialog-thumb').src = dup.existing_url || '';
-            document.getElementById('dup-replace').onclick = function() { dlg.close(); resolve(true); };
-            document.getElementById('dup-cancel').onclick = function() { dlg.close(); resolve(false); };
+            document.getElementById('dup-replace').onclick = function() { finish(true); dlg.close(); };
+            document.getElementById('dup-cancel').onclick = function() { finish(false); dlg.close(); };
+            dlg.addEventListener('cancel', cancelDialog, {once: true});
             dlg.showModal();
         });
     }
