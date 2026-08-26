@@ -254,7 +254,7 @@ def test_artwork_seo_json_ld_is_valid_and_script_safe(
     assert "</script><script>alert(1)</script>" not in response.text
 
     script_bodies = re.findall(
-        r'<script type="application/ld\\+json">(.*?)</script>',
+        r'<script type="application/ld[+]json">(.*?)</script>',
         response.text,
         flags=re.DOTALL,
     )
@@ -287,7 +287,7 @@ def test_collection_seo_includes_breadcrumb_json_ld(
     )
 
     script_bodies = re.findall(
-        r'<script type="application/ld\\+json">(.*?)</script>',
+        r'<script type="application/ld[+]json">(.*?)</script>',
         response.text,
         flags=re.DOTALL,
     )
