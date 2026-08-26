@@ -143,6 +143,39 @@ def test_sitemap_excludes_empty_collections(client: TestClient, tmp_path, monkey
     assert "/collections/empty" not in response.text
 
 
+def test_sitemap_includes_parent_collection_with_child_page(
+    client: TestClient, tmp_path, monkeypatch
+):
+    _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "parent", "title": "Parent"})
+    gallery_app.curation.upsert_collection(
+        {"id": "child", "title": "Child", "parent": "parent"}
+    )
+
+    response = client.get("/sitemap.xml")
+    assert "/collections/parent" in response.text
+    assert "/collections/child" not in response.text
+
+
+def test_sitemap_tolerates_malformed_collection_artwork_filename(
+    client: TestClient, tmp_path, monkeypatch
+):
+    _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "bad", "title": "Bad"})
+    monkeypatch.setattr(
+        gallery_app.curation,
+        "collection_view",
+        lambda _slug: {
+            "artworks": [{"name": "../outside.jpg"}],
+            "series": [],
+            "children": [],
+        },
+    )
+
+    response = client.get("/sitemap.xml")
+    assert response.status_code == 200
+
+
 def test_sitemap_approval_transition_adds_and_removes(client: TestClient, tmp_path, monkeypatch):
     image_root = _make_curation_root(tmp_path, monkeypatch)
     _add_image(image_root, "transition.jpg", status="pending")

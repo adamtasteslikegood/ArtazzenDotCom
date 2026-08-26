@@ -47,9 +47,13 @@ async def sitemap_xml():
 
     registry_path = config.IMAGES_DIR / ".curation" / "collections.json"
     registry_mtime = [registry_path] if registry_path.is_file() else []
+    series_registry_path = config.IMAGES_DIR / ".curation" / "series.json"
+    series_registry_mtime = (
+        [series_registry_path] if series_registry_path.is_file() else []
+    )
     for entry in curation.load_collections().get("collections", []):
         slug = entry.get("id", "")
-        if not slug:
+        if not isinstance(slug, str) or not slug:
             continue
         view = curation.collection_view(slug)
         if view is None:
@@ -60,18 +64,20 @@ async def sitemap_xml():
             for series in view.get("series", [])
             for artwork in series.get("artworks", [])
         )
-        if not members:
+        # A collection with child pages is itself useful to crawlers even when
+        # it has no direct or series artwork of its own.
+        if not members and not view.get("children"):
             continue
-        member_paths = registry_mtime[:]
+        member_paths = registry_mtime[:] + series_registry_mtime[:]
         for member in members:
             name = member.get("name", "")
-            if name:
+            if isinstance(name, str) and name:
                 member_paths.extend(_artwork_paths(name))
         add_url(f"/collections/{quote(slug, safe='')}", member_paths)
 
     for item in sidecars.get_artwork_files(status_filter="approved"):
         name = item.get("name", "")
-        if name:
+        if isinstance(name, str) and name:
             add_url(f"/artwork/{quote(name, safe='')}", _artwork_paths(name))
 
     xml = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
@@ -80,7 +86,14 @@ async def sitemap_xml():
 
 def _artwork_paths(name: str) -> list[Path]:
     """Return existing image and sidecar paths for sitemap timestamps."""
-    image_path = sidecars._resolve_image_path(name)
+    if not isinstance(name, str) or not name:
+        return []
+    try:
+        image_path = sidecars._resolve_image_path(name)
+    except (HTTPException, OSError, TypeError, ValueError):
+        # Registry data is user-editable. A malformed filename must not make
+        # the entire sitemap unavailable.
+        return []
     paths = [image_path, image_path.with_suffix(".json")]
     return [path for path in paths if path.is_file()]
 
