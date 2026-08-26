@@ -33,11 +33,22 @@
                                 <span class="badge secondary">AI pending</span>
                             {% endif %}
                             {% set ai = metadata.get('ai_details') or {} %}
+                            {% if ai.get('model') %}
+                                <span class="ai-meta-detail">{{ ai.model }}</span>
+                            {% endif %}
+                            {% set usage = (ai.get('raw_response') or {}).get('usage') or {} %}
+                            {% if usage.get('output_tokens') %}
+                                <span class="ai-meta-detail">{{ usage.output_tokens }} tokens</span>
+                            {% endif %}
                             {% set ai_time = ai.get('created') or ai.get('attempted_at') or metadata.get('detected_at') %}
                             {% if ai_time %}
                                 <span class="timestamp" data-ts="{{ ai_time }}"></span>
                             {% endif %}
                         </dd>
+                    </div>
+                    <div>
+                        <dt>Sidecar</dt>
+                        <dd><a href="{{ url_for('get_sidecar_json', image_name=image_name) }}" target="_blank" rel="noopener">View JSON</a></dd>
                     </div>
                 </dl>
             </div>
@@ -92,6 +103,19 @@
                 </div>
             </form>
         </section>
+
+        {% if prev_image or next_image %}
+        <nav style="display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+            {% if prev_image %}
+            <a href="{{ url_for('preview_image_metadata', image_name=prev_image) }}" class="button secondary">&larr; Previous</a>
+            {% else %}
+            <span></span>
+            {% endif %}
+            {% if next_image %}
+            <a href="{{ url_for('preview_image_metadata', image_name=next_image) }}" class="button secondary">Next &rarr;</a>
+            {% endif %}
+        </nav>
+        {% endif %}
     </main>
 {% endblock %}
 
@@ -104,7 +128,7 @@
             .forEach(function(el) {
                 var ts = parseFloat(el.getAttribute('data-ts'));
                 if (!isNaN(ts)) {
-                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString('en-US', {dateStyle: 'medium', timeStyle: 'short'});
                 }
             });
 

@@ -1,9 +1,10 @@
 """Public gallery routes."""
 
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from starlette import status
 
 from app import config, curation, sidecars
@@ -11,6 +12,41 @@ from app import config, curation, sidecars
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/robots.txt", response_class=PlainTextResponse)
+async def robots_txt():
+    return (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /admin\n"
+        f"\nSitemap: {config.SITE_URL}/sitemap.xml\n"
+    )
+
+
+@router.get("/sitemap.xml")
+async def sitemap_xml():
+    site = config.SITE_URL
+    urls = [f"  <url><loc>{site}/</loc></url>"]
+    urls.append(f"  <url><loc>{site}/collections</loc></url>")
+
+    for entry in curation.load_collections().get("collections", []):
+        slug = entry.get("id", "")
+        if slug:
+            urls.append(f"  <url><loc>{site}/collections/{quote(slug)}</loc></url>")
+
+    for item in sidecars.get_artwork_files(status_filter="approved"):
+        name = item.get("name", "")
+        if name:
+            urls.append(f"  <url><loc>{site}/artwork/{quote(name)}</loc></url>")
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(urls)
+        + "\n</urlset>\n"
+    )
+    return Response(content=xml, media_type="application/xml")
 
 
 @router.get("/collections", response_class=HTMLResponse)
