@@ -107,7 +107,9 @@ def test_sitemap_xml(client: TestClient):
     assert "<loc>" in response.text
 
 
-def test_sitemap_is_parseable_and_has_utc_lastmod(client: TestClient, tmp_path, monkeypatch):
+def test_sitemap_is_parseable_and_has_utc_lastmod(
+    client: TestClient, tmp_path, monkeypatch
+):
     image_root = _make_curation_root(tmp_path, monkeypatch)
     _add_image(image_root, "dated.jpg", status="approved")
     response = client.get("/sitemap.xml")
@@ -115,7 +117,8 @@ def test_sitemap_is_parseable_and_has_utc_lastmod(client: TestClient, tmp_path, 
     document = ElementTree.fromstring(response.content)
     namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     artwork_url = next(
-        node for node in document.findall("sm:url", namespace)
+        node
+        for node in document.findall("sm:url", namespace)
         if node.findtext("sm:loc", namespaces=namespace).endswith("/artwork/dated.jpg")
     )
     assert artwork_url.findtext("sm:lastmod", namespaces=namespace).endswith("Z")
@@ -177,7 +180,9 @@ def test_sitemap_tolerates_malformed_collection_artwork_filename(
     assert response.status_code == 200
 
 
-def test_sitemap_approval_transition_adds_and_removes(client: TestClient, tmp_path, monkeypatch):
+def test_sitemap_approval_transition_adds_and_removes(
+    client: TestClient, tmp_path, monkeypatch
+):
     image_root = _make_curation_root(tmp_path, monkeypatch)
     _add_image(image_root, "transition.jpg", status="pending")
     assert "/artwork/transition.jpg" not in client.get("/sitemap.xml").text
@@ -242,7 +247,10 @@ def test_artwork_seo_json_ld_is_valid_and_script_safe(
     response = client.get("/artwork/seo.jpg")
     assert response.status_code == 200
     assert '<meta property="og:type" content="article">' in response.text
-    assert '<meta property="og:image" content="https://artazzen.com/images/seo.jpg">' in response.text
+    expected_image = gallery_app.seo.absolute_url(
+        f"{gallery_app.config.IMAGES_URL_PREFIX}/seo.jpg"
+    )
+    assert f'<meta property="og:image" content="{expected_image}">' in response.text
     assert "</script><script>alert(1)</script>" not in response.text
 
     script_bodies = re.findall(
@@ -253,7 +261,7 @@ def test_artwork_seo_json_ld_is_valid_and_script_safe(
     blocks = [json.loads(body) for body in script_bodies]
     artwork = next(block for block in blocks if block.get("@type") == "VisualArtwork")
     assert artwork["name"] == title
-    assert artwork["image"] == "https://artazzen.com/images/seo.jpg"
+    assert artwork["image"] == expected_image
     assert artwork["creator"]["name"] == "Test Artist"
 
 
