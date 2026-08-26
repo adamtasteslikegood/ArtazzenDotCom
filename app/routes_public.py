@@ -108,9 +108,7 @@ def _latest_lastmod(paths: list[Path]) -> str | None:
             continue
     if not mtimes:
         return None
-    return datetime.fromtimestamp(max(mtimes), UTC).isoformat().replace(
-        "+00:00", "Z"
-    )
+    return datetime.fromtimestamp(max(mtimes), UTC).isoformat().replace("+00:00", "Z")
 
 
 @router.get("/collections", response_class=HTMLResponse)
@@ -124,7 +122,10 @@ async def collections_index(request: Request):
         request,
         title=f"Collections — {config.GALLERY_TITLE}",
         description=f"Browse curated collections from {config.GALLERY_TITLE}.",
-        breadcrumbs=[{"name": "Gallery", "path": "/"}, {"name": "Collections", "path": "/collections"}],
+        breadcrumbs=[
+            {"name": "Gallery", "path": "/"},
+            {"name": "Collections", "path": "/collections"},
+        ],
     )
     return config.templates.TemplateResponse(
         request,
@@ -144,11 +145,16 @@ async def collection_detail(request: Request, slug: str):
     context = seo.build_context(
         request,
         title=f"{view['collection'].get('title', slug)} — Collections",
-        description=view["collection"].get("description") or f"Explore the {slug} collection.",
-        breadcrumbs=[{"name": "Gallery", "path": "/"}, {"name": "Collections", "path": "/collections"}, *[
-            {"name": crumb["title"], "path": f"/collections/{quote(crumb['id'])}"}
-            for crumb in view["breadcrumb"]
-        ]],
+        description=view["collection"].get("description")
+        or f"Explore the {slug} collection.",
+        breadcrumbs=[
+            {"name": "Gallery", "path": "/"},
+            {"name": "Collections", "path": "/collections"},
+            *[
+                {"name": crumb["title"], "path": f"/collections/{quote(crumb['id'])}"}
+                for crumb in view["breadcrumb"]
+            ],
+        ],
     )
     return config.templates.TemplateResponse(
         request,
@@ -210,7 +216,8 @@ async def artwork_detail(request: Request, image_filename: str):
     context = seo.build_context(
         request,
         title=f"{artwork_data['title']} — Artazzen",
-        description=artwork_data["description"] or f"View {artwork_data['title']} in the Artazzen gallery.",
+        description=artwork_data["description"]
+        or f"View {artwork_data['title']} in the Artazzen gallery.",
         image_url=image_url,
         page_type="article",
         breadcrumbs=[
@@ -224,7 +231,11 @@ async def artwork_detail(request: Request, image_filename: str):
             "description": artwork_data["description"],
             "image": seo.absolute_url(image_url),
             "url": seo.absolute_url(f"/artwork/{quote(filename)}"),
-            **({"creator": {"@type": "Person", "name": artwork_data["artist"]}} if artwork_data["artist"] else {}),
+            **(
+                {"creator": {"@type": "Person", "name": artwork_data["artist"]}}
+                if artwork_data["artist"]
+                else {}
+            ),
         },
     )
     return config.templates.TemplateResponse(
