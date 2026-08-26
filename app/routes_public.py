@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from starlette import status
 
-from app import config, curation, sidecars
+from app import config, curation, seo, sidecars
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +56,16 @@ async def collections_index(request: Request):
         {**entry, "cover_url": curation.collection_cover_url(entry)}
         for entry in curation.top_level_collections()
     ]
+    context = seo.build_context(
+        request,
+        title=f"Collections — {config.GALLERY_TITLE}",
+        description=f"Browse curated collections from {config.GALLERY_TITLE}.",
+        breadcrumbs=[{"name": "Gallery", "path": "/"}, {"name": "Collections", "path": "/collections"}],
+    )
     return config.templates.TemplateResponse(
         request,
         "collections_index.html",
-        {"collections": collections, "gallery_title": config.GALLERY_TITLE},
+        {**context, "collections": collections, "gallery_title": config.GALLERY_TITLE},
     )
 
 
@@ -71,6 +77,15 @@ async def collection_detail(request: Request, slug: str):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found"
         )
+    context = seo.build_context(
+        request,
+        title=f"{view['collection'].get('title', slug)} — Collections",
+        description=view["collection"].get("description") or f"Explore the {slug} collection.",
+        breadcrumbs=[{"name": "Gallery", "path": "/"}, {"name": "Collections", "path": "/collections"}, *[
+            {"name": crumb["title"], "path": f"/collections/{quote(crumb['id'])}"}
+            for crumb in view["breadcrumb"]
+        ]],
+    )
     return config.templates.TemplateResponse(
         request,
         "collection_detail.html",
@@ -81,6 +96,7 @@ async def collection_detail(request: Request, slug: str):
             "series_list": view["series"],
             "artworks": view["artworks"],
             "gallery_title": config.GALLERY_TITLE,
+            **context,
         },
     )
 
@@ -127,6 +143,26 @@ async def artwork_detail(request: Request, image_filename: str):
         if idx < len(filenames) - 1:
             next_artwork = filenames[idx + 1]
 
+    context = seo.build_context(
+        request,
+        title=f"{artwork_data['title']} — Artazzen",
+        description=artwork_data["description"] or f"View {artwork_data['title']} in the Artazzen gallery.",
+        image_url=image_url,
+        page_type="article",
+        breadcrumbs=[
+            {"name": "Gallery", "path": "/"},
+            {"name": artwork_data["title"], "path": f"/artwork/{quote(filename)}"},
+        ],
+        structured_data={
+            "@context": "https://schema.org",
+            "@type": "VisualArtwork",
+            "name": artwork_data["title"],
+            "description": artwork_data["description"],
+            "image": seo.absolute_url(image_url),
+            "url": seo.absolute_url(f"/artwork/{quote(filename)}"),
+            **({"creator": {"@type": "Person", "name": artwork_data["artist"]}} if artwork_data["artist"] else {}),
+        },
+    )
     return config.templates.TemplateResponse(
         request,
         "artwork_detail.html",
@@ -136,6 +172,7 @@ async def artwork_detail(request: Request, image_filename: str):
             "next_artwork": next_artwork,
             "collections": curation.collections_for_image(filename),
             "series_memberships": curation.series_for_image(filename),
+            **context,
         },
     )
 
@@ -157,4 +194,12 @@ async def read_root(request: Request):
     }
 
     # Render the HTML template with the context data
+    context.update(
+        seo.build_context(
+            request,
+            title=config.GALLERY_TITLE,
+            description=f"Explore curated artwork in the {config.GALLERY_TITLE}.",
+            breadcrumbs=[{"name": "Gallery", "path": "/"}],
+        )
+    )
     return config.templates.TemplateResponse(request, "index.html", context)
