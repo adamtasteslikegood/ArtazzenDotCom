@@ -13,11 +13,11 @@ main (production)          ← deployed to Railway production environment
 
 ### Branch Roles
 
-| Branch                                 | Purpose                   | Deploys To                            | Protected                               |
-| -------------------------------------- | ------------------------- | ------------------------------------- | --------------------------------------- |
-| `main`                                 | Production-ready code     | Railway production                    | Yes — PR required, all threads resolved |
-| `dev`                                  | Integration and staging   | Railway staging (when configured)     | Yes — PR required                       |
-| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews (when configured) | No                                      |
+| Branch                                 | Purpose                   | Deploys To                        | Protected                               |
+| -------------------------------------- | ------------------------- | --------------------------------- | --------------------------------------- |
+| `main`                                 | Production-ready code     | Railway production                | Yes — PR required, all threads resolved |
+| `dev`                                  | Integration and staging   | Railway staging (when configured) | Yes — PR required                       |
+| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews               | No                                      |
 
 ### Rules
 
@@ -116,7 +116,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 | `ADMIN_USERNAME`              | `admin`                                                      | `admin`                       |
 | `ADMIN_PASSWORD`              | production secret                                            | shared test password          |
 | `MY_OPENAI_API_KEY`           | production key                                               | test key or unset             |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini`                                                | `gpt-4o-mini`                 |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`                                               | `gpt-5.6-luna`                |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                          |
 | `PORT`                        | set by Railway                                               | set by Railway                |
 

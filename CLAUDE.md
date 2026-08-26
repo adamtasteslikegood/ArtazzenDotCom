@@ -65,24 +65,26 @@ Layering (no cycles): `config → sidecars → ai_metadata → curation → watc
 
 ### Route Map
 
-| Path                           | Method   | Purpose                                                 |
-| ------------------------------ | -------- | ------------------------------------------------------- |
-| `/`                            | GET      | Public gallery                                          |
-| `/artwork/{image_filename}`    | GET      | Single artwork detail                                   |
-| `/admin`                       | GET      | Admin dashboard                                         |
-| `/admin/review`                | GET      | Review queue                                            |
-| `/admin/review/{image_name}`   | GET      | Review specific image                                   |
-| `/admin/api/new-files`         | GET      | JSON: pending files                                     |
-| `/admin/upload`                | POST     | Upload artwork                                          |
-| `/admin/import-path`           | POST     | Import from filesystem                                  |
-| `/admin/metadata/{image_name}` | POST     | Save image metadata                                     |
-| `/collections`                 | GET      | Collections index                                       |
-| `/collections/{slug}`          | GET      | Collection page (series strips + grid)                  |
-| `/admin/api/collections`       | GET/POST | Collections registry CRUD                               |
-| `/admin/api/series`            | GET/POST | Series registry CRUD                                    |
-| `/admin/config`                | GET/POST | AI config CRUD                                          |
-| `/admin/config/reset`          | POST     | Reset AI config                                         |
-| `/admin/ai/regenerate`         | POST     | AI regeneration (supports `fields`, `force`, `preview`) |
+| Path                           | Method   | Purpose                                                  |
+| ------------------------------ | -------- | -------------------------------------------------------- |
+| `/`                            | GET      | Public gallery                                           |
+| `/robots.txt`                  | GET      | SEO: robots.txt with sitemap directive                   |
+| `/sitemap.xml`                 | GET      | SEO: dynamic XML sitemap (approved artworks+collections) |
+| `/artwork/{image_filename}`    | GET      | Single artwork detail                                    |
+| `/admin`                       | GET      | Admin dashboard                                          |
+| `/admin/review`                | GET      | Review queue                                             |
+| `/admin/review/{image_name}`   | GET      | Review specific image                                    |
+| `/admin/api/new-files`         | GET      | JSON: pending files                                      |
+| `/admin/upload`                | POST     | Upload artwork                                           |
+| `/admin/import-path`           | POST     | Import from filesystem                                   |
+| `/admin/metadata/{image_name}` | POST     | Save image metadata                                      |
+| `/collections`                 | GET      | Collections index                                        |
+| `/collections/{slug}`          | GET      | Collection page (series strips + grid)                   |
+| `/admin/api/collections`       | GET/POST | Collections registry CRUD                                |
+| `/admin/api/series`            | GET/POST | Series registry CRUD                                     |
+| `/admin/config`                | GET/POST | AI config CRUD                                           |
+| `/admin/config/reset`          | POST     | Reset AI config                                          |
+| `/admin/ai/regenerate`         | POST     | AI regeneration (supports `fields`, `force`, `preview`)  |
 
 ## Tech Stack
 
@@ -181,17 +183,18 @@ Admin routes (`/admin/*`) are protected by HTTP Basic Auth.
 
 See `.env.example` for the full list. Key vars:
 
-| Variable                      | Default             | Description                                                            |
-| ----------------------------- | ------------------- | ---------------------------------------------------------------------- |
-| `IMAGES_DIR`                  | `Static/images`     | Image storage path. Set to `/data/images` on Railway                   |
-| `IMPORT_ROOT`                 | `imports`           | Only server directory allowed as a source for admin filesystem imports |
-| `ADMIN_USERNAME`              | `admin`             | Basic auth username for admin                                          |
-| `ADMIN_PASSWORD`              | _(none)_            | Basic auth password (**required** for admin)                           |
-| `MY_OPENAI_API_KEY`           | _(none)_            | OpenAI API key for AI metadata                                         |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini`       | Model for AI descriptions                                              |
-| `OPENAI_TIMEOUT_SECONDS`      | `30`                | Timeout for OpenAI calls                                               |
-| `MAX_UPLOAD_SIZE_MB`          | `50`                | Max upload file size                                                   |
-| `PORT`                        | _(uvicorn default)_ | Server port (set by Railway)                                           |
+| Variable                      | Default                | Description                                                            |
+| ----------------------------- | ---------------------- | ---------------------------------------------------------------------- |
+| `SITE_URL`                    | `https://artazzen.com` | Canonical site URL for SEO (sitemap, robots.txt, canonical tags)       |
+| `IMAGES_DIR`                  | `Static/images`        | Image storage path. Set to `/data/images` on Railway                   |
+| `IMPORT_ROOT`                 | `imports`              | Only server directory allowed as a source for admin filesystem imports |
+| `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                                          |
+| `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin)                           |
+| `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                                         |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`         | Model for AI descriptions                                              |
+| `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                                               |
+| `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                                   |
+| `PORT`                        | _(uvicorn default)_    | Server port (set by Railway)                                           |
 
 ## Core Principles
 
@@ -206,7 +209,14 @@ Follow the four Karpathy principles for LLM-assisted coding:
 
 1. **Branch** from `dev` using the appropriate prefix (`feat/`, `fix/`, `docs/`, `chore/`).
 2. **Develop** incrementally — commit often with clear messages.
-3. **Validate** — run `pytest` and `python manage_sidecars.py validate` before pushing.
+3. **Validate** — run the CI checks locally before pushing:
+   ```bash
+   pytest tests/test_main.py -q                          # Tests
+   python manage_sidecars.py validate                     # Sidecar JSON
+   ruff check .                                           # Lint
+   black --check --target-version py311 .                 # Format (Python)
+   npx --yes prettier --check "**/*.{md,yml,yaml,json}"   # Format (docs/config)
+   ```
 4. **Push** and open a PR targeting `dev`. Mark as draft if still in progress.
 5. **Review** — wait for CodeQL and Copilot checks; respond to every comment thread.
 6. **Merge** via rebase or merge commit (squash is not allowed by ruleset).
