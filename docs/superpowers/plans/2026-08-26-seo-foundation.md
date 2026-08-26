@@ -13,6 +13,7 @@
 ### Task 1: Add SEO context helpers
 
 **Files:**
+
 - Create: `app/seo.py`
 - Test: `tests/test_main.py`
 
@@ -24,6 +25,7 @@
 ### Task 2: Wire metadata into public templates/routes
 
 **Files:**
+
 - Modify: `app/routes_public.py`
 - Modify: `templates/base.html`
 - Modify: `templates/index.html`
@@ -41,6 +43,7 @@
 ### Task 3: Harden dynamic sitemap and robots output
 
 **Files:**
+
 - Modify: `app/routes_public.py`
 - Test: `tests/test_main.py`
 
@@ -54,6 +57,7 @@
 ### Task 4: Verification and delivery
 
 **Files:**
+
 - Modify: none unless test fixes are required.
 
 - [ ] Run `python -m compileall -q app main.py`.
