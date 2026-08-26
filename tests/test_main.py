@@ -84,6 +84,50 @@ def test_artwork_detail(client: TestClient):
 
 
 # ---------------------------------------------------------------------------
+# SEO: robots.txt, sitemap.xml, canonical tags
+# ---------------------------------------------------------------------------
+
+
+def test_robots_txt(client: TestClient):
+    response = client.get("/robots.txt")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert "Disallow: /admin" in response.text
+    assert "Sitemap:" in response.text
+    assert "sitemap.xml" in response.text
+
+
+def test_sitemap_xml(client: TestClient):
+    response = client.get("/sitemap.xml")
+    assert response.status_code == 200
+    assert "application/xml" in response.headers["content-type"]
+    assert "<urlset" in response.text
+    assert "<loc>" in response.text
+
+
+def test_sitemap_contains_only_approved_artworks(
+    client: TestClient, tmp_path, monkeypatch
+):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    _add_image(image_root, "visible.jpg", status="approved")
+    _add_image(image_root, "hidden.jpg", status="pending")
+    gallery_app.curation.ensure_registries()
+
+    response = client.get("/sitemap.xml")
+    assert response.status_code == 200
+    assert "/artwork/visible.jpg" in response.text
+    assert "/artwork/hidden.jpg" not in response.text
+
+
+def test_canonical_tag_on_public_pages(client: TestClient):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'rel="canonical"' in response.text
+
+
+# ---------------------------------------------------------------------------
 # Security headers
 # ---------------------------------------------------------------------------
 
@@ -573,6 +617,64 @@ def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
     )
     cfg = gallery_app._get_ai_config()
     assert cfg["max_output_tokens"] == 1200
+
+
+def test_stuffed_title_rejected(monkeypatch, tmp_path):
+    """A title value containing embedded JSON keys is rejected, not injected."""
+    stuffed = (
+        "Backlit Scarlet Tulips Rising Over the Sea','tags':['tulips',"
+        "'seascape','low-angle','backlit','silhouette','vibrant color',"
+        "'coastal','horizon','botanical','landscape','contrast',"
+        "'sculptural']}Editor's note: there is a formatting error"
+    )
+    text = json.dumps({"title": stuffed})
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "error_field_validation"
+    assert result["title"] == ""
+
+
+def test_clean_title_not_rejected(monkeypatch, tmp_path):
+    """A normal title value passes validation."""
+    text = json.dumps({"title": "Rising Tulips by the Sea"})
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert result["title"] == "Rising Tulips by the Sea"
+
+
+def test_overlong_title_rejected(monkeypatch, tmp_path):
+    """A title exceeding the length cap is rejected even without embedded keys."""
+    text = json.dumps({"title": "A" * 400})
+    _patch_openai_transport(monkeypatch, _output_text_payload(text))
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "error_field_validation"
+    assert result["title"] == ""
+
+
+def test_prompt_excludes_tags_instruction_for_title_only():
+    """When only generating a title, the prompt must not mention tags format."""
+    from pathlib import Path
+
+    prompt = gallery_app.ai_metadata._build_openai_prompt(
+        Path("test.jpg"),
+        {"description": "A flower", "tags": ["tulips"]},
+        ["title"],
+    )
+    assert "array of lowercase" not in prompt
+    assert '"title"' in prompt
+
+
+def test_prompt_includes_tags_instruction_when_tags_requested():
+    """When tags are in needed_fields, the tags instruction is present."""
+    from pathlib import Path
+
+    prompt = gallery_app.ai_metadata._build_openai_prompt(
+        Path("test.jpg"),
+        {},
+        ["title", "tags"],
+    )
+    assert "array of lowercase" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -1171,6 +1273,8 @@ def test_all_routes_registered():
     """Every pre-split route path is still registered on main.app."""
     expected = {
         "/",
+        "/robots.txt",
+        "/sitemap.xml",
         "/artwork/{image_filename}",
         "/admin",
         "/admin/review",
@@ -1621,3 +1725,226 @@ def test_regenerate_rejects_unsupported_fields(monkeypatch, tmp_path):
         asyncio.run(gallery_app.regenerate_ai_metadata(request, _=None))
     assert exc_info.value.status_code == 400
     assert "No supported fields" in exc_info.value.detail
+
+
+# ---------------------------------------------------------------------------
+# Duplicate detection on upload
+# ---------------------------------------------------------------------------
+
+
+def test_upload_duplicate_detected_and_reported(monkeypatch, tmp_path):
+    """Uploading a file that already exists (same name+size) reports a duplicate."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    payload = b"duplicate content"
+    (image_root / "dup.png").write_bytes(payload)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/upload",
+            "headers": [],
+            "app": app,
+        }
+    )
+
+    class FakeUpload:
+        filename = "dup.png"
+        size = len(payload)
+
+        def __init__(self):
+            self.file = io.BytesIO(payload)
+
+        async def read(self, size):
+            return self.file.read(size)
+
+        async def close(self):
+            pass
+
+    response = asyncio.run(
+        gallery_app.upload_images(request, files=[FakeUpload()], force=False, _=None)
+    )
+    data = json.loads(response.body)
+    assert len(data["duplicates"]) == 1
+    assert data["duplicates"][0]["name"] == "dup.png"
+    assert "existing_url" in data["duplicates"][0]
+
+
+def test_upload_duplicate_force_overwrites(monkeypatch, tmp_path):
+    """Uploading with force=True overwrites the duplicate."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "dup.png").write_bytes(b"old content here")
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
+
+    new_payload = b"old content here"  # same size triggers dup
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/upload?force=true",
+            "headers": [],
+            "query_string": b"force=true",
+            "app": app,
+        }
+    )
+
+    class FakeUpload:
+        filename = "dup.png"
+        size = len(new_payload)
+
+        def __init__(self):
+            self.file = io.BytesIO(new_payload)
+
+        async def read(self, size):
+            return self.file.read(size)
+
+    response = asyncio.run(
+        gallery_app.upload_images(request, files=[FakeUpload()], force=True, _=None)
+    )
+    data = json.loads(response.body)
+    assert "dup.png" in data["saved"]
+
+
+def test_import_duplicate_preserves_paired_sidecar(monkeypatch, tmp_path):
+    """Rejecting a duplicate image must not overwrite its existing sidecar."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    import_root = tmp_path / "imports"
+    batch = import_root / "batch"
+    batch.mkdir(parents=True)
+
+    image_bytes = b"same image bytes"
+    existing_sidecar = b'{"title":"Existing metadata","status":"approved"}'
+    (image_root / "dup.jpg").write_bytes(image_bytes)
+    (image_root / "dup.json").write_bytes(existing_sidecar)
+    (batch / "dup.jpg").write_bytes(image_bytes)
+    (batch / "dup.json").write_text(
+        '{"title":"Incoming metadata","status":"pending"}', encoding="utf-8"
+    )
+
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "IMPORT_ROOT", import_root)
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/admin/import-path",
+            "headers": [],
+            "app": app,
+        }
+    )
+    response = asyncio.run(
+        gallery_app.import_from_path(request, path="batch", force=False, _=None)
+    )
+    data = json.loads(response.body)
+
+    assert [item["name"] for item in data["duplicates"]] == ["dup.jpg"]
+    assert data["copied"] == []
+    assert data["skipped"] == ["dup.json"]
+    assert (image_root / "dup.jpg").read_bytes() == image_bytes
+    assert (image_root / "dup.json").read_bytes() == existing_sidecar
+
+
+# ---------------------------------------------------------------------------
+# Accept All endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_accept_all_approves_pending(monkeypatch, tmp_path):
+    """POST /admin/api/accept-all flips pending images to approved."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    img = image_root / "pend.jpg"
+    img.touch()
+    sidecar = image_root / "pend.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "title": "Pend",
+                "description": "",
+                "ai_generated": False,
+                "ai_details": {},
+                "status": "pending",
+                "detected_at": 0,
+            }
+        )
+    )
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+
+    from app.routes_admin import accept_all_pending
+
+    app.state.pending_images = [{"name": "pend.jpg"}]
+    try:
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/admin/api/accept-all",
+                "headers": [],
+                "app": app,
+            }
+        )
+        response = asyncio.run(accept_all_pending(request, _=None))
+        data = json.loads(response.body)
+        assert data["count"] == 1
+
+        updated = json.loads(sidecar.read_text())
+        assert updated["status"] == "approved"
+    finally:
+        app.state.pending_images = []
+
+
+# ---------------------------------------------------------------------------
+# Sidecar JSON endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_sidecar_endpoint_requires_auth(client: TestClient):
+    """GET /admin/api/sidecar/{name} without auth returns 401 or 503."""
+    response = client.get("/admin/api/sidecar/test_image.jpg")
+    assert response.status_code in (401, 503)
+
+
+def test_sidecar_endpoint_returns_verbatim(authed_client: TestClient):
+    """GET /admin/api/sidecar/{name} returns the raw sidecar file content."""
+    response = authed_client.get("/admin/api/sidecar/test_image.jpg")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    data = response.json()
+    assert data["title"] == "Test Image"
+
+
+def test_sidecar_endpoint_rejects_traversal(authed_client: TestClient):
+    """Path traversal in the image name is rejected."""
+    response = authed_client.get("/admin/api/sidecar/../../../etc/passwd")
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Config: artist attribution round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_config_artist_attribution_persists(authed_client, isolated_config):
+    """default_artist and default_copyright survive a save and reload."""
+    authed_client.post(
+        "/admin/config",
+        json={
+            "ai": {
+                "default_artist": "Test Artist",
+                "default_copyright": "CC0",
+            }
+        },
+    )
+    response = authed_client.get("/admin/config")
+    data = response.json()
+    assert data["ai"]["default_artist"] == "Test Artist"
+    assert data["ai"]["default_copyright"] == "CC0"
