@@ -247,8 +247,8 @@ def test_artwork_seo_json_ld_is_valid_and_script_safe(
     response = client.get("/artwork/seo.jpg")
     assert response.status_code == 200
     assert '<meta property="og:type" content="article">' in response.text
-    expected_image = gallery_app.seo.absolute_url(
-        f"{gallery_app.config.IMAGES_URL_PREFIX}/seo.jpg"
+    expected_image = (
+        f"https://artazzen.com{gallery_app.config.IMAGES_URL_PREFIX}/seo.jpg"
     )
     assert f'<meta property="og:image" content="{expected_image}">' in response.text
     assert "</script><script>alert(1)</script>" not in response.text
