@@ -1,7 +1,7 @@
 """Public gallery routes."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 from xml.etree import ElementTree
@@ -108,7 +108,7 @@ def _latest_lastmod(paths: list[Path]) -> str | None:
             continue
     if not mtimes:
         return None
-    return datetime.fromtimestamp(max(mtimes), timezone.utc).isoformat().replace(
+    return datetime.fromtimestamp(max(mtimes), UTC).isoformat().replace(
         "+00:00", "Z"
     )
 
