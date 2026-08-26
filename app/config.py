@@ -115,6 +115,8 @@ def _get_ai_config() -> dict[str, Any]:
         "model": model,
         "temperature": temperature,
         "max_output_tokens": max_output_tokens,
+        "default_artist": str(cfg.get("default_artist", "")),
+        "default_copyright": str(cfg.get("default_copyright", "")),
     }
 
 
@@ -160,6 +162,8 @@ def _default_ai_config_from_env() -> dict[str, Any]:
         "max_output_tokens": _parse_int_env(
             os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600
         ),
+        "default_artist": os.getenv("DEFAULT_ARTIST", ""),
+        "default_copyright": os.getenv("DEFAULT_COPYRIGHT", ""),
     }
 
 
@@ -180,6 +184,10 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
             out["max_output_tokens"] = max(16, min(4000, tok))
         except (TypeError, ValueError):
             pass
+        if isinstance(cfg.get("default_artist"), str):
+            out["default_artist"] = cfg["default_artist"].strip()
+        if isinstance(cfg.get("default_copyright"), str):
+            out["default_copyright"] = cfg["default_copyright"].strip()
     return out
 
 

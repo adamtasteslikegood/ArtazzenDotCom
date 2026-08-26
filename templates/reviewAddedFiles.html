@@ -83,6 +83,7 @@
                         </label>
                         <button type="button" id="select-all" class="button secondary">Select all</button>
                         <button type="button" id="regen-selected" class="button">Re-run AI for selected</button>
+                        <button type="button" id="accept-all" class="button">Accept All</button>
                         <button type="button" id="refresh-pending" class="button secondary">Refresh</button>
                     </div>
                 </div>
@@ -153,6 +154,16 @@
                     <div class="form-row">
                         <label for="ai-tokens">Max output tokens</label>
                         <input type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
+                    </div>
+                    <h3 style="margin-top: 2rem;">Artist Attribution</h3>
+                    <p class="panel-description">Applied automatically to newly imported/uploaded images only.</p>
+                    <div class="form-row">
+                        <label for="default-artist">Default artist name</label>
+                        <input type="text" id="default-artist" placeholder="Artist name for new imports">
+                    </div>
+                    <div class="form-row">
+                        <label for="default-copyright">Default copyright notice</label>
+                        <input type="text" id="default-copyright" placeholder="&copy; 2026 Artist Name">
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="button">Save settings</button>
@@ -240,6 +251,16 @@
         </button>
     </nav>
 
+    <dialog id="dup-dialog" class="dup-dialog">
+        <h3>Duplicate detected</h3>
+        <p id="dup-dialog-msg"></p>
+        <img id="dup-dialog-thumb" alt="Existing file" style="max-width:280px;max-height:200px;border-radius:4px;margin:1rem 0;">
+        <div style="display:flex;gap:1rem;justify-content:flex-end;">
+            <button type="button" id="dup-cancel" class="button secondary">Cancel</button>
+            <button type="button" id="dup-replace" class="button">Replace</button>
+        </div>
+    </dialog>
+
 {% endblock %}
 
 {% block scripts %}
@@ -264,6 +285,9 @@
     const forceOverwrite = document.getElementById('force-overwrite');
     const searchInput = document.getElementById('search-input');
     const resetConfigBtn = document.getElementById('reset-config');
+    const acceptAllBtn = document.getElementById('accept-all');
+    const defaultArtist = document.getElementById('default-artist');
+    const defaultCopyright = document.getElementById('default-copyright');
     const ROOT = document.body.dataset.rootPath || '';
 
     // Tab navigation
@@ -446,6 +470,8 @@
             if (typeof cfg.model === 'string') aiModel.value = cfg.model;
             if (typeof cfg.temperature === 'number') aiTemp.value = cfg.temperature;
             if (typeof cfg.max_output_tokens === 'number') aiTokens.value = cfg.max_output_tokens;
+            if (typeof cfg.default_artist === 'string' && defaultArtist) defaultArtist.value = cfg.default_artist;
+            if (typeof cfg.default_copyright === 'string' && defaultCopyright) defaultCopyright.value = cfg.default_copyright;
         } catch (e) {
             console.error(e);
         }
@@ -458,7 +484,9 @@
                 enabled: !!aiEnabled.checked,
                 model: aiModel.value,
                 temperature: parseFloat(aiTemp.value),
-                max_output_tokens: parseInt(aiTokens.value, 10)
+                max_output_tokens: parseInt(aiTokens.value, 10),
+                default_artist: defaultArtist?.value || '',
+                default_copyright: defaultCopyright?.value || ''
             }
         };
         try {
@@ -519,18 +547,54 @@
         }
     }
 
-    async function uploadFiles(files) {
-        if (!files || files.length === 0) return;
-        const formData = new FormData();
-        Array.from(files).forEach(file => formData.append('files', file));
+    function confirmDuplicate(dup) {
+        return new Promise(function(resolve) {
+            var dlg = document.getElementById('dup-dialog');
+            var settled = false;
+            function finish(value) {
+                if (settled) return;
+                settled = true;
+                dlg.removeEventListener('cancel', cancelDialog);
+                resolve(value);
+            }
+            function cancelDialog() {
+                finish(false);
+            }
+            document.getElementById('dup-dialog-msg').textContent = '"' + dup.name + '" already exists with the same file size.';
+            document.getElementById('dup-dialog-thumb').src = dup.existing_url || '';
+            document.getElementById('dup-replace').onclick = function() { finish(true); dlg.close(); };
+            document.getElementById('dup-cancel').onclick = function() { finish(false); dlg.close(); };
+            dlg.addEventListener('cancel', cancelDialog, {once: true});
+            dlg.showModal();
+        });
+    }
 
-        const response = await fetch(`${ROOT}/admin/upload`, { method: 'POST', body: formData });
-        const data = await response.json();
+    async function uploadFiles(fileList, force) {
+        var files = Array.isArray(fileList) ? fileList : Array.from(fileList);
+        if (!files.length) return;
+        var formData = new FormData();
+        files.forEach(function(file) { formData.append('files', file); });
+        var url = ROOT + '/admin/upload' + (force ? '?force=true' : '');
+
+        var response = await fetch(url, { method: 'POST', body: formData });
+        var data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Upload failed');
+
+        if (data.duplicates?.length && files.length === 1 && !force) {
+            var dup = data.duplicates[0];
+            if (await confirmDuplicate(dup)) {
+                return uploadFiles(files, true);
+            }
+            showFeedback('Skipped duplicate: ' + dup.name, 'success');
+            return;
+        }
+
         await fetchAll();
-        const saved = data.saved?.length ? `Saved: ${data.saved.join(', ')}` : '';
-        const skipped = data.skipped?.length ? ` Skipped: ${data.skipped.join(', ')}` : '';
-        showFeedback(`${data.message || 'Upload complete.'} ${saved}${skipped}`.trim(), 'success');
+        var parts = [];
+        if (data.saved?.length) parts.push('Saved: ' + data.saved.join(', '));
+        if (data.skipped?.length) parts.push('Skipped: ' + data.skipped.join(', '));
+        if (data.duplicates?.length) parts.push('Duplicates: ' + data.duplicates.map(function(d) { return d.name; }).join(', '));
+        showFeedback(parts.join(' | ') || data.message || 'Upload complete.', 'success');
     }
 
     async function fetchAll(showMessage = false) {
@@ -572,16 +636,32 @@
 
     pathForm?.addEventListener('submit', async e => {
         e.preventDefault();
-        const formData = new FormData(pathForm);
-        try {
-            const response = await fetch(`${ROOT}/admin/import-path`, { method: 'POST', body: formData });
-            const data = await response.json();
+        async function doImport(force) {
+            var formData = new FormData(pathForm);
+            var url = ROOT + '/admin/import-path' + (force ? '?force=true' : '');
+            var response = await fetch(url, { method: 'POST', body: formData });
+            var data = await response.json();
             if (!response.ok) throw new Error(data.detail || 'Import failed');
+
+            if (data.confirm_duplicates && data.duplicates?.length && !force) {
+                var dup = data.duplicates[0];
+                if (await confirmDuplicate(dup)) {
+                    return doImport(true);
+                }
+                showFeedback('Skipped duplicate: ' + dup.name, 'success');
+                return;
+            }
+
             await fetchAll();
-            const copied = data.copied?.length ? `Imported: ${data.copied.join(', ')}` : '';
-            const skipped = data.skipped?.length ? ` Skipped: ${data.skipped.join(', ')}` : '';
-            showFeedback(`${copied}${skipped}`.trim() || 'Import complete.', 'success');
+            var parts = [];
+            if (data.copied?.length) parts.push('Imported: ' + data.copied.join(', '));
+            if (data.skipped?.length) parts.push('Skipped: ' + data.skipped.join(', '));
+            if (data.duplicates?.length) parts.push('Duplicates: ' + data.duplicates.map(function(d) { return d.name; }).join(', '));
+            showFeedback(parts.join(' | ') || 'Import complete.', 'success');
             pathForm.reset();
+        }
+        try {
+            await doImport(false);
         } catch (err) {
             console.error(err);
             showFeedback(err.message, 'error');
@@ -595,6 +675,26 @@
         boxes.forEach(cb => cb.checked = !allChecked);
     });
     regenBtn?.addEventListener('click', regenSelected);
+
+    acceptAllBtn?.addEventListener('click', async () => {
+        var count = document.querySelectorAll('.admin-card[data-section="pending"]').length;
+        if (!count) { showFeedback('No pending items.', 'error'); return; }
+        if (!confirm('Publish ' + count + ' item(s) with current metadata?\nItems with incomplete AI metadata will go public as-is.')) return;
+        acceptAllBtn.disabled = true;
+        acceptAllBtn.textContent = 'Accepting…';
+        try {
+            var res = await fetch(ROOT + '/admin/api/accept-all', { method: 'POST' });
+            var data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Accept all failed');
+            showFeedback('Approved ' + data.count + ' item(s).', 'success');
+            await fetchAll();
+        } catch (e) {
+            showFeedback(e.message, 'error');
+        } finally {
+            acceptAllBtn.disabled = false;
+            acceptAllBtn.textContent = 'Accept All';
+        }
+    });
 
     refreshButton?.addEventListener('click', async () => {
         try { await fetchAll(true); }

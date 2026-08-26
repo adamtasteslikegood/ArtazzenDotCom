@@ -11,7 +11,7 @@
     <main>
         <div class="artwork-detail-grid">
             <div>
-                <img src="{{ artwork.image_url }}" alt="{{ artwork.title }}">
+                <a href="{{ artwork.image_url }}" target="_blank" rel="noopener"><img src="{{ artwork.image_url }}" alt="{{ artwork.title }}"></a>
             </div>
             <div style="padding-top: 2rem;">
                 {% if artwork.caption %}
