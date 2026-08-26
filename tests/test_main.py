@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import re
 from contextlib import suppress
 from xml.etree import ElementTree
 
@@ -212,6 +213,85 @@ def test_canonical_tag_on_public_pages(client: TestClient):
     response = client.get("/")
     assert response.status_code == 200
     assert 'rel="canonical"' in response.text
+
+
+def test_public_seo_metadata_uses_canonical_path_without_query(client: TestClient):
+    response = client.get("/?preview=1")
+
+    assert response.status_code == 200
+    assert '<link rel="canonical" href="https://artazzen.com/">' in response.text
+    assert '<meta property="og:url" content="https://artazzen.com/">' in response.text
+    assert '<meta property="og:type" content="website">' in response.text
+    assert '<meta name="twitter:card" content="summary">' in response.text
+    assert "preview=1" not in response.text
+
+
+def test_artwork_seo_json_ld_is_valid_and_script_safe(
+    client: TestClient, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    title = "Safe </script><script>alert(1)</script>"
+    _add_image(
+        image_root,
+        "seo.jpg",
+        title=title,
+        description="An SEO test image.",
+        artist="Test Artist",
+    )
+
+    response = client.get("/artwork/seo.jpg")
+    assert response.status_code == 200
+    assert '<meta property="og:type" content="article">' in response.text
+    assert '<meta property="og:image" content="https://artazzen.com/images/seo.jpg">' in response.text
+    assert "</script><script>alert(1)</script>" not in response.text
+
+    script_bodies = re.findall(
+        r'<script type="application/ld\\+json">(.*?)</script>',
+        response.text,
+        flags=re.DOTALL,
+    )
+    blocks = [json.loads(body) for body in script_bodies]
+    artwork = next(block for block in blocks if block.get("@type") == "VisualArtwork")
+    assert artwork["name"] == title
+    assert artwork["image"] == "https://artazzen.com/images/seo.jpg"
+    assert artwork["creator"]["name"] == "Test Artist"
+
+
+def test_collection_seo_includes_breadcrumb_json_ld(
+    client: TestClient, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "member.jpg", collections=["featured"])
+    gallery_app.curation.upsert_collection(
+        {
+            "id": "featured",
+            "title": "Featured Work",
+            "description": "A curated selection.",
+        }
+    )
+
+    response = client.get("/collections/featured")
+    assert response.status_code == 200
+    assert '<meta name="description" content="A curated selection.">' in response.text
+    assert (
+        '<link rel="canonical" href="https://artazzen.com/collections/featured">'
+        in response.text
+    )
+
+    script_bodies = re.findall(
+        r'<script type="application/ld\\+json">(.*?)</script>',
+        response.text,
+        flags=re.DOTALL,
+    )
+    blocks = [json.loads(body) for body in script_bodies]
+    breadcrumbs = next(
+        block for block in blocks if block.get("@type") == "BreadcrumbList"
+    )
+    assert [item["name"] for item in breadcrumbs["itemListElement"]] == [
+        "Gallery",
+        "Collections",
+        "Featured Work",
+    ]
 
 
 # ---------------------------------------------------------------------------
