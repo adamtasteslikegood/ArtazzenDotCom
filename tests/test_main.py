@@ -4,6 +4,7 @@ import io
 import json
 import os
 from contextlib import suppress
+from xml.etree import ElementTree
 
 import pytest
 from fastapi import HTTPException
@@ -103,6 +104,59 @@ def test_sitemap_xml(client: TestClient):
     assert "application/xml" in response.headers["content-type"]
     assert "<urlset" in response.text
     assert "<loc>" in response.text
+
+
+def test_sitemap_is_parseable_and_has_utc_lastmod(client: TestClient, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "dated.jpg", status="approved")
+    response = client.get("/sitemap.xml")
+
+    document = ElementTree.fromstring(response.content)
+    namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    artwork_url = next(
+        node for node in document.findall("sm:url", namespace)
+        if node.findtext("sm:loc", namespaces=namespace).endswith("/artwork/dated.jpg")
+    )
+    assert artwork_url.findtext("sm:lastmod", namespaces=namespace).endswith("Z")
+
+
+def test_sitemap_escapes_special_characters(client: TestClient, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a&b.jpg", status="approved")
+    response = client.get("/sitemap.xml")
+
+    # Parsing proves that ampersands are XML-escaped while the decoded URL is intact.
+    document = ElementTree.fromstring(response.content)
+    namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    locations = [node.text for node in document.findall(".//sm:loc", namespace)]
+    assert "https://artazzen.com/artwork/a%26b.jpg" in locations
+
+
+def test_sitemap_excludes_empty_collections(client: TestClient, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "member.jpg", collections=["filled"])
+    gallery_app.curation.upsert_collection({"id": "filled", "title": "Filled"})
+    gallery_app.curation.upsert_collection({"id": "empty", "title": "Empty"})
+
+    response = client.get("/sitemap.xml")
+    assert "/collections/filled" in response.text
+    assert "/collections/empty" not in response.text
+
+
+def test_sitemap_approval_transition_adds_and_removes(client: TestClient, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "transition.jpg", status="pending")
+    assert "/artwork/transition.jpg" not in client.get("/sitemap.xml").text
+
+    sidecar_path = image_root / "transition.json"
+    metadata = json.loads(sidecar_path.read_text())
+    metadata["status"] = "approved"
+    sidecar_path.write_text(json.dumps(metadata))
+    assert "/artwork/transition.jpg" in client.get("/sitemap.xml").text
+
+    metadata["status"] = "hidden"
+    sidecar_path.write_text(json.dumps(metadata))
+    assert "/artwork/transition.jpg" not in client.get("/sitemap.xml").text
 
 
 def test_sitemap_contains_only_approved_artworks(

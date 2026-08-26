@@ -1,7 +1,10 @@
 """Public gallery routes."""
 
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import quote
+from xml.etree import ElementTree
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
@@ -16,37 +19,85 @@ router = APIRouter()
 
 @router.get("/robots.txt", response_class=PlainTextResponse)
 async def robots_txt():
+    sitemap_url = f"{config.SITE_URL.rstrip('/')}/sitemap.xml"
     return (
         "User-agent: *\n"
         "Allow: /\n"
         "Disallow: /admin\n"
-        f"\nSitemap: {config.SITE_URL}/sitemap.xml\n"
+        f"\nSitemap: {sitemap_url}\n"
     )
 
 
 @router.get("/sitemap.xml")
 async def sitemap_xml():
-    site = config.SITE_URL
-    urls = [f"  <url><loc>{site}/</loc></url>"]
-    urls.append(f"  <url><loc>{site}/collections</loc></url>")
+    site = config.SITE_URL.rstrip("/")
+    root = ElementTree.Element(
+        "urlset", {"xmlns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    )
 
+    def add_url(path: str, source_paths: list[Path] | None = None) -> None:
+        url = ElementTree.SubElement(root, "url")
+        ElementTree.SubElement(url, "loc").text = f"{site}{path}"
+        lastmod = _latest_lastmod(source_paths or [])
+        if lastmod:
+            ElementTree.SubElement(url, "lastmod").text = lastmod
+
+    add_url("/")
+    add_url("/collections")
+
+    registry_path = config.IMAGES_DIR / ".curation" / "collections.json"
+    registry_mtime = [registry_path] if registry_path.is_file() else []
     for entry in curation.load_collections().get("collections", []):
         slug = entry.get("id", "")
-        if slug:
-            urls.append(f"  <url><loc>{site}/collections/{quote(slug)}</loc></url>")
+        if not slug:
+            continue
+        view = curation.collection_view(slug)
+        if view is None:
+            continue
+        members = list(view.get("artworks", []))
+        members.extend(
+            artwork
+            for series in view.get("series", [])
+            for artwork in series.get("artworks", [])
+        )
+        if not members:
+            continue
+        member_paths = registry_mtime[:]
+        for member in members:
+            name = member.get("name", "")
+            if name:
+                member_paths.extend(_artwork_paths(name))
+        add_url(f"/collections/{quote(slug, safe='')}", member_paths)
 
     for item in sidecars.get_artwork_files(status_filter="approved"):
         name = item.get("name", "")
         if name:
-            urls.append(f"  <url><loc>{site}/artwork/{quote(name)}</loc></url>")
+            add_url(f"/artwork/{quote(name, safe='')}", _artwork_paths(name))
 
-    xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        + "\n".join(urls)
-        + "\n</urlset>\n"
-    )
+    xml = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
     return Response(content=xml, media_type="application/xml")
+
+
+def _artwork_paths(name: str) -> list[Path]:
+    """Return existing image and sidecar paths for sitemap timestamps."""
+    image_path = sidecars._resolve_image_path(name)
+    paths = [image_path, image_path.with_suffix(".json")]
+    return [path for path in paths if path.is_file()]
+
+
+def _latest_lastmod(paths: list[Path]) -> str | None:
+    """Format the newest available file mtime as sitemap UTC ISO-8601."""
+    mtimes = []
+    for path in paths:
+        try:
+            mtimes.append(path.stat().st_mtime)
+        except OSError:
+            continue
+    if not mtimes:
+        return None
+    return datetime.fromtimestamp(max(mtimes), timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
 
 
 @router.get("/collections", response_class=HTMLResponse)
