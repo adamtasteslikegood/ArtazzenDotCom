@@ -19,6 +19,7 @@ _USING_VOLUME = IMAGES_DIR != STATIC_DIR / "images"
 IMAGES_URL_PREFIX = "/images" if _USING_VOLUME else "/static/images"
 IMPORT_ROOT = Path(os.getenv("IMPORT_ROOT", BASE_DIR / "imports"))
 GALLERY_TITLE = os.getenv("GALLERY_TITLE", "Artazzen Gallery")
+SITE_URL = os.getenv("SITE_URL", "https://artazzen.com").rstrip("/")
 TEMPLATES_DIR = BASE_DIR / "templates"
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 CONFIG_PATH = BASE_DIR / "ai_config.json"
@@ -48,7 +49,7 @@ UPLOAD_CHUNK_SIZE = 64 * 1024  # 64 KB streaming chunks
 OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
 OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
 OPENAI_MODEL_ENV = "OPENAI_IMAGE_METADATA_MODEL"
-OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
+OPENAI_DEFAULT_MODEL = "gpt-5.6-luna"
 try:
     OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
 except ValueError:
@@ -65,6 +66,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.globals["site_url"] = SITE_URL
 
 # RLock: writers that must make a read-merge-write cycle atomic (e.g. the
 # AI populate persist path) hold it across _write_sidecar, which acquires
@@ -113,6 +115,8 @@ def _get_ai_config() -> dict[str, Any]:
         "model": model,
         "temperature": temperature,
         "max_output_tokens": max_output_tokens,
+        "default_artist": str(cfg.get("default_artist", "")),
+        "default_copyright": str(cfg.get("default_copyright", "")),
     }
 
 
@@ -158,6 +162,8 @@ def _default_ai_config_from_env() -> dict[str, Any]:
         "max_output_tokens": _parse_int_env(
             os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600
         ),
+        "default_artist": os.getenv("DEFAULT_ARTIST", ""),
+        "default_copyright": os.getenv("DEFAULT_COPYRIGHT", ""),
     }
 
 
@@ -178,6 +184,10 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
             out["max_output_tokens"] = max(16, min(4000, tok))
         except (TypeError, ValueError):
             pass
+        if isinstance(cfg.get("default_artist"), str):
+            out["default_artist"] = cfg["default_artist"].strip()
+        if isinstance(cfg.get("default_copyright"), str):
+            out["default_copyright"] = cfg["default_copyright"].strip()
     return out
 
 
