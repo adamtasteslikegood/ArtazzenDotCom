@@ -3,7 +3,9 @@ import base64
 import io
 import json
 import os
+import re
 from contextlib import suppress
+from xml.etree import ElementTree
 
 import pytest
 from fastapi import HTTPException
@@ -105,6 +107,97 @@ def test_sitemap_xml(client: TestClient):
     assert "<loc>" in response.text
 
 
+def test_sitemap_is_parseable_and_has_utc_lastmod(
+    client: TestClient, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "dated.jpg", status="approved")
+    response = client.get("/sitemap.xml")
+
+    document = ElementTree.fromstring(response.content)
+    namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    artwork_url = next(
+        node
+        for node in document.findall("sm:url", namespace)
+        if node.findtext("sm:loc", namespaces=namespace).endswith("/artwork/dated.jpg")
+    )
+    assert artwork_url.findtext("sm:lastmod", namespaces=namespace).endswith("Z")
+
+
+def test_sitemap_escapes_special_characters(client: TestClient, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a&b.jpg", status="approved")
+    response = client.get("/sitemap.xml")
+
+    # Parsing proves that ampersands are XML-escaped while the decoded URL is intact.
+    document = ElementTree.fromstring(response.content)
+    namespace = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    locations = [node.text for node in document.findall(".//sm:loc", namespace)]
+    assert "https://artazzen.com/artwork/a%26b.jpg" in locations
+
+
+def test_sitemap_excludes_empty_collections(client: TestClient, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "member.jpg", collections=["filled"])
+    gallery_app.curation.upsert_collection({"id": "filled", "title": "Filled"})
+    gallery_app.curation.upsert_collection({"id": "empty", "title": "Empty"})
+
+    response = client.get("/sitemap.xml")
+    assert "/collections/filled" in response.text
+    assert "/collections/empty" not in response.text
+
+
+def test_sitemap_includes_parent_collection_with_child_page(
+    client: TestClient, tmp_path, monkeypatch
+):
+    _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "parent", "title": "Parent"})
+    gallery_app.curation.upsert_collection(
+        {"id": "child", "title": "Child", "parent": "parent"}
+    )
+
+    response = client.get("/sitemap.xml")
+    assert "/collections/parent" in response.text
+    assert "/collections/child" not in response.text
+
+
+def test_sitemap_tolerates_malformed_collection_artwork_filename(
+    client: TestClient, tmp_path, monkeypatch
+):
+    _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "bad", "title": "Bad"})
+    monkeypatch.setattr(
+        gallery_app.curation,
+        "collection_view",
+        lambda _slug: {
+            "artworks": [{"name": "../outside.jpg"}],
+            "series": [],
+            "children": [],
+        },
+    )
+
+    response = client.get("/sitemap.xml")
+    assert response.status_code == 200
+
+
+def test_sitemap_approval_transition_adds_and_removes(
+    client: TestClient, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "transition.jpg", status="pending")
+    assert "/artwork/transition.jpg" not in client.get("/sitemap.xml").text
+
+    sidecar_path = image_root / "transition.json"
+    metadata = json.loads(sidecar_path.read_text())
+    metadata["status"] = "approved"
+    sidecar_path.write_text(json.dumps(metadata))
+    assert "/artwork/transition.jpg" in client.get("/sitemap.xml").text
+
+    metadata["status"] = "hidden"
+    sidecar_path.write_text(json.dumps(metadata))
+    assert "/artwork/transition.jpg" not in client.get("/sitemap.xml").text
+
+
 def test_sitemap_contains_only_approved_artworks(
     client: TestClient, tmp_path, monkeypatch
 ):
@@ -125,6 +218,88 @@ def test_canonical_tag_on_public_pages(client: TestClient):
     response = client.get("/")
     assert response.status_code == 200
     assert 'rel="canonical"' in response.text
+
+
+def test_public_seo_metadata_uses_canonical_path_without_query(client: TestClient):
+    response = client.get("/?preview=1")
+
+    assert response.status_code == 200
+    assert '<link rel="canonical" href="https://artazzen.com/">' in response.text
+    assert '<meta property="og:url" content="https://artazzen.com/">' in response.text
+    assert '<meta property="og:type" content="website">' in response.text
+    assert '<meta name="twitter:card" content="summary">' in response.text
+    assert "preview=1" not in response.text
+
+
+def test_artwork_seo_json_ld_is_valid_and_script_safe(
+    client: TestClient, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    title = "Safe </script><script>alert(1)</script>"
+    _add_image(
+        image_root,
+        "seo.jpg",
+        title=title,
+        description="An SEO test image.",
+        artist="Test Artist",
+    )
+
+    response = client.get("/artwork/seo.jpg")
+    assert response.status_code == 200
+    assert '<meta property="og:type" content="article">' in response.text
+    expected_image = (
+        f"https://artazzen.com{gallery_app.config.IMAGES_URL_PREFIX}/seo.jpg"
+    )
+    assert f'<meta property="og:image" content="{expected_image}">' in response.text
+    assert "</script><script>alert(1)</script>" not in response.text
+
+    script_bodies = re.findall(
+        r'<script type="application/ld[+]json">(.*?)</script>',
+        response.text,
+        flags=re.DOTALL,
+    )
+    blocks = [json.loads(body) for body in script_bodies]
+    artwork = next(block for block in blocks if block.get("@type") == "VisualArtwork")
+    assert artwork["name"] == title
+    assert artwork["image"] == expected_image
+    assert artwork["creator"]["name"] == "Test Artist"
+
+
+def test_collection_seo_includes_breadcrumb_json_ld(
+    client: TestClient, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "member.jpg", collections=["featured"])
+    gallery_app.curation.upsert_collection(
+        {
+            "id": "featured",
+            "title": "Featured Work",
+            "description": "A curated selection.",
+        }
+    )
+
+    response = client.get("/collections/featured")
+    assert response.status_code == 200
+    assert '<meta name="description" content="A curated selection.">' in response.text
+    assert (
+        '<link rel="canonical" href="https://artazzen.com/collections/featured">'
+        in response.text
+    )
+
+    script_bodies = re.findall(
+        r'<script type="application/ld[+]json">(.*?)</script>',
+        response.text,
+        flags=re.DOTALL,
+    )
+    blocks = [json.loads(body) for body in script_bodies]
+    breadcrumbs = next(
+        block for block in blocks if block.get("@type") == "BreadcrumbList"
+    )
+    assert [item["name"] for item in breadcrumbs["itemListElement"]] == [
+        "Gallery",
+        "Collections",
+        "Featured Work",
+    ]
 
 
 # ---------------------------------------------------------------------------
