@@ -16,3 +16,4 @@ logs/
 .agent-harness/
 /uv.lock
 .envrc
+.claude/worktrees
