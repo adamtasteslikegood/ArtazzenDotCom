@@ -66,7 +66,7 @@ typing-extensions==4.16.0
 typing-inspection==0.4.2
 ujson==5.13.0
 urllib3==2.7.0
-uvicorn==0.35.0
+uvicorn==0.52.4
 uvloop==0.22.1
 watchfiles==1.1.0
 websockets==17.0.1
