@@ -1052,6 +1052,12 @@ footer {
 
 .artwork-item a img { z-index: 2; position: relative; }
 
+.artwork-item a.img-loaded::before,
+.artwork-item a.img-error::before {
+    display: none;
+    animation: none;
+}
+
 @keyframes shimmer {
     0% { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
