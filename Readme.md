@@ -6,7 +6,7 @@ ArtazzenDotCom is a FastAPI + Jinja2 artwork gallery and curation platform. Imag
 
 ## Highlights
 
-- Responsive gallery view with artwork detail pages and dynamic accent colors.
+- Responsive gallery view with artwork detail pages and the Techno-Botanical accent palette.
 - Collections (nested, multi-membership albums) and series (ordered groups of related edits).
 - Admin dashboard (`/admin`) for uploads, metadata review, curation, and AI configuration.
 - Per-image JSON sidecars validated against `ImageSidecar.schema.json`; no centralized manifest.
@@ -17,7 +17,7 @@ ArtazzenDotCom is a FastAPI + Jinja2 artwork gallery and curation platform. Imag
 
 ## Requirements
 
-- Python 3.10 or newer
+- Python 3.11 or newer
 - `pip` for dependency management
 - (Optional) OpenAI API key for AI metadata suggestions
 
@@ -30,7 +30,7 @@ python -m venv .venv
 source .venv/bin/activate            # use .\.venv\Scripts\activate on Windows
 pip install -r requirements.txt
 cp .env.example .env                 # fill in ADMIN_PASSWORD + API keys
-uvicorn main:app --reload
+uvicorn main:app --reload --env-file .env
 ```
 
 Gallery: `http://127.0.0.1:8000/` | Admin: `http://127.0.0.1:8000/admin`
@@ -96,7 +96,7 @@ Module layering (no cycles): `config -> sidecars -> ai_metadata -> curation -> w
    - `ai_generated` (boolean)
    - `ai_details` (object)
    - `status` (`"pending"` | `"approved"` | `"hidden"`)
-   - `detected_at` (ISO-8601 timestamp)
+   - `detected_at` (Unix epoch seconds, number)
 3. The admin review page (`/admin/review`) lets you edit metadata, approve/hide items, assign collections, and save changes atomically.
 4. Sidecars validate against `ImageSidecar.schema.json`. Run `python manage_sidecars.py validate` after any manual edits.
 
@@ -140,7 +140,7 @@ CI also runs `ruff check`, `black --check`, and `npx prettier --check`.
 
 ```bash
 # Development
-uvicorn main:app --reload                    # Start dev server
+uvicorn main:app --reload --env-file .env     # Start dev server with local env
 pytest                                       # Run test suite
 python manage_sidecars.py validate           # Validate sidecar JSON
 
