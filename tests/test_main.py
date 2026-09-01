@@ -1465,7 +1465,9 @@ def test_all_routes_registered():
         "/admin/unapprove/{image_name}",
         "/admin/delete/{image_name}",
     }
-    registered = {getattr(r, "path", None) for r in app.routes}
+    # Build a fresh app instance so this assertion is isolated from any
+    # stateful mutations of the module-level `main.app` across tests.
+    registered = {getattr(r, "path", None) for r in gallery_app.create_app().routes}
     missing = expected - registered
     assert not missing, f"routes missing after split: {missing}"
 
