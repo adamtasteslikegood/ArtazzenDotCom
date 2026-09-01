@@ -31,7 +31,7 @@
         {% block header_pre %}{% endblock %}
         <h1>{% block page_heading %}{{ gallery_title | default('Artazzen Gallery') }}{% endblock %}</h1>
         {% block header_extra %}{% endblock %}
-        <nav class="site-nav">{% block site_nav %}<a href="{{ url_for('read_root') }}">Gallery</a><a href="{{ url_for('collections_index') }}">Collections</a>{% endblock %}</nav>
+        <nav class="site-nav">{% block site_nav %}<a href="{{ url_for('read_root') }}"{% if request.url.path == '/' %} aria-current="page"{% endif %}>Gallery</a><a href="{{ url_for('collections_index') }}"{% if request.url.path.startswith('/collections') %} aria-current="page"{% endif %}>Collections</a>{% endblock %}</nav>
         {% endblock %}
     </header>
 

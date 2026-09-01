@@ -75,7 +75,7 @@ def test_read_root(client: TestClient):
     """Test the root endpoint."""
     response = client.get("/")
     assert response.status_code == 200
-    assert "Artwork Gallery" in response.text
+    assert "Artazzen" in response.text
 
 
 def test_artwork_detail(client: TestClient):

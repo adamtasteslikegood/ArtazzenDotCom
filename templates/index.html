@@ -17,7 +17,7 @@
                             <img src="{{ artwork.url }}"
                                  alt="{{ artwork.title }}"
                                  loading="lazy"
-                                 onerror="this.onerror=null; this.src='https://placehold.co/250x200/EEE/CCC?text=Image+Not+Found'; this.alt='Image not found';">
+                                 onerror="this.onerror=null; this.style.display='none'; this.parentElement.classList.add('img-error'); this.parentElement.setAttribute('aria-label','Image unavailable');">
                         </a>
                         <p class="artwork-title">{{ artwork.title }}</p>
                         {% if artwork.description %}
@@ -28,12 +28,10 @@
             </div>
         {% else %}
             <p class="no-artwork-message">
-                No artwork images found in the 'Static/images' folder.
-                <br>
-                Please add some images (e.g., .jpg, .png, .gif) to that folder.
+                No artwork to display yet. Check back soon.
             </p>
         {% endif %}
     </main>
 {% endblock %}
 
-{% block footer %}<p>Artwork Gallery</p>{% endblock %}
+{% block footer %}<p>Artazzen</p>{% endblock %}
