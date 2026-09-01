@@ -402,7 +402,7 @@ delete feat/thing branch
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # fill in ADMIN_PASSWORD + API keys
-uvicorn main:app --reload
+uvicorn main:app --reload --env-file .env
 ```
 
 Gallery: `http://127.0.0.1:8000/` | Admin: `http://127.0.0.1:8000/admin`
@@ -480,7 +480,7 @@ Layering (no cycles): `config → sidecars → ai_metadata → curation → watc
 
 ## Tech Stack
 
-- **Runtime**: Python 3.10+, FastAPI, Uvicorn
+- **Runtime**: Python 3.11+, FastAPI, Uvicorn
 - **Templating**: Jinja2
 - **Image processing**: Pillow
 - **Validation**: jsonschema, Pydantic
@@ -641,7 +641,7 @@ A deterministic PreToolUse hook (`.claude/hooks/pretooluse-pr-review-nudge.sh`) 
 
 ```bash
 # Development
-uvicorn main:app --reload                    # Start dev server
+uvicorn main:app --reload --env-file .env     # Start dev server with local env
 pytest                                       # Run test suite
 python manage_sidecars.py validate           # Validate sidecar JSON
 
