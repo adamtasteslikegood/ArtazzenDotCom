@@ -85,7 +85,7 @@ Module layering (no cycles): `config -> sidecars -> ai_metadata -> curation -> w
 | `/admin/api/collections`       | GET/POST | Collections registry CRUD                |
 | `/admin/api/series`            | GET/POST | Series registry CRUD                     |
 | `/admin/config`                | GET/POST | AI config CRUD                           |
-| `/admin/config/reset`          | POST     | Reset AI config                          |
+| `/admin/config/reset`          | POST     | Reset AI config to defaults              |
 | `/admin/ai/regenerate`         | POST     | AI regeneration (fields, force, preview) |
 
 ## Metadata Workflow
