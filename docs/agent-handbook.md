@@ -5,7 +5,7 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 ## Mission Profile
 
 - Deliver well-explained code or documentation improvements without breaking existing flows.
-- Respect the FastAPI + Jinja2 architecture centered around `main.py`.
+- Respect the FastAPI + Jinja2 architecture in the `app/` package (`main.py` is a thin entrypoint shim).
 - Treat sidecar JSON files next to each image as the source of truth—the schema lives in `ImageSidecar.schema.json`.
 - Preserve `Static/` capitalization; FastAPI mounts it at `/static`.
 
@@ -43,9 +43,9 @@ This guide summarizes how autonomous coding agents should work inside the Artazz
 
 ## Testing & Quality
 
-- No formal automated suite yet—lean on manual verification via browser, `test_main.http`, or curl.
+- Run `pytest` for the automated test suite; CI also runs `ruff check`, `black --check`, and `npx prettier --check`.
 - When adding tests, prefer `pytest` + `httpx` in `tests/test_*.py`, keeping runs fast and isolated.
-- Watch for regressions in gallery view (`/`), admin dashboard (`/admin`), upload flow, and metadata persistence.
+- Watch for regressions in gallery view (`/`), admin dashboard (`/admin`), upload flow, metadata persistence, and SEO output (`/robots.txt`, `/sitemap.xml`, canonical/OG/Twitter tags, JSON-LD).
 
 ## Sandbox & Approvals
 

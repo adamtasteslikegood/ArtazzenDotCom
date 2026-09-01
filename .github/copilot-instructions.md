@@ -16,6 +16,7 @@ app/
   ai_metadata.py         # OpenAI prompt/request/populate pipeline
   curation.py            # Collections + series registries, migration
   watcher.py             # Pending-file detection and background poll
+  seo.py                 # Canonical URLs, OG/Twitter context, JSON-LD builders
   security.py            # Basic auth dependency + security headers
   routes_admin.py        # All /admin routes (APIRouter)
   routes_public.py       # Gallery, artwork detail, collections (APIRouter)
@@ -30,7 +31,7 @@ Static/                  # Mounted at /static (preserve capital S)
 tests/test_main.py       # Pytest suite
 ```
 
-Layering (no cycles): `config → sidecars → ai_metadata → curation → watcher → security/routes → factory → main`.
+Layering (no cycles): `config → sidecars → ai_metadata → curation → watcher → seo → security/routes → factory → main`.
 
 ## Key Concepts
 
@@ -39,6 +40,7 @@ Layering (no cycles): `config → sidecars → ai_metadata → curation → watc
 - **Series (v3)**: Ordered groups of related edits, owned by one collection. Registry at `.curation/series.json` is authoritative.
 - **Background watcher**: Scans for new images on startup and queues them for review.
 - **AI metadata**: Optional OpenAI integration generates titles/descriptions, controlled via `/admin/config`.
+- **SEO metadata**: Every public page gets canonical URLs, Open Graph and Twitter Card tags, and optional JSON-LD (`VisualArtwork`, `BreadcrumbList`). `/robots.txt` disallows `/admin`; `/sitemap.xml` is generated at request time for approved artworks and collections that are non-empty or have child collections.
 
 ## Coding Standards
 
@@ -66,7 +68,7 @@ pytest                              # test suite
 python manage_sidecars.py validate  # sidecar + curation registry schema check
 ```
 
-Regression-check: gallery view (`/`), admin dashboard (`/admin`), upload flow, collections (`/collections`), and metadata persistence.
+Regression-check: gallery view (`/`), admin dashboard (`/admin`), upload flow, collections (`/collections`), metadata persistence, and SEO output (`/robots.txt`, `/sitemap.xml`, canonical/OG/Twitter tags, JSON-LD).
 
 ## Common Pitfalls
 

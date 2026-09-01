@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- SEO foundation (`app/seo.py`): canonical URLs, Open Graph and Twitter Card
+  meta tags, JSON-LD structured data (`VisualArtwork` for artwork pages,
+  `BreadcrumbList` for artwork and collection pages), dynamic `/sitemap.xml`
+  (approved artworks + collections that are non-empty or have child
+  collections, `<lastmod>` from filesystem mtimes), and `/robots.txt`
+  (disallows `/admin`, advertises sitemap).
+
 ## [0.2.0.0] - 2026-08-20
 
 ### Added
