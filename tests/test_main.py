@@ -75,7 +75,11 @@ def test_read_root(client: TestClient):
     """Test the root endpoint."""
     response = client.get("/")
     assert response.status_code == 200
-    assert "Artazzen" in response.text
+    footer_start = response.text.index("<footer")
+    footer_end = response.text.index("</footer>", footer_start)
+    assert "<p>Artazzen</p>" in response.text[footer_start:footer_end]
+    assert '<a href="/" aria-current="page">Gallery</a>' in response.text
+    assert '<a href="/collections">Collections</a>' in response.text
 
 
 def test_artwork_detail(client: TestClient):
@@ -1205,6 +1209,8 @@ def test_collections_index_lists_top_level(client, tmp_path, monkeypatch):
     assert response.status_code == 200
     assert "/collections/flora" in response.text
     assert "/collections/hidden-child" not in response.text
+    assert '<a href="/">Gallery</a>' in response.text
+    assert '<a href="/collections" aria-current="page">Collections</a>' in response.text
 
 
 def test_series_api_create_syncs_sidecar_mirrors(authed_client, tmp_path, monkeypatch):
