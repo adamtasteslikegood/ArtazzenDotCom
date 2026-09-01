@@ -75,8 +75,10 @@ def test_read_root(client: TestClient):
     """Test the root endpoint."""
     response = client.get("/")
     assert response.status_code == 200
-    footer_start = response.text.index("<footer")
-    footer_end = response.text.index("</footer>", footer_start)
+    footer_start = response.text.find("<footer")
+    assert footer_start != -1
+    footer_end = response.text.find("</footer>", footer_start)
+    assert footer_end != -1
     assert "<p>Artazzen</p>" in response.text[footer_start:footer_end]
     assert 'aria-current="page">Gallery</a>' in response.text
     assert 'aria-current="page">Collections</a>' not in response.text
