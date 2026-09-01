@@ -90,7 +90,7 @@ Module layering (no cycles): `config -> sidecars -> ai_metadata -> curation -> w
 
 ## Metadata Workflow
 
-1. Drop images into `Static/images/`. Supported formats: JPG/JPEG, PNG, GIF, WEBP, BMP, TIFF.
+1. Drop images into `Static/images/` (or the directory set by `IMAGES_DIR`). Supported formats: JPG/JPEG, PNG, GIF, WEBP, BMP, TIFF.
 2. The background watcher detects new files and creates a JSON sidecar (same filename, `.json` extension) with required fields:
    - `title` (string)
    - `description` (string)

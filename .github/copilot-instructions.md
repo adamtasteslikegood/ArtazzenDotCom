@@ -40,7 +40,7 @@ Layering (no cycles): `config → sidecars → ai_metadata → curation → watc
 - **Series (v3)**: Ordered groups of related edits, owned by one collection. Registry at `.curation/series.json` is authoritative.
 - **Background watcher**: Scans for new images on startup and queues them for review.
 - **AI metadata**: Optional OpenAI integration generates titles/descriptions, controlled via `/admin/config`.
-- **SEO metadata**: Every public page gets canonical URLs, Open Graph and Twitter Card tags, and optional JSON-LD (`VisualArtwork`, `BreadcrumbList`). `/robots.txt` disallows `/admin`; `/sitemap.xml` is generated at request time for approved artworks and non-empty collections.
+- **SEO metadata**: Every public page gets canonical URLs, Open Graph and Twitter Card tags, and optional JSON-LD (`VisualArtwork`, `BreadcrumbList`). `/robots.txt` disallows `/admin`; `/sitemap.xml` is generated at request time for approved artworks and collections that are non-empty or have child collections.
 
 ## Coding Standards
 
