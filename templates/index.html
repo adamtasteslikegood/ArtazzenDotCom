@@ -17,7 +17,8 @@
                             <img src="{{ artwork.url }}"
                                  alt="{{ artwork.title }}"
                                  loading="lazy"
-                                 onerror="this.onerror=null; this.style.display='none'; this.parentElement.classList.add('img-error'); this.parentElement.setAttribute('aria-label','Image unavailable');">
+                                 onload="this.parentElement.classList.add('img-loaded');"
+                                 onerror="this.onerror=null; this.parentElement.classList.remove('img-loaded'); this.style.display='none'; this.parentElement.classList.add('img-error'); this.parentElement.setAttribute('aria-label', this.alt + ' — image unavailable');">
                         </a>
                         <p class="artwork-title">{{ artwork.title }}</p>
                         {% if artwork.description %}
