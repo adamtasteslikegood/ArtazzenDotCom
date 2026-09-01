@@ -1465,9 +1465,9 @@ def test_all_routes_registered():
         "/admin/unapprove/{image_name}",
         "/admin/delete/{image_name}",
     }
-    # Build a fresh app instance so this assertion is isolated from any
-    # stateful mutations of the module-level `main.app` across tests.
-    registered = {getattr(r, "path", None) for r in gallery_app.create_app().routes}
+    # FastAPI 0.137+ may keep included routers as nested nodes, so inspect
+    # the public OpenAPI path map instead of relying on the internal route tree.
+    registered = set(gallery_app.create_app().openapi()["paths"])
     missing = expected - registered
     assert not missing, f"routes missing after split: {missing}"
 
