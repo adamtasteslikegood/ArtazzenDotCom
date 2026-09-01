@@ -1,5 +1,12 @@
 # Plan: Artazzen Mobile — Schema v2 + Mobile Web + SwiftUI Spec
 
+> **Historical document.** This plan was written for the `feat/artazzen-mobile`
+> branch (2026-08-18). Schema v2 has been superseded by v3 (see CHANGELOG.md
+> `[0.2.0.0]`), the codebase has been modularized into the `app/` package, and
+> the SwiftUI iOS app has moved to its own repository
+> ([ArtazzenMobile](https://github.com/adamtasteslikegood/ArtazzenMobile)).
+> Refer to `CLAUDE.md` for the current architecture and conventions.
+
 > Supersedes the "Admin Page Gallery Curation & UI Overhaul" plan.
 > Source: Claude Design project `0d04de68-334e-4421-8f13-7595824d032b` ("Artazzen Mobile")
 > Date: 2026-08-18 | Branch: `feat/artazzen-mobile`
@@ -175,126 +182,10 @@ The admin page already has segmented Dashboard/Settings tabs, search bar, galler
 
 ## Part 2: Track B — SwiftUI Specification
 
-> **Important**: Authored on Linux. The SwiftUI code is a specification — cannot be compiled or tested here. Deliverables are source files in an `ArtazzenMobile/` directory with a Swift Package structure.
-
-### 2.1 Project Structure
-
-```
-ArtazzenMobile/
-├── Package.swift              # iOS 17+, SwiftUI
-├── Sources/
-│   ├── ArtazzenMobileApp.swift
-│   ├── Models/
-│   │   ├── Artwork.swift      # Codable struct matching v2 schema
-│   │   ├── Collection.swift
-│   │   └── AIConfig.swift
-│   ├── Services/
-│   │   └── ArtazzenAPI.swift  # URLSession client for FastAPI backend
-│   ├── Views/
-│   │   ├── MainTabView.swift  # 5-tab TabView
-│   │   ├── Queue/
-│   │   │   ├── QueueView.swift
-│   │   │   └── QueueCard.swift
-│   │   ├── Review/
-│   │   │   ├── SwipeDeckView.swift
-│   │   │   └── ReviewCard.swift
-│   │   ├── Capture/
-│   │   │   ├── CaptureView.swift
-│   │   │   └── MetadataEditor.swift
-│   │   ├── Gallery/
-│   │   │   ├── GalleryView.swift
-│   │   │   ├── GalleryGrid.swift
-│   │   │   └── ArtworkDetailView.swift
-│   │   └── Settings/
-│   │       └── SettingsView.swift
-│   └── Components/
-│       ├── ArtworkCard.swift
-│       ├── TagPill.swift
-│       ├── AIFieldEditor.swift
-│       └── StatusBadge.swift
-└── Tests/
-    └── ArtazzenMobileTests/
-        └── ArtworkTests.swift  # Codable decode/encode tests
-```
-
-### 2.2 Data Models
-
-```swift
-struct Artwork: Codable, Identifiable {
-    var id: String { filename }
-    let filename: String
-    var title: String
-    var description: String
-    var caption: String
-    var tags: [String]
-    var artist: String
-    var copyright: String
-    var collection: String
-    var status: ArtworkStatus
-    var aiGenerated: Bool
-    var aiFields: [AIField]
-    let detectedAt: Double
-
-    enum ArtworkStatus: String, Codable {
-        case pending, approved, hidden
-    }
-
-    enum AIField: String, Codable {
-        case title, caption, description, tags
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case filename, title, description, caption, tags
-        case artist, copyright, collection, status
-        case aiGenerated = "ai_generated"
-        case aiFields = "ai_fields"
-        case detectedAt = "detected_at"
-    }
-}
-```
-
-### 2.3 API Client
-
-```swift
-actor ArtazzenAPI {
-    let baseURL: URL
-    let credentials: (username: String, password: String)
-
-    func fetchPending() async throws -> [Artwork]
-    func saveMetadata(_ artwork: Artwork) async throws
-    func regenerateFields(image: String, fields: [Artwork.AIField]) async throws -> Artwork
-    func upload(imageData: Data, filename: String) async throws
-    func unapprove(_ name: String) async throws
-    func delete(_ name: String) async throws
-    func fetchCollections() async throws -> [String]
-}
-```
-
-### 2.4 Key View Specs
-
-- **MainTabView**: TabView with 5 tabs — Queue (list.bullet), Review (rectangle.stack), Capture (camera), Gallery (photo.on.rectangle), Settings (gear)
-- **SwipeDeckView**: ZStack of ReviewCards with DragGesture. Threshold 120pt. Right = approve, left = hide. Spring animation on snap-back, ease-out on dismiss.
-- **CaptureView**: PhotosPicker + camera source. Preview → AI metadata → edit → save.
-- **ArtworkDetailView**: NavigationStack with toolbar. Large image, scrollable metadata form. Per-field regenerate buttons. Tags as editable pill collection.
-- **GalleryView**: LazyVGrid adaptive columns (min 160pt). Search bar. Collection picker via Menu. Status badge overlays.
-
-### 2.5 Design Tokens (SwiftUI)
-
-```swift
-extension Color {
-    static let azCarbon = Color(hex: "#121212")
-    static let azParchment = Color(hex: "#F9F7F2")
-    static let azTeal = Color(hex: "#0D9488")
-    static let azOrange = Color(hex: "#F97316")
-    static let azViolet = Color(hex: "#8B5CF6")
-}
-
-extension Font {
-    static let azDisplay = Font.custom("ClashGrotesk-Bold", size: 28)
-    static let azBody = Font.custom("InstrumentSans-Regular", size: 16)
-    static let azMono = Font.custom("JetBrainsMono-Regular", size: 13)
-}
-```
+> **Moved.** The SwiftUI iOS app now lives in its own repository:
+> [ArtazzenMobile](https://github.com/adamtasteslikegood/ArtazzenMobile).
+> The `ArtazzenMobile/` directory was removed from this repo in v0.2.0.0.
+> See the CHANGELOG entry for details.
 
 ---
 
@@ -307,7 +198,7 @@ extension Font {
 
 ## Constraints
 
-- All Python code stays in `main.py` per project rules
+- ~~All Python code stays in `main.py` per project rules~~ (Superseded: code now lives in the `app/` package; `main.py` is a thin entrypoint shim.)
 - SwiftUI specs are **authored, not verified** (Linux — no Xcode)
 - Feature branch from `dev`, PR targeting `dev`
 - Workflows capped at <5 agents
@@ -326,4 +217,4 @@ extension Font {
 | `templates/index.html`            | Mobile responsive gallery grid                                                                    |
 | `templates/previewImageText.html` | v2 fields in review form                                                                          |
 | `scripts/migrate_v2.py`           | New — sidecar migration script                                                                    |
-| `ArtazzenMobile/`                 | New — SwiftUI package (Track B)                                                                   |
+| `ArtazzenMobile/`                 | ~~New — SwiftUI package (Track B)~~ (Moved to own repo)                                           |
