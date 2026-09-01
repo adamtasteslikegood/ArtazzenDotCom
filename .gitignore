@@ -17,3 +17,5 @@ logs/
 /uv.lock
 .envrc
 .claude/worktrees
+.coverage
+coverage.xml
