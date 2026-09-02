@@ -74,8 +74,8 @@ jobs:
         env:
           VER: ${{ steps.head.outputs.version }}
         run: |
-          if git tag -l "v$VER" | grep -q .; then
-            echo "::error::Tag v$VER already exists. Use a new version."
+          if git ls-remote --tags origin "refs/tags/v$VER" | grep -q .; then
+            echo "::error::Tag v$VER already exists on remote. Use a new version."
             exit 1
           fi
           echo "Tag v$VER is fresh"
