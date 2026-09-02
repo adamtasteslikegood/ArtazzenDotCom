@@ -1196,9 +1196,7 @@ def test_collection_image_state_markup_and_series_css(client, tmp_path, monkeypa
     )
     assert series_item is not None
     series_markup = series_item.group(0)
-    assert (
-        "onload=\"this.parentElement.classList.add('img-loaded');\"" in series_markup
-    )
+    assert "onload=\"this.parentElement.classList.add('img-loaded');\"" in series_markup
     assert "this.parentElement.classList.add('img-error');" in series_markup
 
     css_response = client.get("/static/css/styles.css")
