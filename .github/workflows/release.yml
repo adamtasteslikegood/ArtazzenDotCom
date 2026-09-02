@@ -52,6 +52,10 @@ jobs:
             /^## \[/ { if (found) exit; if (index($0, "[" ver "]")) found=1; next }
             found { print }
           ' CHANGELOG.md)
+          if [ -z "$(echo "$notes" | tr -d '[:space:]')" ]; then
+            echo "::error::No changelog content found for version $VER"
+            exit 1
+          fi
           echo "$notes" > /tmp/release-notes.md
           echo "Release notes:"
           cat /tmp/release-notes.md

@@ -30,11 +30,15 @@ jobs:
       - name: Read base VERSION
         id: base
         run: |
-          raw=$(git show origin/main:VERSION 2>/dev/null || echo "0.0.0")
+          if ! raw=$(git show origin/main:VERSION 2>/dev/null); then
+            echo "::error::Could not read VERSION from origin/main — is the file missing?"
+            exit 1
+          fi
           # Normalize 4-segment legacy versions to 3-segment semver
           ver=$(echo "$raw" | tr -d '[:space:]' | sed 's/^\([0-9]*\.[0-9]*\.[0-9]*\)\.[0-9]*$/\1/')
           if ! echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            ver="0.0.0"
+            echo "::error::Base VERSION '$raw' could not be parsed as semver"
+            exit 1
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
           echo "Base version: $ver"
