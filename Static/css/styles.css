@@ -1041,6 +1041,7 @@ footer {
 .series-item a {
     position: relative;
     overflow: hidden;
+    border-radius: var(--radius-md, 4px);
 }
 
 .artwork-item a::before,
