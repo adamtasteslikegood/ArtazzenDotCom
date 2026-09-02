@@ -23,43 +23,54 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
           echo "tag=v$ver" >> "$GITHUB_OUTPUT"
 
-      - name: Check if tag exists
+      - name: Check tag and release status
         id: check
         env:
           TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git tag -l "$TAG" | grep -q .; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG already exists — skipping release"
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists — nothing to do"
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract changelog section
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.release_exists == 'false'
         id: notes
         env:
           VER: ${{ steps.version.outputs.version }}
         run: |
-          # Extract the section between ## [VER] and the next ## [
           notes=$(awk -v ver="$VER" '
             /^## \[/ { if (found) exit; if (index($0, "[" ver "]")) found=1; next }
             found { print }
           ' CHANGELOG.md)
-          # Write to file for gh release
           echo "$notes" > /tmp/release-notes.md
           echo "Release notes:"
           cat /tmp/release-notes.md
 
-      - name: Create tag and release
-        if: steps.check.outputs.exists == 'false'
+      - name: Create tag if needed
+        if: steps.check.outputs.tag_exists == 'false'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create release if needed
+        if: steps.check.outputs.release_exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           VER: ${{ steps.version.outputs.version }}
         run: |
-          git tag "$TAG"
-          git push origin "$TAG"
           gh release create "$TAG" \
             --title "$VER" \
             --notes-file /tmp/release-notes.md
