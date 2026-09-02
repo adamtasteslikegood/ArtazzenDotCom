@@ -1,0 +1,98 @@
+name: Release gate
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-version:
+    name: Validate version bump
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Read head VERSION
+        id: head
+        run: |
+          ver=$(cat VERSION | tr -d '[:space:]')
+          if ! echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::VERSION '$ver' is not valid semver (expected X.Y.Z)"
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Head version: $ver"
+
+      - name: Read base VERSION
+        id: base
+        run: |
+          raw=$(git show origin/main:VERSION 2>/dev/null || echo "0.0.0")
+          # Normalize 4-segment legacy versions to 3-segment semver
+          ver=$(echo "$raw" | tr -d '[:space:]' | sed 's/^\([0-9]*\.[0-9]*\.[0-9]*\)\.[0-9]*$/\1/')
+          if ! echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            ver="0.0.0"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Base version: $ver"
+
+      - name: Verify incremental bump
+        env:
+          HEAD: ${{ steps.head.outputs.version }}
+          BASE: ${{ steps.base.outputs.version }}
+        run: |
+          IFS='.' read -r h_major h_minor h_patch <<< "$HEAD"
+          IFS='.' read -r b_major b_minor b_patch <<< "$BASE"
+
+          valid=false
+          # Major bump: major+1, minor=0, patch=0
+          if [ "$h_major" -eq $((b_major + 1)) ] && [ "$h_minor" -eq 0 ] && [ "$h_patch" -eq 0 ]; then
+            valid=true; echo "Valid major bump: $BASE -> $HEAD"
+          fi
+          # Minor bump: same major, minor+1, patch=0
+          if [ "$h_major" -eq "$b_major" ] && [ "$h_minor" -eq $((b_minor + 1)) ] && [ "$h_patch" -eq 0 ]; then
+            valid=true; echo "Valid minor bump: $BASE -> $HEAD"
+          fi
+          # Patch bump: same major+minor, patch+1
+          if [ "$h_major" -eq "$b_major" ] && [ "$h_minor" -eq "$b_minor" ] && [ "$h_patch" -eq $((b_patch + 1)) ]; then
+            valid=true; echo "Valid patch bump: $BASE -> $HEAD"
+          fi
+
+          if [ "$valid" = false ]; then
+            echo "::error::Version $HEAD is not an incremental bump from $BASE. Expected one of: $((b_major+1)).0.0, $b_major.$((b_minor+1)).0, or $b_major.$b_minor.$((b_patch+1))"
+            exit 1
+          fi
+
+      - name: Verify tag is fresh
+        env:
+          VER: ${{ steps.head.outputs.version }}
+        run: |
+          if git tag -l "v$VER" | grep -q .; then
+            echo "::error::Tag v$VER already exists. Use a new version."
+            exit 1
+          fi
+          echo "Tag v$VER is fresh"
+
+      - name: Verify CHANGELOG entry
+        env:
+          VER: ${{ steps.head.outputs.version }}
+        run: |
+          if ! grep -qE "^## \[$VER\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no entry for [$VER]. Add a ## [$VER] - YYYY-MM-DD section."
+            exit 1
+          fi
+          echo "CHANGELOG entry found for $VER"
+
+      - name: Verify pyproject.toml version matches
+        env:
+          VER: ${{ steps.head.outputs.version }}
+        run: |
+          pyver=$(grep -oP '(?<=^version = ")[^"]+' pyproject.toml)
+          if [ "$pyver" != "$VER" ]; then
+            echo "::error::pyproject.toml version '$pyver' does not match VERSION '$VER'"
+            exit 1
+          fi
+          echo "pyproject.toml version matches: $pyver"

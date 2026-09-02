@@ -157,6 +157,17 @@ Direct pushes to `dev` and `main` are **blocked** by GitHub rulesets. All change
 6. **Resolve all comment threads** (required on `main` by ruleset).
 7. **Merge** via rebase or merge commit (squash is not allowed by ruleset).
 
+### Releasing to Production
+
+Releases use semantic versioning (`X.Y.Z`) with GitHub tagged releases.
+
+1. **Bump version** — update `VERSION` and `pyproject.toml` with the new semver. Must be exactly one increment (major, minor, or patch) from `main`'s current version.
+2. **Update CHANGELOG** — roll the `[Unreleased]` section into `## [X.Y.Z] - YYYY-MM-DD`.
+3. **PR to `main`** — the `release-gate` CI check validates: valid semver in `VERSION`, incremental bump from `main`, fresh tag, CHANGELOG entry exists, `pyproject.toml` matches.
+4. **Merge** — on merge to `main`, the `release` workflow auto-creates a git tag (`vX.Y.Z`) and GitHub release with changelog notes.
+
+> **Manual step**: Add "Release gate / Validate version bump" to the `main` branch ruleset's required checks in GitHub settings to enforce gating.
+
 ## Deployment
 
 **Production**: https://artazzen.com — deployed on Railway, auto-deploys from `main`.

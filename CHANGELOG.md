@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-02
+
 ### Added
 
 - SEO foundation (`app/seo.py`): canonical URLs, Open Graph and Twitter Card
@@ -12,8 +14,26 @@ All notable changes to this project will be documented in this file.
   (approved artworks + collections that are non-empty or have child
   collections, `<lastmod>` from filesystem mtimes), and `/robots.txt`
   (disallows `/admin`, advertises sitemap).
+- Semantic versioning with GitHub tagged releases, CI-gated version bumps on
+  PRs to `main`, and automated changelog-based release notes.
 
-## [0.2.0.0] - 2026-08-20
+### Changed
+
+- Gallery grid: live CSS shimmer replaces dead skeleton CSS, stops on image
+  load via `img-loaded` class toggle.
+- Detail page grayscale reduced from 10% to 8% and transition shortened from
+  0.5s to 0.4s for consistency with gallery grid.
+- Active nav link uses `aria-current="page"` instead of class-based styling.
+
+### Fixed
+
+- Broken images now hide gracefully with CSS-only fallback and set
+  `aria-label` for screen readers.
+- Footer simplified to plain text "Artazzen" (removed non-functional
+  "AUTHENTICATED ARTIFACT" line).
+- Shimmer animation respects `prefers-reduced-motion`.
+
+## [0.2.0] - 2026-08-20
 
 ### Added
 
@@ -39,7 +59,7 @@ All notable changes to this project will be documented in this file.
 - Modularized `main.py` into the layered `app/` package (config, sidecars,
   ai_metadata, curation, watcher, security, routers, factory); `main.py` is
   now a thin entrypoint + compatibility shim.
-- `max_output_tokens` is floored at 1200 for gpt-5* reasoning models.
+- `max_output_tokens` is floored at 1200 for gpt-5\* reasoning models.
 
 ### Fixed
 
@@ -55,7 +75,7 @@ All notable changes to this project will be documented in this file.
 
 - The SwiftUI iOS app moved to its own repository (`~/Projects/ArtazzenMobile`).
 
-## [0.1.1.0] - 2026-04-21
+## [0.1.1] - 2026-04-21
 
 ### Added
 

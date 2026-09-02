@@ -385,14 +385,55 @@ code review ◄──► fix and respond to comments
 all threads resolved, checks pass
        │
        ▼
-merge to dev ──► dev promoted to main for production release
+merge to dev ──► prepare release PR to main
        │
        ▼
-merge to main ──► Railway production auto-deploys
+bump VERSION + pyproject.toml, roll CHANGELOG [Unreleased] → [X.Y.Z]
        │
+       ▼
+open PR targeting main ──► release-gate CI validates version bump
+       │
+       ▼
+merge to main ──► release workflow tags vX.Y.Z + creates GitHub release
+       │              ──► Railway production auto-deploys
        ▼
 delete feat/thing branch
 ```
+
+## Release Process
+
+Releases use semantic versioning (`X.Y.Z`) with GitHub tagged releases.
+
+### Version Files
+
+- `VERSION` — single source of truth, contains `X.Y.Z` (no `v` prefix)
+- `pyproject.toml` `version` field — must match `VERSION` exactly
+
+### Release Workflow
+
+1. Accumulate changes on `dev` with entries in the `[Unreleased]` section of `CHANGELOG.md`
+2. When ready to release, create a PR from `dev` to `main`:
+   - Bump `VERSION` to the next semver (exactly one of: major+1.0.0, minor+1, patch+1)
+   - Update `pyproject.toml` version to match
+   - Roll `[Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`
+3. The `release-gate` CI check validates:
+   - `VERSION` is valid `X.Y.Z` semver
+   - Version is exactly one increment from `main`'s current version
+   - Tag `vX.Y.Z` does not already exist
+   - `CHANGELOG.md` contains a `## [X.Y.Z]` entry
+   - `pyproject.toml` version matches `VERSION`
+4. On merge to `main`, the `release` workflow:
+   - Creates git tag `vX.Y.Z`
+   - Creates a GitHub release with the changelog section as notes
+5. Railway auto-deploys from `main`
+
+### CI Workflows
+
+| Workflow       | Trigger              | Purpose                                         |
+| -------------- | -------------------- | ----------------------------------------------- |
+| `ci.yml`       | Push/PR to dev, main | Lint, typecheck, test, prettier, security scan  |
+| `release-gate` | PR to main           | Validate version bump, changelog, tag freshness |
+| `release`      | Push to main         | Auto-create git tag + GitHub release            |
 
 <!-- End of BRANCHING_STRATEGY.md -->
 
@@ -546,6 +587,17 @@ Direct pushes to `dev` and `main` are **blocked** by GitHub rulesets. All change
 5. **Fix requested changes**, push new commits, and reply to each thread.
 6. **Resolve all comment threads** (required on `main` by ruleset).
 7. **Merge** via rebase or merge commit (squash is not allowed by ruleset).
+
+### Releasing to Production
+
+Releases use semantic versioning (`X.Y.Z`) with GitHub tagged releases.
+
+1. **Bump version** — update `VERSION` and `pyproject.toml` with the new semver. Must be exactly one increment (major, minor, or patch) from `main`'s current version.
+2. **Update CHANGELOG** — roll the `[Unreleased]` section into `## [X.Y.Z] - YYYY-MM-DD`.
+3. **PR to `main`** — the `release-gate` CI check validates: valid semver in `VERSION`, incremental bump from `main`, fresh tag, CHANGELOG entry exists, `pyproject.toml` matches.
+4. **Merge** — on merge to `main`, the `release` workflow auto-creates a git tag (`vX.Y.Z`) and GitHub release with changelog notes.
+
+> **Manual step**: Add "Release gate / Validate version bump" to the `main` branch ruleset's required checks in GitHub settings to enforce gating.
 
 ## Deployment
 
