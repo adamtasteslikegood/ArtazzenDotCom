@@ -1006,7 +1006,8 @@ footer {
 }
 
 /* --- Broken image fallback --- */
-.artwork-item a.img-error {
+.artwork-item a.img-error,
+.series-item a.img-error {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1020,7 +1021,8 @@ footer {
     color: var(--text-muted);
 }
 
-.artwork-item a.img-error::after {
+.artwork-item a.img-error::after,
+.series-item a.img-error::after {
     content: 'Image unavailable';
 }
 
@@ -1035,12 +1037,14 @@ footer {
 }
 
 /* --- Lazy-load shimmer (visible while images load) --- */
-.artwork-item a {
+.artwork-item a,
+.series-item a {
     position: relative;
     overflow: hidden;
 }
 
-.artwork-item a::before {
+.artwork-item a::before,
+.series-item a::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -1050,10 +1054,13 @@ footer {
     pointer-events: none;
 }
 
-.artwork-item a img { z-index: 2; position: relative; }
+.artwork-item a img,
+.series-item a img { z-index: 2; position: relative; }
 
 .artwork-item a.img-loaded::before,
-.artwork-item a.img-error::before {
+.artwork-item a.img-error::before,
+.series-item a.img-loaded::before,
+.series-item a.img-error::before {
     display: none;
     animation: none;
 }
