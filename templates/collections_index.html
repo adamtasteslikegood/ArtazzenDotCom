@@ -9,7 +9,7 @@
             <div class="gallery-grid collections-grid">
                 {% for collection in collections %}
                     <div class="artwork-item collection-card">
-                        <a href="{{ url_for('collection_detail', slug=collection.id) }}" title="View collection: {{ collection.title }}"{% if not collection.cover_url %} class="img-loaded"{% endif %}>
+                        <a href="{{ url_for('collection_detail', slug=collection.id) }}" title="View collection: {{ collection.title }}" aria-label="View collection: {{ collection.title }}"{% if not collection.cover_url %} class="img-loaded"{% endif %}>
                             {% if collection.cover_url %}
                             <img src="{{ collection.cover_url }}"
                                  alt="{{ collection.title }}"
