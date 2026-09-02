@@ -1184,6 +1184,61 @@ def test_collection_page_series_order_anchor_and_dedup(client, tmp_path, monkeyp
     assert "hidden.jpg" not in html
 
 
+def test_collection_image_state_markup_and_series_css(client, tmp_path, monkeypatch):
+    _curation_fixture(tmp_path, monkeypatch)
+    response = client.get("/collections/flora")
+    assert response.status_code == 200
+
+    series_item = re.search(
+        r'<div class="series-item">\s*<a[^>]*>\s*<img[^>]*>',
+        response.text,
+        flags=re.DOTALL,
+    )
+    assert series_item is not None
+    series_markup = series_item.group(0)
+    assert "onload=\"this.parentElement.classList.add('img-loaded');\"" in series_markup
+    assert "this.parentElement.classList.add('img-error');" in series_markup
+
+    css_response = client.get("/static/css/styles.css")
+    assert css_response.status_code == 200
+    assert ".series-item a.img-error" in css_response.text
+    assert ".series-item a.img-loaded::before" in css_response.text
+
+
+def test_subcollection_cover_and_placeholder_image_states(
+    client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "cover.jpg", collections=["covered"])
+    gallery_app.curation.upsert_collection({"id": "parent", "title": "Parent"})
+    gallery_app.curation.upsert_collection(
+        {"id": "covered", "title": "Covered", "parent": "parent"}
+    )
+    gallery_app.curation.upsert_collection(
+        {"id": "empty", "title": "Empty", "parent": "parent"}
+    )
+
+    response = client.get("/collections/parent")
+    assert response.status_code == 200
+
+    covered_link = re.search(
+        r'<a[^>]+href="[^"]*/collections/covered"[^>]*>.*?</a>',
+        response.text,
+        flags=re.DOTALL,
+    )
+    assert covered_link is not None
+    assert "onload=\"this.parentElement.classList.add('img-loaded');\"" in covered_link.group(0)
+    assert "this.parentElement.classList.add('img-error');" in covered_link.group(0)
+
+    empty_link = re.search(
+        r'<a[^>]+href="[^"]*/collections/empty"[^>]*>',
+        response.text,
+    )
+    assert empty_link is not None
+    assert 'class="img-loaded"' in empty_link.group(0)
+    assert "collection-cover-placeholder" in response.text
+
+
 def test_collection_breadcrumb_for_nested(client, tmp_path, monkeypatch):
     _make_curation_root(tmp_path, monkeypatch)
     gallery_app.curation.upsert_collection({"id": "root", "title": "Root"})
