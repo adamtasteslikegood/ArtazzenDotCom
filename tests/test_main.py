@@ -1239,6 +1239,7 @@ def test_subcollection_cover_and_placeholder_image_states(
     )
     assert empty_link is not None
     assert 'class="img-loaded"' in empty_link.group(0)
+    assert 'aria-label="View collection: Empty"' in empty_link.group(0)
     assert "collection-cover-placeholder" in response.text
 
 
@@ -1268,6 +1269,7 @@ def test_collections_index_lists_top_level(client, tmp_path, monkeypatch):
     response = client.get("/collections")
     assert response.status_code == 200
     assert "/collections/flora" in response.text
+    assert 'aria-label="View collection: Flora"' in response.text
     assert "/collections/hidden-child" not in response.text
     assert 'aria-current="page">Gallery</a>' not in response.text
     assert 'aria-current="page">Collections</a>' in response.text

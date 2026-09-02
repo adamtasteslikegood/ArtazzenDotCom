@@ -31,7 +31,7 @@
             <div class="gallery-grid collections-grid">
                 {% for child in children %}
                     <div class="artwork-item collection-card">
-                        <a href="{{ url_for('collection_detail', slug=child.id) }}" title="View collection: {{ child.title }}"{% if not child.cover_url %} class="img-loaded"{% endif %}>
+                        <a href="{{ url_for('collection_detail', slug=child.id) }}" title="View collection: {{ child.title }}" aria-label="View collection: {{ child.title }}"{% if not child.cover_url %} class="img-loaded"{% endif %}>
                             {% if child.cover_url %}
                             <img src="{{ child.cover_url }}"
                                  alt="{{ child.title }}"
