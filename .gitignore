@@ -13,3 +13,9 @@ data/
 /imports/
 final_test.log
 logs/
+.agent-harness/
+/uv.lock
+.envrc
+.claude/worktrees
+.coverage
+coverage.xml

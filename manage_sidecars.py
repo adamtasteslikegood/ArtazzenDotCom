@@ -17,14 +17,27 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
-from jsonschema import validate as js_validate, ValidationError
+from jsonschema import ValidationError
+from jsonschema import validate as js_validate
+
+
+def _coerce_bool(value: Any) -> bool:
+    """Safely coerce a bool or string to a Python bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
 
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "Static"
-IMAGES_DIR = STATIC_DIR / "images"
+# Honor the same IMAGES_DIR env override as the app (app/config.py), so the
+# sidecar loop and the curation-registry validation always target the same
+# root — on Railway the volume lives at /data/images, not Static/images.
+IMAGES_DIR = Path(os.getenv("IMAGES_DIR", STATIC_DIR / "images"))
 SCHEMA_PATH = BASE_DIR / "ImageSidecar.schema.json"
 
 ALLOWED_IMAGE_EXTENSIONS = {
@@ -39,13 +52,13 @@ ALLOWED_IMAGE_EXTENSIONS = {
 }
 
 
-def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
+def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
 
 
-def _load_schema() -> Dict[str, Any]:
+def _load_schema() -> dict[str, Any]:
     try:
         return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -74,6 +87,11 @@ def _load_schema() -> Dict[str, Any]:
                         "raw_response": {"type": "object", "default": {}},
                     },
                 },
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "approved", "hidden"],
+                    "default": "pending",
+                },
                 "reviewed": {"type": "boolean", "default": False},
                 "detected_at": {"type": "number", "default": 0},
             },
@@ -82,14 +100,19 @@ def _load_schema() -> Dict[str, Any]:
                 "description",
                 "ai_generated",
                 "ai_details",
-                "reviewed",
+                "status",
                 "detected_at",
             ],
             "additionalProperties": False,
         }
 
 
-def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_schema_defaults(
+    data: dict[str, Any], schema: dict[str, Any]
+) -> dict[str, Any]:
+    # Backwards-compat: convert reviewed → status before defaults fill it in
+    if "status" not in data and "reviewed" in data:
+        data["status"] = "approved" if _coerce_bool(data["reviewed"]) else "pending"
     props = schema.get("properties", {})
     required = set(schema.get("required", []))
     for key in required:
@@ -107,13 +130,8 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
                 data[key] = {}
             else:
                 data[key] = None
-    # Simple coercions
-    if isinstance(data.get("reviewed"), str):
-        lowered = data["reviewed"].strip().lower()
-        if lowered in {"true", "1", "yes", "y"}:
-            data["reviewed"] = True
-        elif lowered in {"false", "0", "no", "n"}:
-            data["reviewed"] = False
+    if "status" in data and data["status"] not in ("pending", "approved", "hidden"):
+        data["status"] = "pending"
     if isinstance(data.get("ai_generated"), str):
         lowered = data["ai_generated"].strip().lower()
         if lowered in {"true", "1", "yes", "y"}:
@@ -135,12 +153,12 @@ def _apply_schema_defaults(data: Dict[str, Any], schema: Dict[str, Any]) -> Dict
     return data
 
 
-def _ensure_sidecar(image_path: Path, schema: Dict[str, Any]) -> None:
+def _ensure_sidecar(image_path: Path, schema: dict[str, Any]) -> None:
     json_path = image_path.with_suffix(".json")
     if json_path.exists():
         return
     now = time.time()
-    sidecar: Dict[str, Any] = {}
+    sidecar: dict[str, Any] = {}
     for key, spec in schema.get("properties", {}).items():
         if "default" in spec:
             sidecar[key] = spec["default"]
@@ -149,7 +167,7 @@ def _ensure_sidecar(image_path: Path, schema: Dict[str, Any]) -> None:
     sidecar.setdefault("ai_generated", False)
     if not isinstance(sidecar.get("ai_details"), dict):
         sidecar["ai_details"] = {}
-    sidecar.setdefault("reviewed", False)
+    sidecar.setdefault("status", "pending")
     sidecar.setdefault("detected_at", now)
     _atomic_write_json(json_path, sidecar)
 
@@ -189,13 +207,32 @@ def validate_and_migrate(images_dir: Path = IMAGES_DIR) -> int:
             changed += 1
 
     print(f"Validated {total} images; updated {changed} sidecars.")
+
+    # Curation registries (collections/series) — validate + repair drift.
+    try:
+        from app import curation
+
+        report = curation.validate_registries(repair=True)
+        for warning in report["warnings"]:
+            print(f"[warn] {warning}")
+        for error in report["errors"]:
+            print(f"[error] {error}")
+        if report["errors"]:
+            return 1
+        print("Curation registries valid.")
+    except ImportError as exc:
+        print(f"[warn] Skipping registry validation (app package unavailable: {exc})")
     return 0
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Validate/migrate image sidecar JSON files.")
+    parser = argparse.ArgumentParser(
+        description="Validate/migrate image sidecar JSON files."
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("validate", help="Validate and migrate sidecars under Static/images/")
+    sub.add_parser(
+        "validate", help="Validate and migrate sidecars under Static/images/"
+    )
     args = parser.parse_args(argv)
 
     if args.cmd == "validate":

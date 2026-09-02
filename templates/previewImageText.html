@@ -1,26 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review {{ metadata.title }} &mdash; Artwork Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
-    <link href="https://api.fontshare.com/v2/css?f[]=clash-grotesk@200,300,400,500,600,700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
-</head>
-<body class="admin-page">
-    <header>
-        <h1>Review</h1>
-        <p class="admin-subheading">Curating metadata for artifact</p>
-        <nav class="admin-nav">
-            <a href="{{ review_url }}" class="button secondary">Back to pending list</a>
-            <a href="/" class="button secondary">View Public Gallery</a>
-        </nav>
-    </header>
+{% extends "base_admin.html" %}
 
-    <div class="shader-bg"></div>
+{% block title %}Review {{ metadata.title }} &mdash; Artwork Admin{% endblock %}
+{% block admin_heading %}Review{% endblock %}
+{% block admin_subheading %}Curating metadata for artifact{% endblock %}
 
+{% block admin_nav %}
+<a href="{{ review_url }}" class="button secondary">Back to pending list</a>
+<a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
+{% endblock %}
+
+{% block content %}
     <main class="admin-container single">
         <section class="admin-panel">
             <h2>{{ metadata.title }}</h2>
@@ -44,51 +33,164 @@
                                 <span class="badge secondary">AI pending</span>
                             {% endif %}
                             {% set ai = metadata.get('ai_details') or {} %}
+                            {% if ai.get('model') %}
+                                <span class="ai-meta-detail">{{ ai.model }}</span>
+                            {% endif %}
+                            {% set usage = (ai.get('raw_response') or {}).get('usage') or {} %}
+                            {% if usage.get('output_tokens') %}
+                                <span class="ai-meta-detail">{{ usage.output_tokens }} tokens</span>
+                            {% endif %}
                             {% set ai_time = ai.get('created') or ai.get('attempted_at') or metadata.get('detected_at') %}
                             {% if ai_time %}
                                 <span class="timestamp" data-ts="{{ ai_time }}"></span>
                             {% endif %}
                         </dd>
                     </div>
+                    <div>
+                        <dt>Sidecar</dt>
+                        <dd><a href="{{ url_for('get_sidecar_json', image_name=image_name) }}" target="_blank" rel="noopener">View JSON</a></dd>
+                    </div>
                 </dl>
             </div>
         </section>
 
         <section class="admin-panel">
-            <h2>Edit text for this image</h2>
-            <p class="panel-description">Update the fields below to control the title and description that accompany the artwork in the public gallery. Saving will also update or create the JSON sidecar file.</p>
+            <h2>Edit metadata</h2>
+            <p class="panel-description">Update the fields below. Saving approves the artwork and updates its JSON sidecar.</p>
             <form class="metadata-form" method="post" action="{{ url_for('update_image_metadata', image_name=image_name) }}">
                 <div class="form-field">
                     <label for="title">Title</label>
-                    <input type="text" id="title" name="title" value="{{ metadata.title | e }}" required>
+                    <div class="field-with-regen"><input type="text" id="title" name="title" value="{{ metadata.title | e }}" required><button type="button" class="field-regen-btn" data-field="title" aria-label="Regenerate title with AI">AI</button></div>
                 </div>
                 <div class="form-field">
                     <label for="description">Description</label>
-                    <textarea id="description" name="description" rows="6" placeholder="Describe the story, medium, or inspiration for this piece.">{{ metadata.description | e }}</textarea>
+                    <div class="field-with-regen"><textarea id="description" name="description" rows="4" placeholder="Describe the story, medium, or inspiration.">{{ metadata.description | e }}</textarea><button type="button" class="field-regen-btn" data-field="description" aria-label="Regenerate description with AI">AI</button></div>
                 </div>
+                <div class="form-field">
+                    <label for="caption">Caption</label>
+                    <div class="field-with-regen"><input type="text" id="caption" name="caption" value="{{ metadata.get('caption', '') | e }}" placeholder="Short gallery caption"><button type="button" class="field-regen-btn" data-field="caption" aria-label="Regenerate caption with AI">AI</button></div>
+                </div>
+                <div class="form-field">
+                    <label for="tags">Tags</label>
+                    <div class="field-with-regen"><input type="text" id="tags" name="tags" value="{{ metadata.get('tags', []) | join(', ') }}" placeholder="Comma-separated tags"><button type="button" class="field-regen-btn" data-field="tags" aria-label="Regenerate tags with AI">AI</button></div>
+                </div>
+                <div class="form-field">
+                    <label for="artist">Artist</label>
+                    <input type="text" id="artist" name="artist" value="{{ metadata.get('artist', '') | e }}">
+                </div>
+                <div class="form-field">
+                    <label for="copyright">Copyright</label>
+                    <input type="text" id="copyright" name="copyright" value="{{ metadata.get('copyright', '') | e }}">
+                </div>
+                <div class="form-field">
+                    <label for="collections">Collections</label>
+                    <input type="text" id="collections" name="collections" value="{{ metadata.get('collections', []) | join(', ') }}" placeholder="Comma-separated collection slugs">
+                </div>
+                <div class="form-field">
+                    <label for="collection">Collection (legacy)</label>
+                    <input type="text" id="collection" name="collection" value="{{ metadata.get('collection', '') | e }}">
+                </div>
+                <input type="hidden" id="ai_fields" name="ai_fields" value="{{ metadata.get('ai_fields', []) | join(',') }}">
+                <input type="hidden" id="ai_generated" name="ai_generated" value="{{ 'true' if metadata.get('ai_generated') else 'false' }}">
+                {% if metadata.get('ai_fields') %}
+                <p class="ai-status">
+                    <span class="badge">AI fields: {{ metadata.ai_fields | join(', ') }}</span>
+                </p>
+                {% endif %}
                 <div class="form-actions">
-                    <button type="submit" name="action" value="save" class="button">OK</button>
-                    <button type="submit" name="action" value="cancel" class="button secondary">Cancel</button>
+                    <button type="submit" name="action" value="save" class="button">Approve &amp; Save</button>
+                    <button type="submit" name="action" value="cancel" id="cancel-button" class="button secondary">Cancel</button>
                 </div>
             </form>
         </section>
+
+        {% if prev_image or next_image %}
+        <nav style="display: flex; justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+            {% if prev_image %}
+            <a href="{{ url_for('preview_image_metadata', image_name=prev_image) }}" class="button secondary">&larr; Previous</a>
+            {% else %}
+            <span></span>
+            {% endif %}
+            {% if next_image %}
+            <a href="{{ url_for('preview_image_metadata', image_name=next_image) }}" class="button secondary">Next &rarr;</a>
+            {% endif %}
+        </nav>
+        {% endif %}
     </main>
+{% endblock %}
 
-    <footer>
-        <p>Artwork Gallery Administration</p>
-    </footer>
-
+{% block scripts %}
     <script>
-    // Format any server-rendered timestamps on this page
     (function () {
+        var ROOT = document.body.dataset.rootPath || '';
+
         document.querySelectorAll('.ai-status .timestamp[data-ts]')
-            .forEach((el) => {
-                const ts = parseFloat(el.getAttribute('data-ts'));
+            .forEach(function(el) {
+                var ts = parseFloat(el.getAttribute('data-ts'));
                 if (!isNaN(ts)) {
-                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString();
+                    el.textContent = ' · ' + new Date(ts * 1000).toLocaleString('en-US', {dateStyle: 'medium', timeStyle: 'short'});
                 }
             });
+
+        // Snapshot the form at load so Cancel can revert every field.
+        var FIELD_IDS = ['title', 'description', 'caption', 'tags', 'artist', 'copyright', 'collection', 'collections', 'ai_fields', 'ai_generated'];
+        var snapshot = {};
+        FIELD_IDS.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) snapshot[id] = el.value;
+        });
+
+        document.getElementById('cancel-button')?.addEventListener('click', function() {
+            FIELD_IDS.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && id in snapshot) el.value = snapshot[id];
+            });
+            // The submit proceeds with action=cancel; the server redirects
+            // without saving. Nothing was persisted during preview regens.
+        });
+
+        function markAiField(field) {
+            var hidden = document.getElementById('ai_fields');
+            if (!hidden) return;
+            var fields = hidden.value.split(',').map(function(f) { return f.trim(); }).filter(Boolean);
+            if (fields.indexOf(field) === -1) fields.push(field);
+            hidden.value = fields.join(',');
+            var gen = document.getElementById('ai_generated');
+            if (gen) gen.value = 'true';
+        }
+
+        document.querySelectorAll('.field-regen-btn').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+                var field = btn.dataset.field;
+                var imageName = {{ image_name | tojson }};
+                btn.disabled = true;
+                btn.textContent = '…';
+                try {
+                    var res = await fetch(ROOT + '/admin/ai/regenerate', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({images: [imageName], fields: [field], force: true, preview: true})
+                    });
+                    var data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || 'Failed');
+                    if ((data.errors || []).length) throw new Error(data.errors[0].error || 'Failed');
+                    var updated = (data.updated || [])[0];
+                    if (updated && updated.metadata) {
+                        var val = updated.metadata[field];
+                        var input = document.getElementById(field);
+                        if (input) {
+                            input.value = Array.isArray(val) ? val.join(', ') : (val || '');
+                        }
+                        markAiField(field);
+                    }
+                    btn.textContent = '✓';
+                    setTimeout(function() { btn.textContent = 'AI'; btn.disabled = false; }, 2000);
+                } catch (e) {
+                    btn.textContent = '✗';
+                    setTimeout(function() { btn.textContent = 'AI'; btn.disabled = false; }, 2000);
+                }
+            });
+        });
     })();
     </script>
-</body>
-</html>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}{{ collection.title }} &mdash; Collections{% endblock %}
+{% block page_heading %}{{ collection.title }}{% endblock %}
+
+{% block header_pre %}
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="{{ url_for('collections_index') }}">Collections</a>
+    {% for crumb in breadcrumb %}
+        <span aria-hidden="true">/</span>
+        {% if loop.last %}
+        <span aria-current="page">{{ crumb.title }}</span>
+        {% else %}
+        <a href="{{ url_for('collection_detail', slug=crumb.id) }}">{{ crumb.title }}</a>
+        {% endif %}
+    {% endfor %}
+</nav>
+{% endblock %}
+
+{% block header_extra %}
+{% if collection.description %}
+<p class="tagline" style="font-family: var(--font-mono); font-size: 0.75rem; text-transform: uppercase; opacity: 0.6; margin-top: 1rem;">{{ collection.description }}</p>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+    <main>
+        {% if children %}
+        <section class="sub-collections">
+            <h2 class="section-label">Collections</h2>
+            <div class="gallery-grid collections-grid">
+                {% for child in children %}
+                    <div class="artwork-item collection-card">
+                        <a href="{{ url_for('collection_detail', slug=child.id) }}" title="View collection: {{ child.title }}" aria-label="View collection: {{ child.title }}"{% if not child.cover_url %} class="img-loaded"{% endif %}>
+                            {% if child.cover_url %}
+                            <img src="{{ child.cover_url }}"
+                                 alt="{{ child.title }}"
+                                 loading="lazy"
+                                 onload="this.parentElement.classList.add('img-loaded');"
+                                 onerror="this.onerror=null; this.parentElement.classList.remove('img-loaded'); this.style.display='none'; this.parentElement.classList.add('img-error'); this.parentElement.setAttribute('aria-label', this.alt + ' — image unavailable');">
+                            {% else %}
+                            <div class="collection-cover-placeholder" aria-hidden="true"></div>
+                            {% endif %}
+                        </a>
+                        <p class="artwork-title">{{ child.title }}</p>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% for series in series_list %}
+            {% include "_series_strip.html" %}
+        {% endfor %}
+
+        {% if artworks %}
+        <section class="collection-grid-section">
+            {% if series_list or children %}<h2 class="section-label">Artworks</h2>{% endif %}
+            <div class="gallery-grid">
+                {% for artwork in artworks %}
+                    <div class="artwork-item">
+                        <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
+                            <img src="{{ artwork.url }}"
+                                 alt="{{ artwork.title }}"
+                                 loading="lazy"
+                                 onload="this.parentElement.classList.add('img-loaded');"
+                                 onerror="this.onerror=null; this.parentElement.classList.remove('img-loaded'); this.style.display='none'; this.parentElement.classList.add('img-error'); this.parentElement.setAttribute('aria-label', this.alt + ' — image unavailable');">
+                        </a>
+                        <p class="artwork-title">{{ artwork.title }}</p>
+                        {% if artwork.description %}
+                        <p class="artwork-description">{{ artwork.description }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if not children and not series_list and not artworks %}
+        <p class="no-artwork-message">No artwork in this collection yet.</p>
+        {% endif %}
+    </main>
+{% endblock %}
+
+{% block footer %}<p>Artazzen / {{ collection.title }}</p>{% endblock %}

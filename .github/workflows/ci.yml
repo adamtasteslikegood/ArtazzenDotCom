@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: ["dev", "main", "feature/**"]
+  pull_request:
+    branches: ["dev", "main"]
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - run: pip install ruff==0.16.3 black==26.5.1
+      - run: ruff check .
+      - run: black --check --target-version py311 .
+
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install deps + mypy
+        run: pip install -r requirements.txt mypy types-Pillow
+
+      - name: mypy
+        run: mypy main.py --ignore-missing-imports --no-strict-optional
+
+  test:
+    name: Tests & coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install deps + coverage
+        run: pip install -r requirements.txt pytest-cov
+
+      - name: pytest with coverage
+        run: pytest tests/test_main.py -q --tb=short --cov=. --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14
+
+  format-docs:
+    name: Prettier (docs & config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: npx --yes prettier --check "**/*.{md,yml,yaml,json}"
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - run: pip install bandit[toml]
+      - run: bandit -r main.py app/ manage_sidecars.py scripts/ -ll -q

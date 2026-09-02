@@ -1,0 +1,11 @@
+{
+  "overrides": [
+    {
+      "files": "**/*.{md,yml,yaml,json}",
+      "options": {
+        "tabWidth": 2,
+        "proseWrap": "preserve"
+      }
+    }
+  ]
+}

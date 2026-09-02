@@ -13,11 +13,11 @@ main (production)          ← deployed to Railway production environment
 
 ### Branch Roles
 
-| Branch | Purpose | Deploys To | Protected |
-|--------|---------|------------|-----------|
-| `main` | Production-ready code | Railway production | Yes — PR required, all threads resolved |
-| `dev` | Integration and staging | Railway staging (when configured) | Yes — PR required |
-| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews (when configured) | No |
+| Branch                                 | Purpose                   | Deploys To                        | Protected                               |
+| -------------------------------------- | ------------------------- | --------------------------------- | --------------------------------------- |
+| `main`                                 | Production-ready code     | Railway production                | Yes — PR required, all threads resolved |
+| `dev`                                  | Integration and staging   | Railway staging (when configured) | Yes — PR required                       |
+| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Railway PR previews               | No                                      |
 
 ### Rules
 
@@ -71,17 +71,20 @@ Railway supports multiple environments tied to branches. Each environment has it
 
 ### Production (`main`)
 
-- **Branch**: `main`
-- **Auto-deploy**: on push/merge to `main`
+- **URL**: https://artazzen.com (canonical apex domain)
+- **Branch**: `main` — auto-deploys on push/merge
+- **Hosting**: Dedicated Railway project
+- **DNS**: Cloudflare nameservers. `www.artazzen.com` → 301 redirect to apex via Cloudflare rule. `www` uses a proxied DNS record that resolves through Cloudflare edge IPs.
+- **CDN/Proxy**: Cloudflare proxy on apex — SSL termination, DDoS protection, caching
 - **Volume**: persistent storage mounted at `/data/images` (`IMAGES_DIR=/data/images`)
 - **Variables**: `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `MY_OPENAI_API_KEY`, and other production secrets set in Railway dashboard
-- **Domain**: production URL configured in Railway
 
 ### PR Deploy Previews (planned)
 
 Railway can spin up isolated environments for each pull request, giving reviewers a live preview before merging.
 
 **What PR previews provide:**
+
 - Temporary environment created automatically when a PR is opened
 - Own service instance with the PR's code deployed
 - Isolated variables (can inherit from production or use test values)
@@ -89,6 +92,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 - Auto-teardown when the PR is merged or closed
 
 **Setup steps (after initial PRs are merged):**
+
 1. Enable "PR Deploy Previews" in the Railway service settings
 2. Connect the GitHub repo if not already linked
 3. Configure environment variables for preview environments (use test API keys, separate admin credentials)
@@ -96,6 +100,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 5. Set a base environment to inherit variables from
 
 **Considerations for this project:**
+
 - Preview environments will need their own `ADMIN_PASSWORD` (set a shared test password in Railway's PR environment config)
 - `IMAGES_DIR` can be left unset (defaults to `Static/images/` with bundled test images) or pointed at a preview volume
 - `IMPORT_ROOT` limits admin filesystem imports to one approved staging directory; keep the default ephemeral `imports/` directory or set an explicit preview path
@@ -104,16 +109,16 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 
 ### Environment Variable Matrix
 
-| Variable | Production | PR Preview |
-|----------|-----------|------------|
-| `IMAGES_DIR` | `/data/images` (volume) | unset (uses `Static/images/`) |
-| `IMPORT_ROOT` | `/data/images/imports` or another approved staging directory | unset (uses `imports/`) |
-| `ADMIN_USERNAME` | `admin` | `admin` |
-| `ADMIN_PASSWORD` | production secret | shared test password |
-| `MY_OPENAI_API_KEY` | production key | test key or unset |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-4o-mini` | `gpt-4o-mini` |
-| `MAX_UPLOAD_SIZE_MB` | `50` | `50` |
-| `PORT` | set by Railway | set by Railway |
+| Variable                      | Production                                                   | PR Preview                    |
+| ----------------------------- | ------------------------------------------------------------ | ----------------------------- |
+| `IMAGES_DIR`                  | `/data/images` (volume)                                      | unset (uses `Static/images/`) |
+| `IMPORT_ROOT`                 | `/data/images/imports` or another approved staging directory | unset (uses `imports/`)       |
+| `ADMIN_USERNAME`              | `admin`                                                      | `admin`                       |
+| `ADMIN_PASSWORD`              | production secret                                            | shared test password          |
+| `MY_OPENAI_API_KEY`           | production key                                               | test key or unset             |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`                                               | `gpt-5.6-luna`                |
+| `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                          |
+| `PORT`                        | set by Railway                                               | set by Railway                |
 
 ## Workflow Summary
 
@@ -136,11 +141,52 @@ code review ◄──► fix and respond to comments
 all threads resolved, checks pass
        │
        ▼
-merge to dev ──► dev promoted to main for production release
+merge to dev ──► prepare release PR to main
        │
        ▼
-merge to main ──► Railway production auto-deploys
+bump VERSION + pyproject.toml, roll CHANGELOG [Unreleased] → [X.Y.Z]
        │
+       ▼
+open PR targeting main ──► release-gate CI validates version bump
+       │
+       ▼
+merge to main ──► release workflow tags vX.Y.Z + creates GitHub release
+       │              ──► Railway production auto-deploys
        ▼
 delete feat/thing branch
 ```
+
+## Release Process
+
+Releases use semantic versioning (`X.Y.Z`) with GitHub tagged releases.
+
+### Version Files
+
+- `VERSION` — single source of truth, contains `X.Y.Z` (no `v` prefix)
+- `pyproject.toml` `version` field — must match `VERSION` exactly
+
+### Release Workflow
+
+1. Accumulate changes on `dev` with entries in the `[Unreleased]` section of `CHANGELOG.md`
+2. When ready to release, create a PR from `dev` to `main`:
+   - Bump `VERSION` to the next semver (exactly one of: major+1.0.0, minor+1, patch+1)
+   - Update `pyproject.toml` version to match
+   - Roll `[Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`
+3. The `release-gate` CI check validates:
+   - `VERSION` is valid `X.Y.Z` semver
+   - Version is exactly one increment from `main`'s current version
+   - Tag `vX.Y.Z` does not already exist
+   - `CHANGELOG.md` contains a `## [X.Y.Z]` entry
+   - `pyproject.toml` version matches `VERSION`
+4. On merge to `main`, the `release` workflow:
+   - Creates git tag `vX.Y.Z`
+   - Creates a GitHub release with the changelog section as notes
+5. Railway auto-deploys from `main`
+
+### CI Workflows
+
+| Workflow       | Trigger              | Purpose                                         |
+| -------------- | -------------------- | ----------------------------------------------- |
+| `ci.yml`       | Push/PR to dev, main | Lint, typecheck, test, prettier, security scan  |
+| `release-gate` | PR to main           | Validate version bump, changelog, tag freshness |
+| `release`      | Push to main         | Auto-create git tag + GitHub release            |
