@@ -1,0 +1,15 @@
+# Optional dependencies for the local "torch" upscale backend
+# (print_master.py). NOT needed on Railway — use the Replicate backend
+# there (REPLICATE_API_TOKEN) instead. Intended for a desktop/workstation
+# doing local batch processing.
+#
+#   pip install -r requirements-upscale.txt
+#
+# Note: basicsr 1.4.2 imports a symbol removed in torchvision>=0.17
+# (functional_tensor). scripts/upscale_batch.py auto-patches this at
+# runtime; alternatively pin torchvision<0.17.
+torch>=2.0
+torchvision
+numpy
+basicsr>=1.4.2
+realesrgan>=0.3.0
