@@ -22,7 +22,7 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette import status
 
-from app import ai_metadata, config, curation, sidecars, watcher
+from app import ai_metadata, config, curation, print_master, sidecars, watcher
 from app.security import _verify_admin
 from app.watcher import get_pending_files
 
@@ -260,6 +260,16 @@ async def update_admin_config(
             cfg["default_artist"] = ai["default_artist"].strip()
         if "default_copyright" in ai and isinstance(ai["default_copyright"], str):
             cfg["default_copyright"] = ai["default_copyright"].strip()
+        if "upscale_enabled" in ai:
+            cfg["upscale_enabled"] = config._coerce_bool(ai["upscale_enabled"])
+        if "upscale_scale" in ai:
+            try:
+                s = int(ai["upscale_scale"])
+                cfg["upscale_scale"] = max(2, min(4, s))
+            except (TypeError, ValueError):
+                pass
+        if ai.get("upscale_model") in ("general", "digital"):
+            cfg["upscale_model"] = ai["upscale_model"]
     config.runtime_ai_config = cfg
     config._save_ai_config(cfg)
     return JSONResponse({"ai": cfg, "message": "Configuration updated and saved"})
@@ -450,6 +460,9 @@ async def upload_images(
                 sidecars._ensure_sidecar(
                     destination, sidecars._load_metadata(destination)
                 )
+                # Opt-in AI upscaling to a 300 DPI print master (no-op unless
+                # upscale_enabled is set and a backend is configured).
+                print_master._schedule_print_master(destination)
         except OSError as exc:
             logger.error("Failed to save %s: %s", filename, exc)
             skipped.append(filename)
@@ -528,6 +541,7 @@ async def import_from_path(
                 copied.append(target_name)
                 if sidecars._allowed_image(target_name):
                     sidecars._ensure_sidecar(target, sidecars._load_metadata(target))
+                    print_master._schedule_print_master(target)
             except OSError as exc:
                 logger.error("Failed to copy %s: %s", file_path, exc)
                 skipped.append(target_name)
@@ -786,3 +800,85 @@ async def accept_all_pending(
         except Exception:
             logger.warning("Failed to approve %s", name, exc_info=True)
     return JSONResponse({"approved": approved, "count": len(approved)})
+
+
+@router.post("/admin/print-master/{image_name}", response_class=JSONResponse)
+async def create_print_master(
+    image_name: str,
+    force: bool = Form(False),
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Kick off (or re-run) 300 DPI print-master generation for one image."""
+    filename = sidecars._sanitize_filename(image_name)
+    if not filename or not sidecars._allowed_image(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    image_path = sidecars._resolve_image_path(filename)
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+
+    settings = print_master._print_master_settings()
+    if not settings["backend"]:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No upscale backend configured. Set REPLICATE_API_TOKEN, "
+                "REALESRGAN_BIN, or install requirements-upscale.txt."
+            ),
+        )
+
+    existing = sidecars._load_metadata(image_path).get("print_master") or {}
+    if existing.get("status") == "processing" and not force:
+        return JSONResponse(
+            {
+                "name": filename,
+                "print_master": existing,
+                "message": "Already processing",
+            }
+        )
+    if existing.get("status") == "done" and not force:
+        return JSONResponse(
+            {
+                "name": filename,
+                "print_master": existing,
+                "message": "Print master already exists (use force to regenerate)",
+            }
+        )
+
+    asyncio.create_task(print_master._generate_print_master_task(image_path))
+    return JSONResponse(
+        {
+            "name": filename,
+            "print_master": {"status": "processing"},
+            "message": "Print master generation started",
+        }
+    )
+
+
+@router.get("/admin/print-master/{image_name}", response_class=JSONResponse)
+async def print_master_status(
+    image_name: str,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Return print-master status for one image (poll target for the admin UI)."""
+    filename = sidecars._sanitize_filename(image_name)
+    if not filename or not sidecars._allowed_image(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    image_path = sidecars._resolve_image_path(filename)
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    pm = sidecars._load_metadata(image_path).get("print_master") or {}
+    return JSONResponse(
+        {
+            "name": filename,
+            "print_master": pm,
+            "backend": print_master._print_master_settings()["backend"],
+        }
+    )

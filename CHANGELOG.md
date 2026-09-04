@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- AI print-master pipeline (`app/print_master.py`): opt-in 4x Real-ESRGAN
+  upscaling of uploads into 300 DPI print masters stored in
+  `IMAGES_DIR/print_masters/` (excluded from the public gallery), tracked in
+  the sidecar under an optional `print_master` block. Pluggable backends:
+  Replicate hosted (`REPLICATE_API_TOKEN`, recommended on Railway),
+  `realesrgan-ncnn-vulkan` binary, local torch (`requirements-upscale.txt`).
+- Admin endpoints `POST/GET /admin/print-master/{image}` plus a
+  Generate/Regenerate panel with live status on the review page.
+- `upscale_enabled` / `upscale_scale` / `upscale_model` admin config keys
+  (env: `UPSCALE_ENABLED`, `UPSCALE_SCALE`, `UPSCALE_MODEL`,
+  `UPSCALE_BACKEND`); upscaling is off by default and degrades to a no-op
+  (automatic path) or a clear 503 (manual button) when no backend is set.
+- `scripts/upscale_batch.py` CLI for back-catalog batch upscaling and
+  `PRINT_WORKFLOW.md` documenting the 72 DPI -> 300 DPI print workflow.
+
 ## [0.2.0] - 2026-09-02
 
 ### Added
