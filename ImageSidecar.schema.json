@@ -142,6 +142,60 @@
       },
       "default": [],
       "description": "Which metadata fields were generated or last updated by AI."
+    },
+    "print_master": {
+      "type": "object",
+      "description": "AI-upscaled 300 DPI print master derived from this image.",
+      "default": {},
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "One of: '', 'pending', 'processing', 'done', 'error'.",
+          "default": ""
+        },
+        "file": {
+          "type": "string",
+          "description": "Path of the master relative to the images directory.",
+          "default": ""
+        },
+        "url_path": {
+          "type": "string",
+          "default": ""
+        },
+        "width": {
+          "type": "integer",
+          "default": 0
+        },
+        "height": {
+          "type": "integer",
+          "default": 0
+        },
+        "dpi": {
+          "type": "integer",
+          "default": 300
+        },
+        "scale": {
+          "type": "integer",
+          "default": 4
+        },
+        "model": {
+          "type": "string",
+          "default": ""
+        },
+        "backend": {
+          "type": "string",
+          "default": ""
+        },
+        "created": {
+          "type": "number",
+          "default": 0
+        },
+        "error": {
+          "type": "string",
+          "default": ""
+        }
+      }
     }
   },
   "required": [
