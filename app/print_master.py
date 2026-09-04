@@ -36,7 +36,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from PIL import Image
@@ -53,7 +53,7 @@ REPLICATE_MODEL = os.getenv("REPLICATE_UPSCALE_MODEL", "nightmareai/real-esrgan"
 REPLICATE_TIMEOUT = float(os.getenv("REPLICATE_TIMEOUT_SECONDS", "300"))
 
 # Lazily-built torch upsamplers, keyed by model name.
-_TORCH_UPSAMPLERS: Dict[str, Any] = {}
+_TORCH_UPSAMPLERS: dict[str, Any] = {}
 
 
 # --------------------------------------------------------------------------
@@ -63,15 +63,15 @@ _TORCH_UPSAMPLERS: Dict[str, Any] = {}
 
 def _torch_available() -> bool:
     try:  # pragma: no cover - depends on optional install
-        import realesrgan  # noqa: F401
         import basicsr  # noqa: F401
+        import realesrgan  # noqa: F401
 
         return True
     except Exception:
         return False
 
 
-def _binary_path() -> Optional[str]:
+def _binary_path() -> str | None:
     configured = os.getenv("REALESRGAN_BIN", "").strip()
     if configured and Path(configured).exists():
         return configured
@@ -79,12 +79,12 @@ def _binary_path() -> Optional[str]:
     return found
 
 
-def _replicate_token() -> Optional[str]:
+def _replicate_token() -> str | None:
     token = os.getenv("REPLICATE_API_TOKEN", "").strip()
     return token or None
 
 
-def available_backend() -> Optional[str]:
+def available_backend() -> str | None:
     """Return the backend that would be used, or ``None`` if upscaling is
     unavailable in this environment."""
     forced = os.getenv("UPSCALE_BACKEND", "").strip().lower()
@@ -120,25 +120,25 @@ def _upscale_torch(src: Path, scale: int, model: str) -> Image.Image:
     specs = {
         "general": (
             models_dir / "RealESRGAN_x4plus.pth",
-            dict(
-                num_in_ch=3,
-                num_out_ch=3,
-                num_feat=64,
-                num_block=23,
-                num_grow_ch=32,
-                scale=4,
-            ),
+            {
+                "num_in_ch": 3,
+                "num_out_ch": 3,
+                "num_feat": 64,
+                "num_block": 23,
+                "num_grow_ch": 32,
+                "scale": 4,
+            },
         ),
         "digital": (
             models_dir / "RealESRGAN_x4plus_anime_6B.pth",
-            dict(
-                num_in_ch=3,
-                num_out_ch=3,
-                num_feat=64,
-                num_block=6,
-                num_grow_ch=32,
-                scale=4,
-            ),
+            {
+                "num_in_ch": 3,
+                "num_out_ch": 3,
+                "num_feat": 64,
+                "num_block": 6,
+                "num_grow_ch": 32,
+                "scale": 4,
+            },
         ),
     }
     weight_path, net_kwargs = specs.get(model, specs["general"])
@@ -188,7 +188,9 @@ def _upscale_binary(src: Path, scale: int, model: str) -> Image.Image:
             "-n",
             ncnn_model,
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=1800, check=False
+        )
         if proc.returncode != 0 or not out_path.exists():
             raise RuntimeError(
                 f"realesrgan binary failed ({proc.returncode}): {proc.stderr[-400:]}"
@@ -282,8 +284,8 @@ def generate_print_master(
     scale: int = DEFAULT_SCALE,
     dpi: int = DEFAULT_DPI,
     model: str = "general",
-    backend: Optional[str] = None,
-) -> Dict[str, Any]:
+    backend: str | None = None,
+) -> dict[str, Any]:
     """Upscale ``image_path`` into a 300 DPI print master.
 
     Blocking — call from a worker thread (``asyncio.to_thread``). Returns a
@@ -291,7 +293,7 @@ def generate_print_master(
     are captured in the returned dict's ``status``/``error`` fields.
     """
     started = time.time()
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "status": "error",
         "file": "",
         "url_path": "",
@@ -321,7 +323,7 @@ def generate_print_master(
 
         dst = master_path_for(image_path, images_dir)
         dst.parent.mkdir(parents=True, exist_ok=True)
-        save_kwargs: Dict[str, Any] = {"dpi": (dpi, dpi)}
+        save_kwargs: dict[str, Any] = {"dpi": (dpi, dpi)}
         if icc:
             save_kwargs["icc_profile"] = icc
         upscaled.save(dst, **save_kwargs)
@@ -342,7 +344,7 @@ def generate_print_master(
             chosen,
             time.time() - started,
         )
-    except Exception as exc:  # noqa: BLE001 - reported via sidecar
+    except Exception as exc:
         logger.error("Print master failed for %s: %s", image_path.name, exc)
         result["error"] = str(exc)[:500]
         result["created"] = time.time()
@@ -358,7 +360,7 @@ def generate_print_master(
 # tests can monkeypatch the defining modules.
 
 
-def _set_print_master_sidecar(image_path: Path, pm: Dict[str, Any]) -> None:
+def _set_print_master_sidecar(image_path: Path, pm: dict[str, Any]) -> None:
     """Persist the ``print_master`` block into the image's sidecar."""
     from app import sidecars
 
@@ -374,7 +376,7 @@ def _set_print_master_sidecar(image_path: Path, pm: Dict[str, Any]) -> None:
     sidecars._write_sidecar(image_path, data)
 
 
-def _print_master_settings() -> Dict[str, Any]:
+def _print_master_settings() -> dict[str, Any]:
     from app import config
 
     cfg = config._get_ai_config()
@@ -386,7 +388,7 @@ def _print_master_settings() -> Dict[str, Any]:
     }
 
 
-async def _generate_print_master_task(image_path: Path) -> Dict[str, Any]:
+async def _generate_print_master_task(image_path: Path) -> dict[str, Any]:
     """Run upscaling off the event loop and record progress in the sidecar."""
     import asyncio
 
