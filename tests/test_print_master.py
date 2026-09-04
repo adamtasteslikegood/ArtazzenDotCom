@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from test_main import _basic_auth_header
 
 from app import print_master as pm
 from app.config import IMAGES_DIR
 from main import app
-from test_main import _basic_auth_header
 
 IMG_NAME = "pm_test_image.png"
 
