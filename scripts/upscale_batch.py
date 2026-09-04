@@ -30,7 +30,7 @@ def _patch_basicsr() -> None:
         import basicsr  # noqa: F401
     except ImportError:
         return
-    except Exception:
+    except Exception:  # noqa: S110 - basicsr present but unhealthy; still patch
         pass
     try:
         import torchvision.transforms.functional_tensor  # noqa: F401
