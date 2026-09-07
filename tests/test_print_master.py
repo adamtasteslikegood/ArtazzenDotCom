@@ -418,6 +418,19 @@ def test_print_master_no_backend_returns_503(art_image, authed_client, monkeypat
     assert resp.status_code == 503
 
 
+def test_create_print_master_reports_scheduler_rejection(
+    art_image, authed_client, monkeypatch
+):
+    monkeypatch.setattr(pm, "available_backend", lambda: "torch")
+    monkeypatch.setattr(pm, "is_in_flight", lambda image_path: False)
+    monkeypatch.setattr(pm, "schedule_print_master", lambda image_path: False)
+
+    response = authed_client.post(f"/admin/print-master/{IMG_NAME}")
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Already processing"
+
+
 def test_print_master_in_flight_run_is_not_duplicated(
     art_image, authed_client, monkeypatch, tmp_path
 ):
