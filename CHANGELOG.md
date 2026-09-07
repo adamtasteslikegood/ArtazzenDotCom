@@ -15,7 +15,8 @@ All notable changes to this project will be documented in this file.
 - Admin endpoints `POST/GET /admin/print-master/{image}` plus a
   Generate/Regenerate panel with live status on the review page. Masters
   download only through the authenticated `/admin/print-master/{image}/file`
-  route; the public static mounts refuse `print_masters/`.
+  route; the public static mounts refuse `print_masters/`, `.trash/`, and
+  `.curation/`.
 - `upscale_enabled` / `upscale_scale` / `upscale_model` admin config keys
   (env: `UPSCALE_ENABLED`, `UPSCALE_SCALE`, `UPSCALE_MODEL`,
   `UPSCALE_BACKEND`); upscaling is off by default and degrades to a no-op
