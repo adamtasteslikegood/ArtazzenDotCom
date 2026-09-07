@@ -296,6 +296,11 @@ def _upscale_replicate(src: Path, scale: int, model: str) -> Image.Image:
     The hosted model is the general-purpose ``x4plus`` network; ``model`` is
     recorded in the sidecar but has no effect on this backend.
     """
+    if model != "general":
+        raise RuntimeError(
+            "Replicate backend supports only the general model; "
+            "use the binary or torch backend for digital"
+        )
     token = _replicate_token()
     if not token:
         raise RuntimeError("REPLICATE_API_TOKEN not configured")
