@@ -665,6 +665,8 @@ Follow the four Karpathy principles for LLM-assisted coding:
    python manage_sidecars.py validate                     # Sidecar JSON
    ruff check .                                           # Lint
    black --check --target-version py311 .                 # Format (Python)
+   mypy main.py --ignore-missing-imports --no-strict-optional   # Type check (pip install mypy types-Pillow)
+   bandit -r main.py app/ manage_sidecars.py scripts/ -ll -q    # Security scan (pip install "bandit[toml]")
    npx --yes prettier --check "**/*.{md,yml,yaml,json}"   # Format (docs/config)
    ```
 4. **Push** and open a PR targeting `dev`. Mark as draft if still in progress.
