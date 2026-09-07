@@ -313,9 +313,7 @@ def test_print_master_endpoints(art_image, authed_client, monkeypatch):
 
 
 
-def test_download_print_master_rejects_orphaned_master(
-    art_image, authed_client
-):
+def test_download_print_master_rejects_orphaned_master(art_image, authed_client):
     master = pm.master_path_for(art_image, config.IMAGES_DIR)
     master.parent.mkdir(parents=True, exist_ok=True)
     master.write_bytes(_png_bytes())
