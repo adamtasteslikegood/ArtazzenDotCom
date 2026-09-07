@@ -11,9 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from app import config, routes_admin, sidecars
 from app import print_master as pm
-from app import sidecars
-from app.config import IMAGES_DIR
 from main import app
 
 IMG_NAME = "pm_test_image.png"
@@ -44,8 +43,8 @@ def _clear_in_flight():
 
 @pytest.fixture()
 def art_image():
-    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    path = IMAGES_DIR / IMG_NAME
+    config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    path = config.IMAGES_DIR / IMG_NAME
     path.write_bytes(_png_bytes())
     sidecar = path.with_suffix(".json")
     sidecar.write_text(
@@ -63,9 +62,9 @@ def art_image():
     yield path
     for p in (path, sidecar):
         p.unlink(missing_ok=True)
-    master = pm.master_path_for(path, IMAGES_DIR)
+    master = pm.master_path_for(path, config.IMAGES_DIR)
     master.unlink(missing_ok=True)
-    trash = IMAGES_DIR / ".trash"
+    trash = config.IMAGES_DIR / ".trash"
     for p in (trash / IMG_NAME, trash / Path(IMG_NAME).with_suffix(".json").name):
         p.unlink(missing_ok=True)
     shutil.rmtree(trash / pm.PRINT_MASTER_DIRNAME, ignore_errors=True)
@@ -142,11 +141,11 @@ def test_image_mime(name, expected):
 def test_generate_print_master_success(art_image, monkeypatch):
     monkeypatch.setitem(pm._BACKENDS, "torch", _fake_backend_factory())
     result = pm.generate_print_master(
-        art_image, IMAGES_DIR, scale=4, model="general", backend="torch"
+        art_image, config.IMAGES_DIR, scale=4, model="general", backend="torch"
     )
     assert result["status"] == "done"
     assert result["width"] == 160 and result["height"] == 240
-    master = IMAGES_DIR / result["file"]
+    master = config.IMAGES_DIR / result["file"]
     assert master.exists()
     with Image.open(master) as im:
         dpi = im.info.get("dpi")
@@ -171,14 +170,14 @@ def test_generate_print_master_error_is_captured(art_image, monkeypatch):
         raise RuntimeError("backend exploded")
 
     monkeypatch.setitem(pm._BACKENDS, "torch", _boom)
-    result = pm.generate_print_master(art_image, IMAGES_DIR, backend="torch")
+    result = pm.generate_print_master(art_image, config.IMAGES_DIR, backend="torch")
     assert result["status"] == "error"
     assert "backend exploded" in result["error"]
 
 
 def test_generate_print_master_no_backend(art_image, monkeypatch):
     monkeypatch.setattr(pm, "available_backend", lambda: None)
-    result = pm.generate_print_master(art_image, IMAGES_DIR)
+    result = pm.generate_print_master(art_image, config.IMAGES_DIR)
     assert result["status"] == "error"
     assert "No upscale backend" in result["error"]
 
@@ -277,7 +276,7 @@ def test_print_master_endpoints(art_image, authed_client, monkeypatch):
     first_created = state["created"]
 
     # Sidecar carries the print_master block
-    sidecar = json.loads((IMAGES_DIR / IMG_NAME).with_suffix(".json").read_text())
+    sidecar = json.loads((config.IMAGES_DIR / IMG_NAME).with_suffix(".json").read_text())
     assert sidecar["print_master"]["status"] == "done"
 
     # The master downloads through the authenticated admin route only ...
@@ -291,7 +290,7 @@ def test_print_master_endpoints(art_image, authed_client, monkeypatch):
     # ... never from the public static mount.
     public = authed_client.get(f"/static/images/{state['file']}")
     assert public.status_code == 404
-    assert (IMAGES_DIR / state["file"]).is_file()
+    assert (config.IMAGES_DIR / state["file"]).is_file()
 
     # Second call without force is a no-op
     resp2 = authed_client.post(f"/admin/print-master/{IMG_NAME}")
@@ -442,7 +441,7 @@ def test_upload_schedules_print_master_when_enabled(authed_client, monkeypatch):
         lambda: {"enabled": True, "scale": 4, "model": "general", "backend": "torch"},
     )
     monkeypatch.setitem(pm._BACKENDS, "torch", _fake_backend_factory())
-    path = IMAGES_DIR / UPLOAD_NAME
+    path = config.IMAGES_DIR / UPLOAD_NAME
     try:
         resp = authed_client.post(
             "/admin/upload",
@@ -455,7 +454,7 @@ def test_upload_schedules_print_master_when_enabled(authed_client, monkeypatch):
     finally:
         path.unlink(missing_ok=True)
         path.with_suffix(".json").unlink(missing_ok=True)
-        pm.master_path_for(path, IMAGES_DIR).unlink(missing_ok=True)
+        pm.master_path_for(path, config.IMAGES_DIR).unlink(missing_ok=True)
 
 
 def test_soft_delete_moves_master_to_trash(art_image, authed_client, monkeypatch):
@@ -463,13 +462,13 @@ def test_soft_delete_moves_master_to_trash(art_image, authed_client, monkeypatch
     monkeypatch.setitem(pm._BACKENDS, "torch", _fake_backend_factory())
     authed_client.post(f"/admin/print-master/{IMG_NAME}")
     assert _wait_for_settled(authed_client, IMG_NAME)["status"] == "done"
-    master = pm.master_path_for(art_image, IMAGES_DIR)
+    master = pm.master_path_for(art_image, config.IMAGES_DIR)
     assert master.is_file()
 
     resp = authed_client.post(f"/admin/delete/{IMG_NAME}")
     assert resp.status_code == 200
     assert not master.exists()
-    assert (IMAGES_DIR / ".trash" / pm.PRINT_MASTER_DIRNAME / master.name).is_file()
+    assert (config.IMAGES_DIR / ".trash" / pm.PRINT_MASTER_DIRNAME / master.name).is_file()
 
 
 def test_soft_delete_preserves_existing_trash_master(
@@ -480,11 +479,11 @@ def test_soft_delete_preserves_existing_trash_master(
     authed_client.post(f"/admin/print-master/{IMG_NAME}")
     assert _wait_for_settled(authed_client, IMG_NAME)["status"] == "done"
 
-    trash = IMAGES_DIR / ".trash"
+    trash = config.IMAGES_DIR / ".trash"
     trash_masters = trash / pm.PRINT_MASTER_DIRNAME
     trash_masters.mkdir(parents=True, exist_ok=True)
     old_image = trash / IMG_NAME
-    old_master = trash_masters / pm.master_path_for(art_image, IMAGES_DIR).name
+    old_master = trash_masters / pm.master_path_for(art_image, config.IMAGES_DIR).name
     old_image.write_bytes(b"older image")
     old_master.write_bytes(b"older master")
     renamed_image = None
@@ -507,3 +506,33 @@ def test_soft_delete_preserves_existing_trash_master(
         for path in (renamed_image, renamed_sidecar, renamed_master):
             if path is not None:
                 path.unlink(missing_ok=True)
+
+def test_incoming_sidecar_files_take_mutation_lock(tmp_path, monkeypatch):
+    events: list[str] = []
+
+    class Held:
+        def __enter__(self):
+            events.append("enter")
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            events.append("exit")
+
+    class TrackingLock:
+        def held(self):
+            return Held()
+
+    monkeypatch.setattr(sidecars, "sidecar_mutation_lock", TrackingLock())
+    destination = tmp_path / "artwork.json"
+
+    staged = tmp_path / "staged.upload"
+    staged.write_text('{"source": "upload"}')
+    routes_admin._install_incoming_file(staged, destination, move=True)
+    assert not staged.exists()
+    assert json.loads(destination.read_text()) == {"source": "upload"}
+
+    imported = tmp_path / "import.json"
+    imported.write_text('{"source": "import"}')
+    routes_admin._install_incoming_file(imported, destination, move=False)
+    assert imported.exists()
+    assert json.loads(destination.read_text()) == {"source": "import"}
+    assert events == ["enter", "exit", "enter", "exit"]
