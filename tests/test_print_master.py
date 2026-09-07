@@ -179,10 +179,12 @@ def test_replicate_community_model_uses_versioned_predictions(art_image, monkeyp
     monkeypatch.setattr(pm, "_REPLICATE_VERSION_CACHE", {})
     monkeypatch.setattr(pm, "REPLICATE_POLL_SECONDS", 0)
     seen: list[tuple[str, str, dict | None]] = []
+    seen_auth: list[tuple[str, str | None]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content) if request.content else None
         seen.append((request.method, request.url.path, body))
+        seen_auth.append((request.url.host, request.headers.get("authorization")))
         if request.url.path == f"/v1/models/{pm.REPLICATE_MODEL}":
             return httpx.Response(
                 200, json={"is_official": False, "latest_version": {"id": "v123"}}
@@ -218,6 +220,13 @@ def test_replicate_community_model_uses_versioned_predictions(art_image, monkeyp
     assert create["input"]["scale"] == 4
     # The official-models endpoint must not be used for a community model.
     assert not any(p.endswith("/real-esrgan/predictions") for _, p, _ in seen)
+    # Replicate API calls are authenticated, but the provider-controlled
+    # output URL may use third-party storage and must never receive the token.
+    assert any(
+        host == "api.replicate.com" and auth == "Bearer r8_test"
+        for host, auth in seen_auth
+    )
+    assert any(host == "cdn" and auth is None for host, auth in seen_auth)
 
 
 def test_upscale_config_defaults():
