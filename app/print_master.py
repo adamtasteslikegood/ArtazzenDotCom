@@ -93,11 +93,40 @@ _REPLICATE_VERSION_CACHE: dict[str, str | None] = {}
 # --------------------------------------------------------------------------
 
 
+def _patch_basicsr() -> None:
+    """basicsr 1.4.2 imports a symbol torchvision>=0.17 removed.
+
+    Install a compatibility shim before basicsr is imported so the local
+    torch backend works with whichever torchvision matches the installed
+    torch, instead of pinning the whole stack to torchvision<0.17.
+    """
+    import sys
+
+    if "torchvision.transforms.functional_tensor" in sys.modules:
+        return
+    try:
+        import torchvision.transforms.functional_tensor  # noqa: F401
+
+        return  # old torchvision, nothing to patch
+    except ImportError:
+        pass
+    try:
+        import types
+
+        import torchvision.transforms.functional as F
+    except ImportError:
+        return  # torchvision absent: basicsr import will fail on its own
+    shim = types.ModuleType("torchvision.transforms.functional_tensor")
+    shim.rgb_to_grayscale = F.rgb_to_grayscale  # type: ignore[attr-defined]
+    sys.modules["torchvision.transforms.functional_tensor"] = shim
+
+
 @functools.cache
 def _torch_available() -> bool:
     # Cached: a failed import walks sys.path every call, and this runs on
     # every upload and status poll.
     try:  # pragma: no cover - depends on optional install
+        _patch_basicsr()
         import basicsr  # noqa: F401
         import realesrgan  # noqa: F401
 
@@ -147,10 +176,6 @@ def available_backend() -> str | None:
 
 def _upscale_torch(src: Path, scale: int, model: str) -> Image.Image:
     """Local PyTorch Real-ESRGAN (optional dependency)."""
-    import numpy as np
-    from basicsr.archs.rrdbnet_arch import RRDBNet
-    from realesrgan import RealESRGANer
-
     models_dir = Path(os.getenv("UPSCALE_MODELS_DIR", Path(__file__).parent / "models"))
     specs = {
         "general": (
@@ -177,6 +202,20 @@ def _upscale_torch(src: Path, scale: int, model: str) -> Image.Image:
         ),
     }
     weight_path, net_kwargs = specs.get(model, specs["general"])
+    if not weight_path.is_file():
+        # The .pth weights are not shipped in the repo; fail with a message
+        # that says where to put them instead of a low-level loader error.
+        raise RuntimeError(
+            f"Real-ESRGAN weights not found: {weight_path}. Download "
+            f"{weight_path.name} from the Real-ESRGAN releases into "
+            f"{models_dir} or point UPSCALE_MODELS_DIR at the folder."
+        )
+
+    _patch_basicsr()
+    import numpy as np
+    from basicsr.archs.rrdbnet_arch import RRDBNet
+    from realesrgan import RealESRGANer
+
     if model not in _TORCH_UPSAMPLERS:
         _TORCH_UPSAMPLERS[model] = RealESRGANer(
             scale=4,
@@ -589,11 +628,22 @@ async def _generate_print_master_task(image_path: Path) -> dict[str, Any]:
             result["url_path"] = master_url_path(image_path.name)
         await asyncio.to_thread(_set_print_master_sidecar, image_path, result)
         return result
-    except Exception:
-        # A stuck "processing" block is reconciled to an error by
-        # reconcile_state once this task is no longer in flight.
+    except Exception as exc:
+        # generate_print_master never raises, so this is a sidecar write or
+        # scheduling failure. Persist an error block (best effort) so the
+        # sidecar is not left on "processing", and return it rather than
+        # re-raising: nothing awaits a fire-and-forget task, so a raised
+        # exception only produces "Task exception was never retrieved".
         logger.exception("Print-master task failed for %s", image_path.name)
-        raise
+        failed = {**pending, "status": "error", "error": str(exc)[:500]}
+        failed["created"] = time.time()
+        try:
+            await asyncio.to_thread(_set_print_master_sidecar, image_path, failed)
+        except Exception:
+            logger.warning(
+                "Could not persist print-master error for %s", image_path.name
+            )
+        return failed
 
 
 def schedule_print_master(image_path: Path) -> bool:
@@ -611,6 +661,10 @@ def schedule_print_master(image_path: Path) -> bool:
     def _clear(done: asyncio.Task[Any]) -> None:
         if _IN_FLIGHT.get(key) is done:
             del _IN_FLIGHT[key]
+        if not done.cancelled():
+            # Mark any exception retrieved so asyncio does not log
+            # "Task exception was never retrieved" at garbage collection.
+            done.exception()
 
     task.add_done_callback(_clear)
     return True

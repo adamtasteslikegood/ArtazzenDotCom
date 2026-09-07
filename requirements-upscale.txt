@@ -6,8 +6,12 @@
 #   pip install -r requirements-upscale.txt
 #
 # Note: basicsr 1.4.2 imports a symbol removed in torchvision>=0.17
-# (functional_tensor). scripts/upscale_batch.py auto-patches this at
-# runtime; alternatively pin torchvision<0.17.
+# (functional_tensor). app/print_master.py installs a compatibility shim
+# before importing basicsr (the app backend and scripts/upscale_batch.py
+# both go through it), so install whichever torchvision matches your torch.
+# The Real-ESRGAN .pth weights are not bundled: download RealESRGAN_x4plus.pth
+# (general) and RealESRGAN_x4plus_anime_6B.pth (digital) from the Real-ESRGAN
+# releases into app/models/ or point UPSCALE_MODELS_DIR at them.
 torch>=2.0
 torchvision
 numpy

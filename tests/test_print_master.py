@@ -155,6 +155,17 @@ def test_generate_print_master_success(art_image, monkeypatch):
     assert not list(master.parent.glob(".*.tmp"))
 
 
+def test_torch_backend_reports_missing_weights_clearly(
+    art_image, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("UPSCALE_MODELS_DIR", str(tmp_path))
+    with pytest.raises(RuntimeError) as excinfo:
+        pm._upscale_torch(art_image, 4, "general")
+    message = str(excinfo.value)
+    assert "RealESRGAN_x4plus.pth" in message
+    assert "UPSCALE_MODELS_DIR" in message
+
+
 def test_generate_print_master_error_is_captured(art_image, monkeypatch):
     def _boom(src, scale, model):
         raise RuntimeError("backend exploded")
@@ -375,6 +386,26 @@ def test_print_master_in_flight_run_is_not_duplicated(
     state = _wait_for_settled(authed_client, IMG_NAME)
     assert state["status"] == "done"
     assert calls == [IMG_NAME]
+
+
+def test_task_failure_persists_error_block(art_image, authed_client, monkeypatch):
+    """A failure outside generate_print_master (which never raises) must not
+    leave the sidecar on 'processing' or surface as an unretrieved task
+    exception; it lands as an error block the UI can show."""
+    monkeypatch.setattr(pm, "available_backend", lambda: "torch")
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("scheduling exploded")
+
+    monkeypatch.setattr(pm, "generate_print_master", _boom)
+    resp = authed_client.post(f"/admin/print-master/{IMG_NAME}")
+    assert resp.status_code == 200
+    state = _wait_for_settled(authed_client, IMG_NAME)
+    assert state["status"] == "error"
+    assert "scheduling exploded" in state["error"]
+    sidecar = json.loads(art_image.with_suffix(".json").read_text())
+    assert sidecar["print_master"]["status"] == "error"
+    assert not pm.is_in_flight(art_image)
 
 
 def test_stale_processing_block_is_reported_as_error_and_rerunnable(

@@ -24,29 +24,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 
-def _patch_basicsr() -> None:
-    """basicsr 1.4.2 imports a symbol torchvision>=0.17 removed."""
-    try:
-        import basicsr  # noqa: F401
-    except ImportError:
-        return
-    except Exception:  # noqa: S110 - basicsr present but unhealthy; still patch
-        pass
-    try:
-        import torchvision.transforms.functional_tensor  # noqa: F401
-
-        return  # old torchvision, nothing to patch
-    except ImportError:
-        pass
-    import types
-
-    import torchvision.transforms.functional as F
-
-    shim = types.ModuleType("torchvision.transforms.functional_tensor")
-    shim.rgb_to_grayscale = F.rgb_to_grayscale
-    sys.modules["torchvision.transforms.functional_tensor"] = shim
-
-
 EXTS = {".png", ".jpg", ".jpeg", ".webp", ".tiff", ".bmp"}
 
 
@@ -71,8 +48,9 @@ def main() -> int:
     ap.add_argument("--suffix", default="_master300")
     args = ap.parse_args()
 
-    _patch_basicsr()
     from app import print_master as pm
+
+    pm._patch_basicsr()  # basicsr 1.4.2 vs torchvision>=0.17 compatibility
 
     src_dir, dst_dir = Path(args.src).expanduser(), Path(args.dst).expanduser()
     files = sorted(
