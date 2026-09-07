@@ -448,11 +448,10 @@ async def upload_images(
                 prefix=f".{destination.name}.",
                 suffix=".upload",
             )
-            os.close(fd)
             staged_path = Path(staged_name)
             bytes_written = 0
             exceeded = False
-            with staged_path.open("wb") as buffer:
+            with os.fdopen(fd, "wb") as buffer:
                 while True:
                     chunk = await upload.read(config.UPLOAD_CHUNK_SIZE)
                     if not chunk:
