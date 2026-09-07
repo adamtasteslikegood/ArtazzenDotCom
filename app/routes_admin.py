@@ -444,6 +444,18 @@ async def upload_images(
                 upload.file.close()
                 continue
 
+        if (
+            destination.exists()
+            and sidecars._allowed_image(filename)
+            and print_master.is_in_flight(destination)
+        ):
+            logger.warning(
+                "Upload skipped while print master is in progress: %s", filename
+            )
+            skipped.append(filename)
+            upload.file.close()
+            continue
+
         staged_path: Path | None = None
         try:
             # Fast pre-check using Content-Length / spooled size when available
@@ -482,16 +494,6 @@ async def upload_images(
                     "Upload rejected: %s exceeds size limit (%d MB)",
                     filename,
                     config.MAX_UPLOAD_SIZE_BYTES // config.BYTES_PER_MB,
-                )
-                skipped.append(filename)
-                continue
-            if (
-                destination.exists()
-                and sidecars._allowed_image(filename)
-                and print_master.is_in_flight(destination)
-            ):
-                logger.warning(
-                    "Upload skipped while print master is in progress: %s", filename
                 )
                 skipped.append(filename)
                 continue
