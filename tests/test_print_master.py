@@ -457,10 +457,16 @@ def test_print_master_in_flight_run_is_not_duplicated(
         assert art_image.is_file()
 
         original_bytes = art_image.read_bytes()
-        replacement = authed_client.post(
-            "/admin/upload?force=true",
-            files=[("files", (IMG_NAME, _png_bytes((20, 30)), "image/png"))],
-        )
+
+        def _unexpected_staging(*args, **kwargs):
+            raise AssertionError("in-flight replacement should be skipped before staging")
+
+        with monkeypatch.context() as upload_patch:
+            upload_patch.setattr(routes_admin.tempfile, "mkstemp", _unexpected_staging)
+            replacement = authed_client.post(
+                "/admin/upload?force=true",
+                files=[("files", (IMG_NAME, _png_bytes((20, 30)), "image/png"))],
+            )
         assert replacement.status_code == 200
         assert IMG_NAME in replacement.json()["skipped"]
         assert art_image.read_bytes() == original_bytes
