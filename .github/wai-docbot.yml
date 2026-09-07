@@ -42,22 +42,23 @@ docs_folder: "_docs"
 # DocBot only processes PRs targeting these branches
 # Supports wildcard patterns (e.g., release/* matches release/1.0.0, release/v2.0)
 allowed_base_branches:
-  - "main"           # Primary branch
-  - "master"         # Alternative primary branch
-  - "develop"        # Development branch
-  - "release/*"      # Matches: release/1.0.0, release/v2.0, etc.
-  - "hotfix/*"       # Matches: hotfix/critical-bug, hotfix/security-patch
-  - "staging"        # Pre-production environment
-  - "wai-docs-update"  # Special branch name that triggers full repository rebuilds
+  - "main" # Primary branch
+  - "dev" # Active integration branch
+  - "master" # Alternative primary branch
+  - "develop" # Development branch
+  - "release/*" # Matches: release/1.0.0, release/v2.0, etc.
+  - "hotfix/*" # Matches: hotfix/critical-bug, hotfix/security-patch
+  - "staging" # Pre-production environment
+  - "wai-docs-update" # Special branch name that triggers full repository rebuilds
 
 # ============================================================================
 # DOCUMENTATION PREFERENCES
 # ============================================================================
 preferences:
-  include_code_links: true       # Include links to source code line numbers
-  include_examples: true         # Include usage examples in documentation
-  require_pr_approval: true      # Auto-generate (false) or require approval (true)
-  document_root_files: true      # Create separate README for root-level files
+  include_code_links: true # Include links to source code line numbers
+  include_examples: true # Include usage examples in documentation
+  require_pr_approval: true # Auto-generate (false) or require approval (true)
+  document_root_files: true # Create separate README for root-level files
 
 # ============================================================================
 # GUIDE GENERATION - Architecture Guides
@@ -66,9 +67,9 @@ preferences:
 # structure, workflows, and key components
 guide_projects:
   - name: architecture
-    path: "."  # Root documentation folder - includes all docs
+    path: "." # Root documentation folder - includes all docs
     purpose: "Document the overall architecture, workflows, and key components of the project"
-    patterns: []  # Empty patterns = intelligently includes all relevant documentation
+    patterns: [] # Empty patterns = intelligently includes all relevant documentation
 
 # ============================================================================
 # FILE EXTENSION INCLUSION LIST
@@ -152,9 +153,9 @@ include_extensions:
   - ".lua"
 
   # Infrastructure as Code
-  - ".tf"    # Terraform
-  - ".yaml"  # YAML (for Kubernetes, etc.)
-  - ".yml"   # YAML (for Kubernetes, etc.)
+  - ".tf" # Terraform
+  - ".yaml" # YAML (for Kubernetes, etc.)
+  - ".yml" # YAML (for Kubernetes, etc.)
   - ".bicep" # Bicep
 
 # ============================================================================
