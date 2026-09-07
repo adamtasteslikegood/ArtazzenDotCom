@@ -346,19 +346,29 @@ def _upscale_replicate(src: Path, scale: int, model: str) -> Image.Image:
         raise RuntimeError("REPLICATE_API_TOKEN not configured")
     headers = {"Authorization": f"Bearer {token}"}
 
-    data = src.read_bytes()
     mime = _image_mime(src)
+    source_size = src.stat().st_size
     with httpx.Client(timeout=REPLICATE_TIMEOUT) as client:
         # Small files of a known type travel inline as a data URL; larger or
         # unrecognised ones go through the Replicate Files API.
-        if mime and len(data) <= REPLICATE_INLINE_MAX_BYTES:
+        if mime and source_size <= REPLICATE_INLINE_MAX_BYTES:
+            data = src.read_bytes()
             image_ref = f"data:{mime};base64,{base64.b64encode(data).decode()}"
         else:
-            file_resp = client.post(
-                f"{REPLICATE_API_BASE}/files",
-                headers=headers,
-                files={"content": (src.name, data, mime or "application/octet-stream")},
-            )
+            # Pass the file object to httpx so large originals are streamed
+            # instead of being duplicated in process memory.
+            with src.open("rb") as source_file:
+                file_resp = client.post(
+                    f"{REPLICATE_API_BASE}/files",
+                    headers=headers,
+                    files={
+                        "content": (
+                            src.name,
+                            source_file,
+                            mime or "application/octet-stream",
+                        )
+                    },
+                )
             file_resp.raise_for_status()
             image_ref = file_resp.json()["urls"]["get"]
 
