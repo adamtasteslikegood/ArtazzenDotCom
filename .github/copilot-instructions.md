@@ -78,6 +78,28 @@ Regression-check: gallery view (`/`), admin dashboard (`/admin`), upload flow, c
 - Do not introduce extra keys beyond `ImageSidecar.schema.json`, and do not drop required keys from sidecar JSON.
 - Cross-module calls go through module attributes (e.g. `config.IMAGES_DIR`).
 
+## 📚 AI-Generated Code Documentation
+
+DocBot can generate repository documentation under `_docs/` after a documentation run is approved. This configuration change does not create that folder by itself.
+
+When `_docs/` is present, it may provide:
+
+- **Function-level documentation** - Parameters, return values, and function relationships
+- **File overviews** - Purpose and functionality of each module
+- **Directory indexes** - Navigation that mirrors the repository structure
+- **Direct source code links** - Line references to the source revision used for generation
+
+**When assisting with development:**
+
+- Use `_docs/` as a navigation aid, not as an authoritative source
+- Verify generated claims and line links against the current source code
+- Treat the current source code and tests as authoritative when they disagree with generated documentation
+
+**Expected documentation structure:**
+
+- `_docs/README.md` - Main documentation index
+- Additional folders mirror the documented repository structure
+
 ## Excluded Paths
 
 Do not analyze, lint, or comment on files in these directories — they contain agent skills and generated artifacts that are not part of the application codebase:
