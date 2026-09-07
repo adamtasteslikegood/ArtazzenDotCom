@@ -38,6 +38,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _install_incoming_file(
+    source: Path, destination: Path, *, move: bool
+) -> None:
+    """Install an uploaded/imported file without racing sidecar mutations."""
+
+    def install() -> None:
+        if move:
+            os.replace(source, destination)
+        else:
+            shutil.copy2(source, destination)
+
+    if destination.suffix.lower() == ".json":
+        with sidecars.sidecar_mutation_lock.held():
+            install()
+    else:
+        install()
+
+
 def _select_import_files(candidate: str) -> list[Path]:
     """Select import files from an allowlist enumerated beneath ``IMPORT_ROOT``.
 
@@ -478,7 +496,9 @@ async def upload_images(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Print master generation is in progress for {filename}",
                 )
-            os.replace(staged_path, destination)
+            await asyncio.to_thread(
+                _install_incoming_file, staged_path, destination, move=True
+            )
             staged_path = None
             saved.append(filename)
             if sidecars._allowed_image(filename):
@@ -575,7 +595,9 @@ async def import_from_path(
                 )
 
             try:
-                shutil.copy2(file_path, target)
+                await asyncio.to_thread(
+                    _install_incoming_file, file_path, target, move=False
+                )
                 copied.append(target_name)
                 if sidecars._allowed_image(target_name):
                     sidecars._ensure_sidecar(target, sidecars._load_metadata(target))
