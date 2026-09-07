@@ -352,7 +352,10 @@ def _upscale_replicate(src: Path, scale: int, model: str) -> Image.Image:
         output_url = output[0] if isinstance(output, list) else output
         if not output_url:
             raise RuntimeError("Replicate prediction succeeded without output")
-        # Output URLs may point at third-party object storage. Never forward the\n        # Replicate bearer token outside the API host.\n        img_resp = client.get(output_url, follow_redirects=True)\n        img_resp.raise_for_status()
+        # Output URLs may point at third-party object storage. Never forward the
+        # Replicate bearer token outside the API host.
+        img_resp = client.get(output_url, follow_redirects=True)
+        img_resp.raise_for_status()
         img = Image.open(io.BytesIO(img_resp.content))
         img.load()
         return img
