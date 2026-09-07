@@ -61,9 +61,9 @@ preferences:
 # structure, workflows, and key components
 guide_projects:
   - name: architecture
-    path: "." # Root documentation folder - includes all docs
+    path: "." # Scan from the repository root; global include/exclude rules still apply
     purpose: "Document the overall architecture, workflows, and key components of the project"
-    patterns: [] # Empty patterns = intelligently includes all relevant documentation
+    patterns: [] # No extra project filter; global include/exclude rules still apply
 
 # ============================================================================
 # FILE EXTENSION INCLUSION LIST
