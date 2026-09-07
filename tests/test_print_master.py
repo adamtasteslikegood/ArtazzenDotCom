@@ -420,15 +420,65 @@ def test_task_failure_persists_error_block(art_image, authed_client, monkeypatch
     assert not pm.is_in_flight(art_image)
 
 
+def test_sidecar_upload_during_run_keeps_both_writers(
+    art_image, authed_client, monkeypatch
+):
+    """A .json sidecar upload while a master is generating goes through the
+    sidecar mutation lock, so neither the uploaded fields nor the task's
+    print_master block is lost."""
+    gate = threading.Event()
+
+    def _blocking(src: Path, scale: int, model: str) -> Image.Image:
+        gate.wait(timeout=10)
+        return Image.new("RGB", (8, 8))
+
+    monkeypatch.setattr(pm, "available_backend", lambda: "torch")
+    monkeypatch.setitem(pm._BACKENDS, "torch", _blocking)
+    try:
+        authed_client.post(f"/admin/print-master/{IMG_NAME}")
+        uploaded = {
+            "title": "Uploaded while processing",
+            "description": "x",
+            "ai_generated": False,
+            "ai_details": {},
+            "status": "approved",
+            "detected_at": time.time(),
+        }
+        resp = authed_client.post(
+            "/admin/upload?force=true",
+            files=[
+                (
+                    "files",
+                    (
+                        Path(IMG_NAME).with_suffix(".json").name,
+                        json.dumps(uploaded).encode(),
+                        "application/json",
+                    ),
+                )
+            ],
+        )
+        assert resp.status_code == 200
+    finally:
+        gate.set()
+
+    assert _wait_for_settled(authed_client, IMG_NAME)["status"] == "done"
+    sidecar = json.loads(art_image.with_suffix(".json").read_text())
+    assert sidecar["title"] == "Uploaded while processing"
+    assert sidecar["print_master"]["status"] == "done"
+
+
 def test_stale_processing_block_is_reported_as_error_and_rerunnable(
     art_image, authed_client, monkeypatch
 ):
     """A 'processing' block with no worker attached (app restarted mid-run)
     must not leave the UI disabled and polling forever."""
-    sidecar = art_image.with_suffix(".json")
-    data = json.loads(sidecar.read_text())
-    data["print_master"] = {"status": "processing", "backend": "torch"}
-    sidecars._write_sidecar(art_image, data)
+    # Write under the mutation lock like every real writer does: the
+    # watcher's startup scan runs a locked read-merge-write (AI populate)
+    # for this image concurrently, and an unlocked write can be lost to it.
+    with sidecars.sidecar_mutation_lock.held():
+        data = sidecars._load_metadata(art_image)
+        data["print_master"] = {"status": "processing", "backend": "torch"}
+        sidecars._write_sidecar(art_image, data)
 
     status_resp = authed_client.get(f"/admin/print-master/{IMG_NAME}")
     reported = status_resp.json()["print_master"]
