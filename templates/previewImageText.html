@@ -116,7 +116,8 @@
                 <div id="pm-detail" {% if pm.get('status') != 'done' %}hidden{% endif %}>
                     <dt>Master</dt>
                     <dd>
-                        <a id="pm-link" href="{{ pm.get('url_path') or '#' }}" download>
+                        {% set pm_url = pm.get('url_path') %}
+                        <a id="pm-link" href="{{ request.scope.get('root_path', '') ~ pm_url if pm_url else '#' }}" download>
                             <span id="pm-dims">{{ pm.get('width') }} × {{ pm.get('height') }}</span> px @ {{ pm.get('dpi') or 300 }} DPI
                         </a>
                         <span id="pm-print-size" class="timestamp"></span>
