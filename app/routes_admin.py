@@ -945,7 +945,15 @@ async def create_print_master(
             }
         )
 
-    print_master.schedule_print_master(image_path)
+    if not print_master.schedule_print_master(image_path):
+        current = sidecars._load_metadata(image_path).get("print_master") or existing
+        return JSONResponse(
+            {
+                "name": filename,
+                "print_master": print_master.reconcile_state(image_path, current),
+                "message": "Already processing",
+            }
+        )
     return JSONResponse(
         {
             "name": filename,
