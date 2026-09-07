@@ -243,6 +243,56 @@ def test_replicate_community_model_uses_versioned_predictions(art_image, monkeyp
     assert any(host == "cdn" and auth is None for host, auth in seen_auth)
 
 
+def test_replicate_streams_large_files_api_upload(art_image, monkeypatch):
+    monkeypatch.setenv("REPLICATE_API_TOKEN", "r8_test")
+    monkeypatch.setattr(pm, "REPLICATE_VERSION", "v123")
+    monkeypatch.setattr(pm, "REPLICATE_INLINE_MAX_BYTES", 0)
+
+    original_read_bytes = Path.read_bytes
+
+    def reject_source_read_bytes(path):
+        if path == art_image:
+            raise AssertionError("large Replicate uploads must not buffer the source")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", reject_source_read_bytes)
+    seen_upload = False
+    prediction_image = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal seen_upload, prediction_image
+        if request.url.path == "/v1/files":
+            seen_upload = True
+            assert request.headers["authorization"] == "Bearer r8_test"
+            return httpx.Response(
+                201, json={"urls": {"get": "https://api.replicate.com/v1/files/f1"}}
+            )
+        if request.url.path == "/v1/predictions":
+            prediction_image = json.loads(request.content)["input"]["image"]
+            return httpx.Response(
+                201,
+                json={
+                    "id": "p1",
+                    "status": "succeeded",
+                    "output": "https://cdn/out.png",
+                },
+            )
+        if request.url.host == "cdn":
+            return httpx.Response(200, content=_png_bytes((160, 240)))
+        return httpx.Response(404)
+
+    def _client(**kwargs):
+        return httpx.Client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(pm, "httpx", SimpleNamespace(Client=_client))
+
+    img = pm._upscale_replicate(art_image, 4, "general")
+
+    assert img.size == (160, 240)
+    assert seen_upload
+    assert prediction_image == "https://api.replicate.com/v1/files/f1"
+
+
 def test_replicate_rejects_unsupported_digital_model(art_image, monkeypatch):
     monkeypatch.setenv("REPLICATE_API_TOKEN", "r8_test")
     with pytest.raises(RuntimeError, match="supports only the general model"):
