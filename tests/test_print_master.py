@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import shutil
@@ -37,8 +38,10 @@ def _png_bytes(size=(40, 60)) -> bytes:
 @pytest.fixture(autouse=True)
 def _clear_in_flight():
     pm._IN_FLIGHT.clear()
+    pm._UPSCALE_GATES.clear()
     yield
     pm._IN_FLIGHT.clear()
+    pm._UPSCALE_GATES.clear()
 
 
 @pytest.fixture()
@@ -414,6 +417,61 @@ def test_print_master_in_flight_run_is_not_duplicated(
     state = _wait_for_settled(authed_client, IMG_NAME)
     assert state["status"] == "done"
     assert calls == [IMG_NAME]
+
+
+@pytest.mark.asyncio
+async def test_generation_is_serialized_across_images(art_image, monkeypatch):
+    second = config.IMAGES_DIR / "pm_second_image.png"
+    second.write_bytes(_png_bytes())
+    second_sidecar = second.with_suffix(".json")
+    second_sidecar.write_text(art_image.with_suffix(".json").read_text())
+
+    release = threading.Event()
+    started = threading.Event()
+    state_lock = threading.Lock()
+    calls = []
+    active = 0
+    max_active = 0
+
+    def _blocking_generate(src, *args, **kwargs):
+        nonlocal active, max_active
+        with state_lock:
+            calls.append(src.name)
+            active += 1
+            max_active = max(max_active, active)
+        started.set()
+        release.wait(timeout=10)
+        with state_lock:
+            active -= 1
+        return {
+            "status": "done",
+            "file": f"print_masters/{src.stem}_master300.png",
+            "created": time.time(),
+        }
+
+    monkeypatch.setattr(pm, "available_backend", lambda: "torch")
+    monkeypatch.setattr(pm, "generate_print_master", _blocking_generate)
+    tasks = [
+        asyncio.create_task(pm._generate_print_master_task(art_image)),
+        asyncio.create_task(pm._generate_print_master_task(second)),
+    ]
+    try:
+        for _ in range(100):
+            if started.is_set():
+                break
+            await asyncio.sleep(0.01)
+        assert started.is_set()
+        await asyncio.sleep(0.05)
+        assert len(calls) == 1
+        assert max_active == 1
+    finally:
+        release.set()
+        await asyncio.gather(*tasks)
+        second.unlink(missing_ok=True)
+        second_sidecar.unlink(missing_ok=True)
+
+    assert sorted(calls) == sorted([art_image.name, second.name])
+    assert max_active == 1
 
 
 def test_task_failure_persists_error_block(art_image, authed_client, monkeypatch):
