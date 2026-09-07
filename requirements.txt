@@ -51,7 +51,7 @@ pytokens==0.4.1
 pyyaml==6.0.2
 referencing==0.37.0
 rich==15.0.0
-rich-toolkit==0.20.3
+rich-toolkit==0.20.4
 rignore==0.8.1
 rpds-py==2026.6.3
 ruff==0.16.5
