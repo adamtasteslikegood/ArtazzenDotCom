@@ -151,7 +151,8 @@
       "properties": {
         "status": {
           "type": "string",
-          "description": "One of: '', 'pending', 'processing', 'done', 'error'.",
+          "enum": ["", "pending", "processing", "done", "error"],
+          "description": "Lifecycle of the master: '' (never requested), 'pending', 'processing', 'done', 'error'.",
           "default": ""
         },
         "file": {

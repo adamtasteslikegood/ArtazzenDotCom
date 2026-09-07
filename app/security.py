@@ -2,16 +2,35 @@
 
 import os
 import secrets
+from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.staticfiles import StaticFiles
 from starlette import status
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import Scope
 
-from app import config
+from app import config, print_master
 
 _http_basic = HTTPBasic(auto_error=False)
+
+# Directories beneath a static mount that must never be served publicly.
+# Print masters are the full-resolution sellable asset; they persist under
+# IMAGES_DIR (the Railway volume) and are streamed only by the
+# authenticated /admin/print-master/{image}/file route.
+PRIVATE_STATIC_DIRS = frozenset({print_master.PRINT_MASTER_DIRNAME})
+
+
+class _PublicStaticFiles(StaticFiles):
+    """StaticFiles that refuses paths touching ``PRIVATE_STATIC_DIRS``."""
+
+    async def get_response(self, path: str, scope: Scope):
+        # ``path`` is already normalised by StaticFiles.get_path (no '..').
+        if PRIVATE_STATIC_DIRS.intersection(PurePosixPath(path).parts):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return await super().get_response(path, scope)
 
 
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):

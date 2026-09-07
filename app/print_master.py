@@ -4,7 +4,8 @@ Bridges 72 DPI Procreate Pocket exports to print-ready files using
 Real-ESRGAN — the same engine and models that power Upscayl.
 
 Three interchangeable backends, selected automatically (or forced via the
-``UPSCALE_BACKEND`` env var / admin config):
+``UPSCALE_BACKEND`` environment variable; the admin config controls only
+``upscale_enabled`` / ``upscale_scale`` / ``upscale_model``):
 
 ``torch``
     Local Real-ESRGAN via PyTorch. Used when the optional dependencies in
@@ -22,14 +23,20 @@ Three interchangeable backends, selected automatically (or forced via the
 
 Every backend finishes the same way: the upscaled image is (re)saved with a
 300 DPI tag and the original's ICC profile, into
-``<images_dir>/print_masters/<stem>_master300.png``.
+``<images_dir>/print_masters/<stem>_master300.png``. Masters are the
+full-resolution sellable asset, so they are never served from the public
+static mounts (see ``security._PublicStaticFiles``); the admin download
+route streams them to authenticated users only.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import functools
 import io
 import logging
+import mimetypes
 import os
 import shutil
 import subprocess
@@ -37,6 +44,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from PIL import Image
@@ -48,12 +56,36 @@ PRINT_MASTER_DIRNAME = "print_masters"
 DEFAULT_SCALE = 4
 DEFAULT_DPI = 300
 
+
+def _env_float(name: str, default: float) -> float:
+    """Parse a float env var; a bad value must never break app import."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        logger.warning("Ignoring non-numeric %s=%r; using %s", name, raw, default)
+        return default
+
+
 REPLICATE_API_BASE = "https://api.replicate.com/v1"
 REPLICATE_MODEL = os.getenv("REPLICATE_UPSCALE_MODEL", "nightmareai/real-esrgan")
-REPLICATE_TIMEOUT = float(os.getenv("REPLICATE_TIMEOUT_SECONDS", "300"))
+# Optional version pin. Community models (the default is one) must be run
+# through POST /predictions with an explicit version id; when unset, the
+# model's latest published version is resolved once per process.
+REPLICATE_VERSION = os.getenv("REPLICATE_UPSCALE_VERSION", "").strip()
+REPLICATE_TIMEOUT = _env_float("REPLICATE_TIMEOUT_SECONDS", 300.0)
+REPLICATE_POLL_SECONDS = 3.0
+# Replicate recommends inline data URLs only for small inputs (< 1 MB);
+# anything bigger goes through the Files API.
+REPLICATE_INLINE_MAX_BYTES = 200 * 1024
 
 # Lazily-built torch upsamplers, keyed by model name.
 _TORCH_UPSAMPLERS: dict[str, Any] = {}
+# Resolved Replicate version per model; ``None`` marks an official model
+# (which uses the models/{owner}/{name}/predictions endpoint instead).
+_REPLICATE_VERSION_CACHE: dict[str, str | None] = {}
 
 
 # --------------------------------------------------------------------------
@@ -61,7 +93,10 @@ _TORCH_UPSAMPLERS: dict[str, Any] = {}
 # --------------------------------------------------------------------------
 
 
+@functools.cache
 def _torch_available() -> bool:
+    # Cached: a failed import walks sys.path every call, and this runs on
+    # every upload and status poll.
     try:  # pragma: no cover - depends on optional install
         import basicsr  # noqa: F401
         import realesrgan  # noqa: F401
@@ -154,11 +189,11 @@ def _upscale_torch(src: Path, scale: int, model: str) -> Image.Image:
         )
     upsampler = _TORCH_UPSAMPLERS[model]
 
-    img = Image.open(src)
-    has_alpha = img.mode in ("RGBA", "LA") or (
-        img.mode == "P" and "transparency" in img.info
-    )
-    arr = np.array(img.convert("RGBA" if has_alpha else "RGB"))
+    with Image.open(src) as img:
+        has_alpha = img.mode in ("RGBA", "LA") or (
+            img.mode == "P" and "transparency" in img.info
+        )
+        arr = np.array(img.convert("RGBA" if has_alpha else "RGB"))
     arr = arr[:, :, [2, 1, 0, 3]] if has_alpha else arr[:, :, ::-1]
     out, _ = upsampler.enhance(arr, outscale=scale)
     if out.shape[2] == 4:
@@ -195,49 +230,114 @@ def _upscale_binary(src: Path, scale: int, model: str) -> Image.Image:
             raise RuntimeError(
                 f"realesrgan binary failed ({proc.returncode}): {proc.stderr[-400:]}"
             )
-        img = Image.open(out_path)
-        img.load()
-        return img
+        with Image.open(out_path) as img:
+            img.load()
+            return img.copy()
+
+
+_IMAGE_MIME = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+}
+
+
+def _image_mime(path: Path) -> str | None:
+    """MIME type for an image file, or ``None`` when it cannot be determined."""
+    mime = _IMAGE_MIME.get(path.suffix.lower())
+    if mime is None:
+        guessed, _ = mimetypes.guess_type(path.name)
+        mime = guessed if guessed and guessed.startswith("image/") else None
+    return mime
+
+
+def _replicate_prediction_target(
+    client: httpx.Client, headers: dict[str, str]
+) -> tuple[str, dict[str, str]]:
+    """Return ``(url, extra_body)`` for creating a prediction.
+
+    Replicate's ``/models/{owner}/{name}/predictions`` endpoint only accepts
+    *official* models; community models such as the default
+    ``nightmareai/real-esrgan`` must be started via ``/predictions`` with an
+    explicit version id. Resolve (and cache) that once per process unless
+    ``REPLICATE_UPSCALE_VERSION`` pins it.
+    """
+    if REPLICATE_VERSION:
+        return f"{REPLICATE_API_BASE}/predictions", {"version": REPLICATE_VERSION}
+    if REPLICATE_MODEL not in _REPLICATE_VERSION_CACHE:
+        resp = client.get(
+            f"{REPLICATE_API_BASE}/models/{REPLICATE_MODEL}", headers=headers
+        )
+        resp.raise_for_status()
+        info = resp.json()
+        if info.get("is_official"):
+            _REPLICATE_VERSION_CACHE[REPLICATE_MODEL] = None
+        else:
+            version = (info.get("latest_version") or {}).get("id")
+            if not version:
+                raise RuntimeError(
+                    f"Replicate model {REPLICATE_MODEL} has no published version"
+                )
+            _REPLICATE_VERSION_CACHE[REPLICATE_MODEL] = version
+    version = _REPLICATE_VERSION_CACHE[REPLICATE_MODEL]
+    if version is None:
+        return f"{REPLICATE_API_BASE}/models/{REPLICATE_MODEL}/predictions", {}
+    return f"{REPLICATE_API_BASE}/predictions", {"version": version}
 
 
 def _upscale_replicate(src: Path, scale: int, model: str) -> Image.Image:
-    """Hosted Real-ESRGAN on Replicate (recommended for Railway)."""
+    """Hosted Real-ESRGAN on Replicate (recommended for Railway).
+
+    The hosted model is the general-purpose ``x4plus`` network; ``model`` is
+    recorded in the sidecar but has no effect on this backend.
+    """
     token = _replicate_token()
     if not token:
         raise RuntimeError("REPLICATE_API_TOKEN not configured")
     headers = {"Authorization": f"Bearer {token}"}
 
     data = src.read_bytes()
+    mime = _image_mime(src)
     with httpx.Client(timeout=REPLICATE_TIMEOUT) as client:
-        # Small files can travel as a data URL; larger ones go through the
-        # Replicate Files API.
-        if len(data) <= 200 * 1024:
-            mime = "image/png" if src.suffix.lower() == ".png" else "image/jpeg"
+        # Small files of a known type travel inline as a data URL; larger or
+        # unrecognised ones go through the Replicate Files API.
+        if mime and len(data) <= REPLICATE_INLINE_MAX_BYTES:
             image_ref = f"data:{mime};base64,{base64.b64encode(data).decode()}"
         else:
             file_resp = client.post(
                 f"{REPLICATE_API_BASE}/files",
                 headers=headers,
-                files={"content": (src.name, data)},
+                files={"content": (src.name, data, mime or "application/octet-stream")},
             )
             file_resp.raise_for_status()
             image_ref = file_resp.json()["urls"]["get"]
 
+        url, extra = _replicate_prediction_target(client, headers)
         pred_resp = client.post(
-            f"{REPLICATE_API_BASE}/models/{REPLICATE_MODEL}/predictions",
+            url,
             headers={**headers, "Prefer": "wait=60"},
-            json={"input": {"image": image_ref, "scale": scale, "face_enhance": False}},
+            json={
+                **extra,
+                "input": {"image": image_ref, "scale": scale, "face_enhance": False},
+            },
         )
         pred_resp.raise_for_status()
         prediction = pred_resp.json()
 
         # Poll until the prediction settles if "Prefer: wait" returned early.
-        poll_url = (prediction.get("urls") or {}).get("get")
+        poll_url = (prediction.get("urls") or {}).get(
+            "get"
+        ) or f"{REPLICATE_API_BASE}/predictions/{prediction.get('id')}"
         deadline = time.time() + REPLICATE_TIMEOUT
         while prediction.get("status") in ("starting", "processing"):
             if time.time() > deadline:
                 raise RuntimeError("Replicate prediction timed out")
-            time.sleep(3)
+            time.sleep(REPLICATE_POLL_SECONDS)
             poll = client.get(poll_url, headers=headers)
             poll.raise_for_status()
             prediction = poll.json()
@@ -250,6 +350,8 @@ def _upscale_replicate(src: Path, scale: int, model: str) -> Image.Image:
 
         output = prediction.get("output")
         output_url = output[0] if isinstance(output, list) else output
+        if not output_url:
+            raise RuntimeError("Replicate prediction succeeded without output")
         img_resp = client.get(output_url, headers=headers, follow_redirects=True)
         img_resp.raise_for_status()
         img = Image.open(io.BytesIO(img_resp.content))
@@ -276,6 +378,11 @@ def master_path_for(image_path: Path, images_dir: Path) -> Path:
         / PRINT_MASTER_DIRNAME
         / f"{image_path.stem}{PRINT_MASTER_SUFFIX}.png"
     )
+
+
+def master_url_path(image_name: str) -> str:
+    """Admin-only download URL for an image's print master."""
+    return f"/admin/print-master/{quote(image_name)}/file"
 
 
 def generate_print_master(
@@ -315,31 +422,43 @@ def generate_print_master(
             )
         result["backend"] = chosen
 
-        src_img = Image.open(image_path)
-        icc = src_img.info.get("icc_profile")
-        src_img.close()
+        with Image.open(image_path) as src_img:
+            icc = src_img.info.get("icc_profile")
 
         upscaled = _BACKENDS[chosen](image_path, scale, model)
-
-        dst = master_path_for(image_path, images_dir)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        save_kwargs: dict[str, Any] = {"dpi": (dpi, dpi)}
-        if icc:
-            save_kwargs["icc_profile"] = icc
-        upscaled.save(dst, **save_kwargs)
+        try:
+            dst = master_path_for(image_path, images_dir)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            save_kwargs: dict[str, Any] = {"dpi": (dpi, dpi), "format": "PNG"}
+            if icc:
+                save_kwargs["icc_profile"] = icc
+            # Stage next to the destination and rename: a crash mid-save must
+            # never leave a truncated master (regenerate overwrites in place).
+            fd, tmp_name = tempfile.mkstemp(
+                dir=dst.parent, prefix=f".{dst.stem}.", suffix=".tmp"
+            )
+            os.close(fd)
+            try:
+                upscaled.save(tmp_name, **save_kwargs)
+                os.replace(tmp_name, dst)
+            finally:
+                Path(tmp_name).unlink(missing_ok=True)
+            width, height = upscaled.size
+        finally:
+            upscaled.close()
 
         result.update(
             status="done",
             file=f"{PRINT_MASTER_DIRNAME}/{dst.name}",
-            width=upscaled.size[0],
-            height=upscaled.size[1],
+            width=width,
+            height=height,
             created=time.time(),
         )
         logger.info(
             "Print master ready: %s (%dx%d @%ddpi, backend=%s, %.1fs)",
             dst.name,
-            upscaled.size[0],
-            upscaled.size[1],
+            width,
+            height,
             dpi,
             chosen,
             time.time() - started,
@@ -359,21 +478,62 @@ def generate_print_master(
 # so the layering (config -> sidecars -> print_master -> routes) holds and
 # tests can monkeypatch the defining modules.
 
+INTERRUPTED_ERROR = "Generation was interrupted (app restarted?). Run it again."
+
+# Strong references to running tasks keyed by resolved image path. A bare
+# ``asyncio.create_task`` result can be garbage-collected mid-run, and the
+# registry is what lets the endpoints refuse a second concurrent run for
+# the same image (two jobs would race on the same output file). It is
+# per-process: the deployment runs a single uvicorn worker.
+_IN_FLIGHT: dict[str, asyncio.Task[Any]] = {}
+
+
+def _flight_key(image_path: Path) -> str:
+    return os.path.realpath(os.fspath(image_path))
+
+
+def is_in_flight(image_path: Path) -> bool:
+    task = _IN_FLIGHT.get(_flight_key(image_path))
+    return task is not None and not task.done()
+
+
+def reconcile_state(image_path: Path, pm: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the effective ``print_master`` block for the admin UI.
+
+    The sidecar alone can mislead: right after scheduling, the task may not
+    have written its ``processing`` placeholder yet, and after a restart a
+    ``processing`` block can be left behind with no worker attached. Either
+    would leave the review page's button disabled and polling forever.
+    """
+    effective = dict(pm or {})
+    if is_in_flight(image_path):
+        effective["status"] = "processing"
+        effective["error"] = ""
+    elif effective.get("status") == "processing":
+        effective["status"] = "error"
+        effective["error"] = INTERRUPTED_ERROR
+    return effective
+
 
 def _set_print_master_sidecar(image_path: Path, pm: dict[str, Any]) -> None:
-    """Persist the ``print_master`` block into the image's sidecar."""
+    """Persist the ``print_master`` block into the image's sidecar.
+
+    Read-modify-write under the sidecar mutation lock: an admin save or AI
+    persist landing between our read and write must not be lost.
+    """
     from app import sidecars
 
-    data = sidecars._load_metadata(image_path)
-    data["print_master"] = pm
-    data.setdefault("title", "")
-    data.setdefault("description", "")
-    data.setdefault("ai_generated", False)
-    if not isinstance(data.get("ai_details"), dict):
-        data["ai_details"] = {}
-    data.setdefault("status", "pending")
-    data.setdefault("detected_at", time.time())
-    sidecars._write_sidecar(image_path, data)
+    with sidecars.sidecar_mutation_lock.held():
+        data = sidecars._load_metadata(image_path)
+        data["print_master"] = pm
+        data.setdefault("title", "")
+        data.setdefault("description", "")
+        data.setdefault("ai_generated", False)
+        if not isinstance(data.get("ai_details"), dict):
+            data["ai_details"] = {}
+        data.setdefault("status", "pending")
+        data.setdefault("detected_at", time.time())
+        sidecars._write_sidecar(image_path, data)
 
 
 def _print_master_settings() -> dict[str, Any]:
@@ -390,8 +550,6 @@ def _print_master_settings() -> dict[str, Any]:
 
 async def _generate_print_master_task(image_path: Path) -> dict[str, Any]:
     """Run upscaling off the event loop and record progress in the sidecar."""
-    import asyncio
-
     from app import config
 
     settings = _print_master_settings()
@@ -408,31 +566,56 @@ async def _generate_print_master_task(image_path: Path) -> dict[str, Any]:
         "created": 0.0,
         "error": "",
     }
-    _set_print_master_sidecar(image_path, pending)
-    result = await asyncio.to_thread(
-        generate_print_master,
-        image_path,
-        config.IMAGES_DIR,
-        settings["scale"],
-        DEFAULT_DPI,
-        settings["model"],
-    )
-    if result.get("status") == "done" and result.get("file"):
-        result["url_path"] = f"{config.IMAGES_URL_PREFIX}/{result['file']}"
-    _set_print_master_sidecar(image_path, result)
-    return result
+    try:
+        # Sidecar writes take the file lock; keep them off the event loop.
+        await asyncio.to_thread(_set_print_master_sidecar, image_path, pending)
+        result = await asyncio.to_thread(
+            generate_print_master,
+            image_path,
+            config.IMAGES_DIR,
+            settings["scale"],
+            DEFAULT_DPI,
+            settings["model"],
+            settings["backend"],
+        )
+        if result.get("status") == "done" and result.get("file"):
+            result["url_path"] = master_url_path(image_path.name)
+        await asyncio.to_thread(_set_print_master_sidecar, image_path, result)
+        return result
+    except Exception:
+        # A stuck "processing" block is reconciled to an error by
+        # reconcile_state once this task is no longer in flight.
+        logger.exception("Print-master task failed for %s", image_path.name)
+        raise
+
+
+def schedule_print_master(image_path: Path) -> bool:
+    """Queue generation unless a run for this image is already in flight.
+
+    Returns ``True`` when a task was created. Must be called from the event
+    loop thread (request handlers).
+    """
+    key = _flight_key(image_path)
+    if is_in_flight(image_path):
+        return False
+    task = asyncio.create_task(_generate_print_master_task(image_path))
+    _IN_FLIGHT[key] = task
+
+    def _clear(done: asyncio.Task[Any]) -> None:
+        if _IN_FLIGHT.get(key) is done:
+            del _IN_FLIGHT[key]
+
+    task.add_done_callback(_clear)
+    return True
 
 
 def _schedule_print_master(image_path: Path) -> None:
-    """Fire-and-forget print-master generation for a newly added image."""
-    import asyncio
+    """Fire-and-forget print-master generation for a newly written image.
 
-    from app import sidecars
-
+    Called after an upload or import wrote fresh bytes, so any existing
+    master is stale and is regenerated; only an in-flight run is skipped.
+    """
     settings = _print_master_settings()
     if not settings["enabled"] or not settings["backend"]:
         return
-    existing = sidecars._load_metadata(image_path).get("print_master") or {}
-    if existing.get("status") in ("processing", "done"):
-        return
-    asyncio.create_task(_generate_print_master_task(image_path))
+    schedule_print_master(image_path)

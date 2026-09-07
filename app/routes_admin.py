@@ -19,7 +19,13 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from starlette import status
 
 from app import ai_metadata, config, curation, print_master, sidecars, watcher
@@ -584,6 +590,9 @@ async def preview_image_metadata(
     metadata = ai_metadata._populate_missing_metadata(
         image_path, sidecars._load_metadata(image_path)
     )
+    metadata["print_master"] = print_master.reconcile_state(
+        image_path, metadata.get("print_master")
+    )
 
     current_status = metadata.get("status", "pending")
     siblings = sidecars.get_artwork_files(status_filter=current_status)
@@ -741,10 +750,17 @@ async def soft_delete_image(
     if (trash_dir / trash_name).exists():
         stem, suffix = image_path.stem, image_path.suffix
         trash_name = f"{stem}_{int(time.time())}{suffix}"
+    master_path = print_master.master_path_for(image_path, config.IMAGES_DIR)
     shutil.move(str(image_path), str(trash_dir / trash_name))
     if sidecar_path.exists():
         trash_sidecar = Path(trash_name).with_suffix(".json").name
         shutil.move(str(sidecar_path), str(trash_dir / trash_sidecar))
+    if master_path.is_file():
+        # The print master is derived from this image; keep it with the
+        # trashed original rather than leaking it on the volume.
+        trash_masters = trash_dir / print_master.PRINT_MASTER_DIRNAME
+        trash_masters.mkdir(exist_ok=True)
+        shutil.move(str(master_path), str(trash_masters / master_path.name))
     logger.info("Soft-deleted %s to .trash/", image_name)
     return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
 
@@ -831,11 +847,14 @@ async def create_print_master(
         )
 
     existing = sidecars._load_metadata(image_path).get("print_master") or {}
-    if existing.get("status") == "processing" and not force:
+    # An in-flight run wins even over force: two jobs would race on the same
+    # output file. A stale "processing" block with no worker (app restarted
+    # mid-run) is not in flight, so it can simply be re-run.
+    if print_master.is_in_flight(image_path):
         return JSONResponse(
             {
                 "name": filename,
-                "print_master": existing,
+                "print_master": print_master.reconcile_state(image_path, existing),
                 "message": "Already processing",
             }
         )
@@ -848,7 +867,7 @@ async def create_print_master(
             }
         )
 
-    asyncio.create_task(print_master._generate_print_master_task(image_path))
+    print_master.schedule_print_master(image_path)
     return JSONResponse(
         {
             "name": filename,
@@ -874,11 +893,44 @@ async def print_master_status(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
-    pm = sidecars._load_metadata(image_path).get("print_master") or {}
+    pm = print_master.reconcile_state(
+        image_path, sidecars._load_metadata(image_path).get("print_master")
+    )
     return JSONResponse(
         {
             "name": filename,
             "print_master": pm,
             "backend": print_master._print_master_settings()["backend"],
         }
+    )
+
+
+@router.get("/admin/print-master/{image_name}/file")
+async def download_print_master(
+    image_name: str,
+    _: None = Depends(_verify_admin),
+) -> FileResponse:
+    """Stream the 300 DPI master to the admin.
+
+    Masters are the full-resolution sellable asset: they live under
+    ``IMAGES_DIR`` (so they persist on the Railway volume) but the public
+    static mounts refuse to serve ``print_masters/``, so this authenticated
+    route is the only way to fetch one.
+    """
+    filename = sidecars._sanitize_filename(image_name)
+    if not filename or not sidecars._allowed_image(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    image_path = sidecars._resolve_image_path(filename)
+    master_path = print_master.master_path_for(image_path, config.IMAGES_DIR)
+    if not master_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Print master not found"
+        )
+    return FileResponse(
+        master_path,
+        media_type="image/png",
+        filename=master_path.name,
+        headers={"Cache-Control": "private, no-store"},
     )

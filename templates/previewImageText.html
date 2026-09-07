@@ -111,12 +111,12 @@
             <dl class="preview-meta" id="pm-meta">
                 <div>
                     <dt>Status</dt>
-                    <dd id="pm-status">{{ pm.get('status') or 'not generated' }}</dd>
+                    <dd id="pm-status">{{ pm.get('status') or 'not generated' }}{% if pm.get('error') %} — {{ pm.get('error') }}{% endif %}</dd>
                 </div>
                 <div id="pm-detail" {% if pm.get('status') != 'done' %}hidden{% endif %}>
                     <dt>Master</dt>
                     <dd>
-                        <a id="pm-link" href="{{ pm.get('url_path') or '#' }}" target="_blank" rel="noopener">
+                        <a id="pm-link" href="{{ pm.get('url_path') or '#' }}" download>
                             <span id="pm-dims">{{ pm.get('width') }} × {{ pm.get('height') }}</span> px @ {{ pm.get('dpi') or 300 }} DPI
                         </a>
                         <span id="pm-print-size" class="timestamp"></span>
@@ -124,9 +124,7 @@
                 </div>
             </dl>
             <div class="form-actions">
-                <button type="button" id="pm-generate" class="button">
-                    {% if pm.get('status') == 'done' %}Regenerate print master{% else %}Generate print master{% endif %}
-                </button>
+                <button type="button" id="pm-generate" class="button">{% if pm.get('status') == 'done' %}Regenerate print master{% else %}Generate print master{% endif %}</button>
             </div>
         </section>
 
@@ -156,6 +154,10 @@
         const ROOT = document.body.dataset.rootPath || '';
         const endpoint = ROOT + '/admin/print-master/' + encodeURIComponent({{ image_name | tojson }});
         let timer = null;
+        // Tracked in JS rather than sniffed from the button label: the
+        // server-rendered label carries template whitespace.
+        {% set pm = metadata.get('print_master') or {} %}
+        let currentStatus = {{ (pm.get('status') or '') | tojson }};
 
         function renderPrintSize() {
             const dims = document.getElementById('pm-dims').textContent.split('×');
@@ -168,10 +170,13 @@
 
         function apply(pm) {
             const st = (pm && pm.status) || 'not generated';
+            currentStatus = st;
             statusEl.textContent = st + (pm && pm.error ? ' — ' + pm.error : '');
+            // Only a finished master has a link worth showing; a stale one
+            // during regenerate (or after an error) is misleading.
+            detailEl.hidden = st !== 'done';
             if (st === 'done') {
-                detailEl.hidden = false;
-                document.getElementById('pm-link').href = pm.url_path || '#';
+                document.getElementById('pm-link').href = ROOT + (pm.url_path || '#');
                 document.getElementById('pm-dims').textContent = pm.width + ' × ' + pm.height;
                 renderPrintSize();
                 btn.textContent = 'Regenerate print master';
@@ -181,6 +186,7 @@
                 if (!timer) timer = setInterval(poll, 5000);
                 return;
             } else {
+                btn.textContent = 'Generate print master';
                 btn.disabled = false;
             }
             if (timer) { clearInterval(timer); timer = null; }
@@ -197,7 +203,7 @@
             btn.disabled = true;
             statusEl.textContent = 'processing';
             const body = new FormData();
-            body.set('force', btn.textContent.startsWith('Regenerate') ? 'true' : 'false');
+            body.set('force', currentStatus === 'done' ? 'true' : 'false');
             try {
                 const resp = await fetch(endpoint, { method: 'POST', body });
                 if (!resp.ok) {
@@ -213,7 +219,6 @@
             }
         });
 
-        {% set pm = metadata.get('print_master') or {} %}
         {% if pm.get('status') in ('pending', 'processing') %}
         apply({{ pm | tojson }});
         {% elif pm.get('status') == 'done' %}
