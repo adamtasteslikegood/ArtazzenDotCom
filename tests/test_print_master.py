@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app import print_master as pm
+from app import sidecars
 from app.config import IMAGES_DIR
 from main import app
 
@@ -229,6 +230,12 @@ def test_replicate_community_model_uses_versioned_predictions(art_image, monkeyp
     assert any(host == "cdn" and auth is None for host, auth in seen_auth)
 
 
+def test_replicate_rejects_unsupported_digital_model(art_image, monkeypatch):
+    monkeypatch.setenv("REPLICATE_API_TOKEN", "r8_test")
+    with pytest.raises(RuntimeError, match="supports only the general model"):
+        pm._upscale_replicate(art_image, 4, "digital")
+
+
 def test_upscale_config_defaults():
     from app import config
 
@@ -300,7 +307,7 @@ def test_initial_print_master_link_honors_root_path(art_image, monkeypatch):
         "height": 240,
         "dpi": 300,
     }
-    sidecar.write_text(json.dumps(data))
+    sidecars._write_sidecar(art_image, data)
 
     monkeypatch.setenv("ADMIN_PASSWORD", "testpass")
     with TestClient(app, root_path="/gallery") as client:
@@ -354,6 +361,14 @@ def test_print_master_in_flight_run_is_not_duplicated(
         delete = authed_client.post(f"/admin/delete/{IMG_NAME}")
         assert delete.status_code == 409
         assert art_image.is_file()
+
+        original_bytes = art_image.read_bytes()
+        replacement = authed_client.post(
+            "/admin/upload?force=true",
+            files=[("files", (IMG_NAME, _png_bytes((20, 30)), "image/png"))],
+        )
+        assert replacement.status_code == 409
+        assert art_image.read_bytes() == original_bytes
     finally:
         gate.set()
 
@@ -370,7 +385,7 @@ def test_stale_processing_block_is_reported_as_error_and_rerunnable(
     sidecar = art_image.with_suffix(".json")
     data = json.loads(sidecar.read_text())
     data["print_master"] = {"status": "processing", "backend": "torch"}
-    sidecar.write_text(json.dumps(data))
+    sidecars._write_sidecar(art_image, data)
 
     status_resp = authed_client.get(f"/admin/print-master/{IMG_NAME}")
     reported = status_resp.json()["print_master"]
