@@ -4,12 +4,11 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from app import config, curation, sidecars, watcher
 from app.routes_admin import router as admin_router
 from app.routes_public import router as public_router
-from app.security import _SecurityHeadersMiddleware
+from app.security import _PublicStaticFiles, _SecurityHeadersMiddleware
 
 
 @asynccontextmanager
@@ -40,9 +39,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Artwork Gallery", lifespan=lifespan)
-    app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
+    app.mount("/static", _PublicStaticFiles(directory=config.STATIC_DIR), name="static")
     if config._USING_VOLUME:
-        app.mount("/images", StaticFiles(directory=config.IMAGES_DIR), name="images")
+        app.mount(
+            "/images", _PublicStaticFiles(directory=config.IMAGES_DIR), name="images"
+        )
     app.add_middleware(_SecurityHeadersMiddleware)
     app.include_router(admin_router)
     app.include_router(public_router)
