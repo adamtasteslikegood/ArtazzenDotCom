@@ -324,6 +324,7 @@ def test_download_print_master_rejects_orphaned_master(art_image, authed_client)
     assert response.json()["detail"] == "Image not found"
     assert master.is_file()
 
+
 def test_public_static_mount_blocks_internal_image_directories(authed_client):
     probes = (
         config.IMAGES_DIR / ".trash" / "static-guard-test.png",
