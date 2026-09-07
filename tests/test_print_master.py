@@ -312,6 +312,21 @@ def test_print_master_endpoints(art_image, authed_client, monkeypatch):
     assert state["created"] > first_created
 
 
+
+def test_download_print_master_rejects_orphaned_master(
+    art_image, authed_client
+):
+    master = pm.master_path_for(art_image, config.IMAGES_DIR)
+    master.parent.mkdir(parents=True, exist_ok=True)
+    master.write_bytes(_png_bytes())
+    art_image.unlink()
+
+    response = authed_client.get(f"/admin/print-master/{IMG_NAME}/file")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Image not found"
+    assert master.is_file()
+
 def test_public_static_mount_blocks_internal_image_directories(authed_client):
     probes = (
         config.IMAGES_DIR / ".trash" / "static-guard-test.png",
