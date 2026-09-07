@@ -1,0 +1,288 @@
+# Woden DocBot Configuration
+# Place this file at: .github/wai-docbot.yml in your repository
+
+# ============================================================================
+# OUTPUT MODE
+# ============================================================================
+# What kind of documentation to emit per PR.
+#   "directory" (recommended): one README per changed directory, summarising
+#                              the files and how they relate, with an
+#                              auto-selected Mermaid architecture diagram
+#   "file":     per-file READMEs (the legacy default — preserved for
+#               existing customers whose YAML lacks this field)
+#   "both":     emit both. Higher token cost, maximum detail.
+output_mode: "directory"
+
+# ============================================================================
+# PER-DIRECTORY OVERRIDES
+# ============================================================================
+# Per-directory tweaks to the defaults. Each entry needs `path`; the other
+# fields are optional. Paths are matched exactly — no globs.
+#
+# directory_overrides:
+#   - path: "src/api"
+#     diagram_type: "sequence"        # force a diagram type for this dir
+#     # diagram_type values: class_hierarchy | state_machine | data_model |
+#     # sequence | component_dependency | module_relationship | none | auto
+#   - path: "src/legacy"
+#     skip_readme: true               # process the directory (the cache is
+#                                     # populated) but suppress the README
+
+# ============================================================================
+# DOCUMENTATION FOLDER
+# ============================================================================
+# Where generated documentation will be stored in your repository.
+# Always "_docs" in Phase 2; this field is reserved for future customisation.
+docs_folder: "_docs"
+
+# ============================================================================
+# BRANCH FILTERING
+# ============================================================================
+# Control which target branches trigger documentation generation
+# DocBot only processes PRs targeting these branches
+# Supports wildcard patterns (e.g., release/* matches release/1.0.0, release/v2.0)
+allowed_base_branches:
+  - "main"           # Primary branch
+  - "master"         # Alternative primary branch
+  - "develop"        # Development branch
+  - "release/*"      # Matches: release/1.0.0, release/v2.0, etc.
+  - "hotfix/*"       # Matches: hotfix/critical-bug, hotfix/security-patch
+  - "staging"        # Pre-production environment
+  - "wai-docs-update"  # Special branch name that triggers full repository rebuilds
+
+# ============================================================================
+# DOCUMENTATION PREFERENCES
+# ============================================================================
+preferences:
+  include_code_links: true       # Include links to source code line numbers
+  include_examples: true         # Include usage examples in documentation
+  require_pr_approval: true      # Auto-generate (false) or require approval (true)
+  document_root_files: true      # Create separate README for root-level files
+
+# ============================================================================
+# GUIDE GENERATION - Architecture Guides
+# ============================================================================
+# Generate comprehensive architecture guides that document your project's
+# structure, workflows, and key components
+guide_projects:
+  - name: architecture
+    path: "."  # Root documentation folder - includes all docs
+    purpose: "Document the overall architecture, workflows, and key components of the project"
+    patterns: []  # Empty patterns = intelligently includes all relevant documentation
+
+# ============================================================================
+# FILE EXTENSION INCLUSION LIST
+# ============================================================================
+# ONLY files with these extensions will be documented
+# Add or remove extensions based on your project's needs
+include_extensions:
+  # Python
+  - ".py"
+
+  # JavaScript/TypeScript
+  - ".js"
+  - ".jsx"
+  - ".ts"
+  - ".tsx"
+  - ".mjs"
+  - ".cjs"
+
+  # Web
+  - ".html"
+
+  # C/C++
+  - ".c"
+  - ".cpp"
+  - ".cc"
+  - ".cxx"
+  - ".h"
+  - ".hpp"
+  - ".hxx"
+
+  # C#/.NET
+  - ".cs"
+  - ".vb"
+  - ".fs"
+
+  # Java/Kotlin
+  - ".java"
+  - ".kt"
+  - ".kts"
+
+  # Go
+  - ".go"
+
+  # Rust
+  - ".rs"
+
+  # Ruby
+  - ".rb"
+
+  # PHP
+  - ".php"
+
+  # Swift
+  - ".swift"
+
+  # Shell scripts
+  - ".sh"
+  - ".bash"
+  - ".zsh"
+  - ".fish"
+
+  # PowerShell
+  - ".ps1"
+  - ".psm1"
+  - ".psd1"
+
+  # SQL
+  - ".sql"
+
+  # R
+  - ".r"
+  - ".R"
+
+  # Scala
+  - ".scala"
+
+  # Dart
+  - ".dart"
+
+  # Lua
+  - ".lua"
+
+  # Infrastructure as Code
+  - ".tf"    # Terraform
+  - ".yaml"  # YAML (for Kubernetes, etc.)
+  - ".yml"   # YAML (for Kubernetes, etc.)
+  - ".bicep" # Bicep
+
+# ============================================================================
+# FILE/FOLDER EXCLUSION LIST
+# ============================================================================
+# Glob patterns for files and directories to EXCLUDE from documentation
+# Customize by adding your own patterns or removing defaults that don't apply
+exclude:
+  # Custom exclusions for this project (uncomment and modify as needed)
+  # - "iac/**"  # Infrastructure as code
+
+  ## STANDARD EXCLUSIONS ##
+
+  # Dependencies and package managers
+  - "node_modules/**"
+  - "vendor/**"
+  - "**/package-lock.json"
+  - "**/yarn.lock"
+  - "**/pnpm-lock.yaml"
+  - "**/composer.lock"
+  - "**/Gemfile.lock"
+  - "**/Pipfile.lock"
+  - "**/poetry.lock"
+  - "**/__pycache__/**"
+  - "**/*.pyc"
+  - "**/*.pyo"
+  - "**/*.pyd"
+  - ".venv/**"
+  - "env/**"
+
+  # Build outputs and generated files
+  - "dist/**"
+  - "build/**"
+  - "**/build/**"
+  - "**/bin/**"
+  - "**/obj/**"
+  - "**/out/**"
+  - "**/target/**"
+  - "**/.next/**"
+  - "**/coverage/**"
+  - "**/.cache/**"
+  - "**/.parcel-cache/**"
+  - "**/.webpack/**"
+  - "**/.turbo/**"
+
+  # Minified and bundled files
+  - "**/*.min.js"
+  - "**/*.min.css"
+  - "**/*.bundle.js"
+  - "**/*.bundle.css"
+  - "**/*.map"
+  - "**/*.chunk.js"
+
+  # IDE and editor files
+  - ".git/**"
+  - ".gitignore"
+  - "**/.gitignore"
+  - ".gitattributes"
+  - "**/.gitattributes"
+  - "**/.idea/**"
+  - "**/.vscode/**"
+  - "**/.vs/**"
+  - "**/.DS_Store"
+  - "**/.history/**"
+  - "**/.settings/**"
+  - "**/.classpath"
+  - "**/.project"
+  - "**/*.swp"
+  - "**/*.swo"
+  - "**/*~"
+
+  # Test coverage and cache
+  - "**/.pytest_cache/**"
+  - "**/.mypy_cache/**"
+  - "**/.ruff_cache/**"
+  - "**/__snapshots__/**"
+  - "**/htmlcov/**"
+  - "**/.nyc_output/**"
+
+  # Environment and secrets
+  - "**/.env"
+  - "**/.env.*"
+  - "**/local.settings.json"
+  - "**/credential.json"
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/*.p12"
+  - "**/*.crt"
+  - "**/*.cer"
+  - "**/secrets/**"
+  - "**/*.secret"
+
+  # Existing documentation (prevents circular documentation)
+  - "**/*.md"
+  - "**/*.mdx"
+  - "_docs/**"
+  - "_docs_/**"
+  - "**/README"
+  - "**/CHANGELOG"
+  - "**/LICENSE"
+
+  # Interface and model definitions
+  - "**/*.idl"
+  - "**/*.proto"
+  - "**/*.thrift"
+  - "**/*.avdl"
+  - "**/*.avpr"
+  - "**/*.avsc"
+  - "**/Interfaces/**"
+  - "**/Interface/**"
+  - "**/Models/**"
+
+  # Style sheets and lint configuration files
+  - "**/.eslintrc"
+  - "**/.eslintrc.js"
+  - "**/.eslintrc.json"
+  - "**/.prettierrc"
+  - "**/*.css"
+  - "**/*.scss"
+  - "**/*.less"
+  - "**/tailwind.config.js"
+  - "**/postcss.config.js"
+
+  # Temporary and log files
+  - "**/*.log"
+  - "**/*.tmp"
+  - "**/*.temp"
+  - "**/tmp/**"
+  - "**/temp/**"
+  - "**/*.bak"
+  - "**/*.backup"
