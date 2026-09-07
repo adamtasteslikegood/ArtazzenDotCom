@@ -19,8 +19,11 @@ _http_basic = HTTPBasic(auto_error=False)
 # Directories beneath a static mount that must never be served publicly.
 # Print masters are the full-resolution sellable asset; they persist under
 # IMAGES_DIR (the Railway volume) and are streamed only by the
-# authenticated /admin/print-master/{image}/file route.
-PRIVATE_STATIC_DIRS = frozenset({print_master.PRINT_MASTER_DIRNAME})
+# authenticated /admin/print-master/{image}/file route. Trash contents and
+# curation registries are internal state rather than public gallery assets.
+PRIVATE_STATIC_DIRS = frozenset(
+    {print_master.PRINT_MASTER_DIRNAME, ".trash", ".curation"}
+)
 
 
 class _PublicStaticFiles(StaticFiles):
