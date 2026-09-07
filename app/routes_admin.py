@@ -999,6 +999,10 @@ async def download_print_master(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
     image_path = sidecars._resolve_image_path(filename)
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
     master_path = print_master.master_path_for(image_path, config.IMAGES_DIR)
     if not master_path.is_file():
         raise HTTPException(
