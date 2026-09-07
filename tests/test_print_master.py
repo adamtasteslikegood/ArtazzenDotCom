@@ -290,7 +290,6 @@ def test_print_master_endpoints(art_image, authed_client, monkeypatch):
     assert state["created"] > first_created
 
 
-
 def test_initial_print_master_link_honors_root_path(art_image, monkeypatch):
     sidecar = art_image.with_suffix(".json")
     data = json.loads(sidecar.read_text())
@@ -455,9 +454,7 @@ def test_soft_delete_preserves_existing_trash_master(
         assert len(candidates) == 1
         renamed_image = candidates[0]
         renamed_sidecar = renamed_image.with_suffix(".json")
-        renamed_master = trash_masters / pm.master_path_for(
-            renamed_image, trash
-        ).name
+        renamed_master = trash_masters / pm.master_path_for(renamed_image, trash).name
         assert renamed_sidecar.is_file()
         assert renamed_master.is_file()
     finally:
