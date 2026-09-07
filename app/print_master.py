@@ -42,6 +42,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import weakref
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -533,6 +534,23 @@ INTERRUPTED_ERROR = "Generation was interrupted (app restarted?). Run it again."
 # per-process: the deployment runs a single uvicorn worker.
 _IN_FLIGHT: dict[str, asyncio.Task[Any]] = {}
 
+# Bound expensive generation independently of per-image de-duplication. A
+# semaphore is kept per event loop so test clients (and reloads) cannot reuse
+# an asyncio primitive bound to a closed loop. Waiting happens before
+# asyncio.to_thread(), so queued jobs do not occupy worker threads.
+_UPSCALE_GATES: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop, asyncio.Semaphore
+] = weakref.WeakKeyDictionary()
+
+
+def _upscale_gate() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    gate = _UPSCALE_GATES.get(loop)
+    if gate is None:
+        gate = asyncio.Semaphore(1)
+        _UPSCALE_GATES[loop] = gate
+    return gate
+
 
 def _flight_key(image_path: Path) -> str:
     return os.path.realpath(os.fspath(image_path))
@@ -615,15 +633,16 @@ async def _generate_print_master_task(image_path: Path) -> dict[str, Any]:
     try:
         # Sidecar writes take the file lock; keep them off the event loop.
         await asyncio.to_thread(_set_print_master_sidecar, image_path, pending)
-        result = await asyncio.to_thread(
-            generate_print_master,
-            image_path,
-            config.IMAGES_DIR,
-            settings["scale"],
-            DEFAULT_DPI,
-            settings["model"],
-            settings["backend"],
-        )
+        async with _upscale_gate():
+            result = await asyncio.to_thread(
+                generate_print_master,
+                image_path,
+                config.IMAGES_DIR,
+                settings["scale"],
+                DEFAULT_DPI,
+                settings["model"],
+                settings["backend"],
+            )
         if result.get("status") == "done" and result.get("file"):
             result["url_path"] = master_url_path(image_path.name)
         await asyncio.to_thread(_set_print_master_sidecar, image_path, result)
