@@ -309,6 +309,22 @@ def test_print_master_endpoints(art_image, authed_client, monkeypatch):
     assert state["created"] > first_created
 
 
+def test_public_static_mount_blocks_internal_image_directories(authed_client):
+    probes = (
+        config.IMAGES_DIR / ".trash" / "static-guard-test.png",
+        config.IMAGES_DIR / ".curation" / "static-guard-test.json",
+    )
+    try:
+        for probe in probes:
+            probe.parent.mkdir(parents=True, exist_ok=True)
+            probe.write_bytes(b"private")
+            url = f"{config.IMAGES_URL_PREFIX}/{probe.parent.name}/{probe.name}"
+            assert authed_client.get(url).status_code == 404
+    finally:
+        for probe in probes:
+            probe.unlink(missing_ok=True)
+
+
 def test_initial_print_master_link_honors_root_path(art_image, monkeypatch):
     sidecar = art_image.with_suffix(".json")
     data = json.loads(sidecar.read_text())
