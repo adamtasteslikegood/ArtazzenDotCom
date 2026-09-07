@@ -5,6 +5,7 @@ import copy
 import logging
 import os
 import shutil
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -427,6 +428,7 @@ async def upload_images(
                 upload.file.close()
                 continue
 
+        staged_path: Path | None = None
         try:
             # Fast pre-check using Content-Length / spooled size when available
             upload_size = getattr(upload, "size", None)
@@ -438,10 +440,19 @@ async def upload_images(
                 )
                 skipped.append(filename)
                 continue
-            # Stream to disk in chunks to avoid holding entire files in memory
+            # Stage next to the destination, then atomically replace it. This
+            # keeps readers from observing partial bytes and preserves an
+            # existing image when a replacement exceeds the upload limit.
+            fd, staged_name = tempfile.mkstemp(
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".upload",
+            )
+            os.close(fd)
+            staged_path = Path(staged_name)
             bytes_written = 0
             exceeded = False
-            with destination.open("wb") as buffer:
+            with staged_path.open("wb") as buffer:
                 while True:
                     chunk = await upload.read(config.UPLOAD_CHUNK_SIZE)
                     if not chunk:
@@ -452,7 +463,6 @@ async def upload_images(
                         break
                     buffer.write(chunk)
             if exceeded:
-                destination.unlink(missing_ok=True)
                 logger.warning(
                     "Upload rejected: %s exceeds size limit (%d MB)",
                     filename,
@@ -460,6 +470,17 @@ async def upload_images(
                 )
                 skipped.append(filename)
                 continue
+            if (
+                destination.exists()
+                and sidecars._allowed_image(filename)
+                and print_master.is_in_flight(destination)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Print master generation is in progress for {filename}",
+                )
+            os.replace(staged_path, destination)
+            staged_path = None
             saved.append(filename)
             if sidecars._allowed_image(filename):
                 # Ensure sidecar exists for newly uploaded images
@@ -473,6 +494,8 @@ async def upload_images(
             logger.error("Failed to save %s: %s", filename, exc)
             skipped.append(filename)
         finally:
+            if staged_path is not None:
+                staged_path.unlink(missing_ok=True)
             upload.file.close()
 
     message = "Uploaded files successfully" if saved else "No supported files uploaded"
@@ -541,6 +564,16 @@ async def import_from_path(
                         }
                     )
                     continue
+
+            if (
+                target.exists()
+                and sidecars._allowed_image(target_name)
+                and print_master.is_in_flight(target)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Print master generation is in progress for {target_name}",
+                )
 
             try:
                 shutil.copy2(file_path, target)
