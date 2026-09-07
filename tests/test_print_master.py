@@ -459,7 +459,9 @@ def test_print_master_in_flight_run_is_not_duplicated(
         original_bytes = art_image.read_bytes()
 
         def _unexpected_staging(*args, **kwargs):
-            raise AssertionError("in-flight replacement should be skipped before staging")
+            raise AssertionError(
+                "in-flight replacement should be skipped before staging"
+            )
 
         with monkeypatch.context() as upload_patch:
             upload_patch.setattr(routes_admin.tempfile, "mkstemp", _unexpected_staging)
