@@ -40,16 +40,10 @@ docs_folder: "_docs"
 # ============================================================================
 # Control which target branches trigger documentation generation
 # DocBot only processes PRs targeting these branches
-# Supports wildcard patterns (e.g., release/* matches release/1.0.0, release/v2.0)
+# Keep this aligned with BRANCHING_STRATEGY.md.
 allowed_base_branches:
-  - "main" # Primary branch
+  - "main" # Production branch
   - "dev" # Active integration branch
-  - "master" # Alternative primary branch
-  - "develop" # Development branch
-  - "release/*" # Matches: release/1.0.0, release/v2.0, etc.
-  - "hotfix/*" # Matches: hotfix/critical-bug, hotfix/security-patch
-  - "staging" # Pre-production environment
-  - "wai-docs-update" # Special branch name that triggers full repository rebuilds
 
 # ============================================================================
 # DOCUMENTATION PREFERENCES
