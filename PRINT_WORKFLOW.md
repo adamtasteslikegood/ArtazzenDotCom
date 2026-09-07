@@ -23,20 +23,25 @@ masters automatically from the gallery's admin pipeline.
 The gallery now generates print masters itself. Uploading artwork through the
 admin page (or importing via path) can opt in to an AI upscaling step that
 produces a **4× upscaled PNG tagged at 300 DPI** alongside the web-resolution
-original. Masters land in `print_masters/` inside the images directory (kept
-out of the public gallery listing) and are recorded in the image's `.json`
-sidecar under `print_master`:
+original. Masters land in `print_masters/` inside the images directory and
+are recorded in the image's `.json` sidecar under `print_master`:
 
 ```json
 "print_master": {
   "status": "done",
   "file": "print_masters/sunset_master300.png",
-  "url_path": "/static/images/print_masters/sunset_master300.png",
+  "url_path": "/admin/print-master/sunset.png/file",
   "width": 4680, "height": 6240, "dpi": 300,
   "scale": 4, "model": "general", "backend": "replicate",
   "created": 1765900000.0, "error": ""
 }
 ```
+
+Masters are the full-resolution sellable asset, so they are **not public**:
+the static mounts refuse anything under `print_masters/`, and the only way to
+fetch one is the authenticated download route linked from the review page
+(`GET /admin/print-master/{image}/file`). The public gallery keeps serving the
+web-resolution original.
 
 ### Controls
 
@@ -45,8 +50,10 @@ sidecar under `print_master`:
   Off by default (opt-in), matching the AI-metadata opt-out philosophy.
 - **À la carte** — every admin review page has a _Generate print master_
   button (with regenerate), backed by:
-  - `POST /admin/print-master/{image}` (form field `force=true` to redo)
+  - `POST /admin/print-master/{image}` (form field `force=true` to redo;
+    a run already in progress is never duplicated)
   - `GET  /admin/print-master/{image}` (status polling)
+  - `GET  /admin/print-master/{image}/file` (download the master)
 - **Model choice** — `upscale_model`: `general` (painterly / photographic
   layer density) or `digital` (flat digital art / heavy linework; ~2.5×
   faster). `upscale_scale`: 2–4 (default 4).
@@ -68,6 +75,11 @@ preserved.
 > PyTorch inference is too heavy for the dyno. Set `REPLICATE_API_TOKEN` and
 > the app uses the hosted backend. Generation runs as a background task, so
 > uploads stay fast; the sidecar `status` moves `processing → done`.
+>
+> The default hosted model (`REPLICATE_UPSCALE_MODEL=nightmareai/real-esrgan`)
+> is a community model, so the app resolves its latest published version on
+> first use; set `REPLICATE_UPSCALE_VERSION` to pin one. A run interrupted by
+> a restart shows as an error on the review page and can simply be re-run.
 
 ---
 
@@ -97,9 +109,9 @@ Outputs `<name>_master300.png` files at 300 DPI. Use `--backend replicate`
 3. Model: **Digital Art** (or **General Photo** for photographic layer density).
 4. Scale factor: **4×** (≈4000 × 6000 px+ at 300 DPI).
 5. Output: `/ArtazZen/Master_300DPI_Upscaled`.
-6. Upscayl does not set the DPI tag — masters print fine regardless, but to
-   tag them run: `python3 scripts/upscale_batch.py` output already includes
-   the 300 DPI tag, or re-save via any image tool at 300 DPI.
+6. Upscayl does not set the DPI tag. Masters print fine regardless; to tag
+   them, re-save at 300 DPI in any image tool (the repo CLI above already
+   writes the 300 DPI tag).
 
 ---
 
