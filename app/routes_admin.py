@@ -38,9 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _install_incoming_file(
-    source: Path, destination: Path, *, move: bool
-) -> None:
+def _install_incoming_file(source: Path, destination: Path, *, move: bool) -> None:
     """Install an uploaded/imported file without racing sidecar mutations."""
 
     def install() -> None:
