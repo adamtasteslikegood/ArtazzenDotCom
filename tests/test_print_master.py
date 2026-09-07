@@ -276,7 +276,9 @@ def test_print_master_endpoints(art_image, authed_client, monkeypatch):
     first_created = state["created"]
 
     # Sidecar carries the print_master block
-    sidecar = json.loads((config.IMAGES_DIR / IMG_NAME).with_suffix(".json").read_text())
+    sidecar = json.loads(
+        (config.IMAGES_DIR / IMG_NAME).with_suffix(".json").read_text()
+    )
     assert sidecar["print_master"]["status"] == "done"
 
     # The master downloads through the authenticated admin route only ...
@@ -468,7 +470,9 @@ def test_soft_delete_moves_master_to_trash(art_image, authed_client, monkeypatch
     resp = authed_client.post(f"/admin/delete/{IMG_NAME}")
     assert resp.status_code == 200
     assert not master.exists()
-    assert (config.IMAGES_DIR / ".trash" / pm.PRINT_MASTER_DIRNAME / master.name).is_file()
+    assert (
+        config.IMAGES_DIR / ".trash" / pm.PRINT_MASTER_DIRNAME / master.name
+    ).is_file()
 
 
 def test_soft_delete_preserves_existing_trash_master(
@@ -506,6 +510,7 @@ def test_soft_delete_preserves_existing_trash_master(
         for path in (renamed_image, renamed_sidecar, renamed_master):
             if path is not None:
                 path.unlink(missing_ok=True)
+
 
 def test_incoming_sidecar_files_take_mutation_lock(tmp_path, monkeypatch):
     events: list[str] = []
