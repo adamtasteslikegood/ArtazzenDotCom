@@ -56,7 +56,9 @@ web-resolution original.
   - `GET  /admin/print-master/{image}/file` (download the master)
 - **Model choice** — `upscale_model`: `general` (painterly / photographic
   layer density) or `digital` (flat digital art / heavy linework; ~2.5×
-  faster). `upscale_scale`: 2–4 (default 4).
+  faster). `digital` requires the binary or torch backend; the configured
+  Replicate model supports `general` only and rejects unsupported choices
+  rather than recording a mislabeled master. `upscale_scale`: 2–4 (default 4).
 
 ### Backends (auto-selected, or forced via `UPSCALE_BACKEND`)
 
@@ -66,10 +68,11 @@ web-resolution original.
 | `binary`    | `REALESRGAN_BIN` points at `realesrgan-ncnn-vulkan` | Self-hosting with the Upscayl engine                      |
 | `torch`     | `requirements-upscale.txt` installed                | Desktop batch runs, GPU boxes                             |
 
-All backends run Real-ESRGAN — the same models Upscayl uses
-(`RealESRGAN_x4plus` = general, `RealESRGAN_x4plus_anime_6B` = digital) — and
-finish by tagging the output at 300 DPI with the original's ICC profile
-preserved.
+All backends run Real-ESRGAN. The binary and torch backends use the same
+models Upscayl uses (`RealESRGAN_x4plus` = general,
+`RealESRGAN_x4plus_anime_6B` = digital). The default hosted Replicate model
+provides the general network only. Every backend finishes by tagging the
+output at 300 DPI with the original's ICC profile preserved.
 
 > **Railway note:** do NOT add `requirements-upscale.txt` to the web deploy;
 > PyTorch inference is too heavy for the dyno. Set `REPLICATE_API_TOKEN` and
