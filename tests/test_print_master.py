@@ -337,7 +337,7 @@ def test_print_master_no_backend_returns_503(art_image, authed_client, monkeypat
 
 
 def test_print_master_in_flight_run_is_not_duplicated(
-    art_image, authed_client, monkeypatch
+    art_image, authed_client, monkeypatch, tmp_path
 ):
     gate = threading.Event()
     calls: list[str] = []
@@ -379,7 +379,18 @@ def test_print_master_in_flight_run_is_not_duplicated(
             "/admin/upload?force=true",
             files=[("files", (IMG_NAME, _png_bytes((20, 30)), "image/png"))],
         )
-        assert replacement.status_code == 409
+        assert replacement.status_code == 200
+        assert IMG_NAME in replacement.json()["skipped"]
+        assert art_image.read_bytes() == original_bytes
+
+        import_source = tmp_path / IMG_NAME
+        import_source.write_bytes(_png_bytes((10, 15)))
+        monkeypatch.setattr(config, "IMPORT_ROOT", tmp_path)
+        imported = authed_client.post(
+            "/admin/import-path?force=true", data={"path": IMG_NAME}
+        )
+        assert imported.status_code == 200
+        assert IMG_NAME in imported.json()["skipped"]
         assert art_image.read_bytes() == original_bytes
     finally:
         gate.set()
