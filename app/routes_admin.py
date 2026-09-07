@@ -490,10 +490,11 @@ async def upload_images(
                 and sidecars._allowed_image(filename)
                 and print_master.is_in_flight(destination)
             ):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Print master generation is in progress for {filename}",
+                logger.warning(
+                    "Upload skipped while print master is in progress: %s", filename
                 )
+                skipped.append(filename)
+                continue
             await asyncio.to_thread(
                 _install_incoming_file, staged_path, destination, move=True
             )
@@ -587,10 +588,11 @@ async def import_from_path(
                 and sidecars._allowed_image(target_name)
                 and print_master.is_in_flight(target)
             ):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Print master generation is in progress for {target_name}",
+                logger.warning(
+                    "Import skipped while print master is in progress: %s", target_name
                 )
+                skipped.append(target_name)
+                continue
 
             try:
                 await asyncio.to_thread(
