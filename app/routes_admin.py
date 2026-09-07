@@ -752,32 +752,37 @@ async def soft_delete_image(
     trash_dir = config.IMAGES_DIR / ".trash"
     trash_dir.mkdir(exist_ok=True)
     sidecar_path = image_path.with_suffix(".json")
-    trash_target = trash_dir / image_path.name
-    if trash_target.exists():
-        timestamp = int(time.time())
-        sequence = 0
-        while trash_target.exists():
-            suffix = f"_{sequence}" if sequence else ""
-            trash_target = (
-                trash_dir
-                / f"{image_path.stem}_{timestamp}{suffix}{image_path.suffix}"
-            )
-            sequence += 1
-    trash_name = trash_target.name
     master_path = print_master.master_path_for(image_path, config.IMAGES_DIR)
+    trash_masters = trash_dir / print_master.PRINT_MASTER_DIRNAME
+    has_master = master_path.is_file()
+    if has_master:
+        trash_masters.mkdir(exist_ok=True)
+
+    # Pick one collision-free stem for the image, sidecar, and derived master
+    # so repeated delete/re-upload cycles preserve every matching asset set.
+    trash_name = image_path.name
+    timestamp = int(time.time())
+    sequence = 0
+    while True:
+        trash_target = trash_dir / trash_name
+        trash_master_name = print_master.master_path_for(
+            Path(trash_name), Path(".")
+        ).name
+        trash_master_target = trash_masters / trash_master_name
+        if not trash_target.exists() and (
+            not has_master or not trash_master_target.exists()
+        ):
+            break
+        suffix = f"_{sequence}" if sequence else ""
+        trash_name = f"{image_path.stem}_{timestamp}{suffix}{image_path.suffix}"
+        sequence += 1
+
     shutil.move(str(image_path), str(trash_target))
     if sidecar_path.exists():
         trash_sidecar = Path(trash_name).with_suffix(".json").name
         shutil.move(str(sidecar_path), str(trash_dir / trash_sidecar))
-    if master_path.is_file():
-        # Derive the trashed master name from the collision-safe image name
-        # so repeated delete/re-upload cycles preserve every matching set.
-        trash_masters = trash_dir / print_master.PRINT_MASTER_DIRNAME
-        trash_masters.mkdir(exist_ok=True)
-        trash_master_name = print_master.master_path_for(
-            Path(trash_name), Path(".")
-        ).name
-        shutil.move(str(master_path), str(trash_masters / trash_master_name))
+    if has_master:
+        shutil.move(str(master_path), str(trash_master_target))
     logger.info("Soft-deleted %s to .trash/", image_name)
     return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
 
