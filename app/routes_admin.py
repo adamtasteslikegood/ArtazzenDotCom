@@ -743,24 +743,41 @@ async def soft_delete_image(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
+    if print_master.is_in_flight(image_path):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Print master generation is in progress",
+        )
+
     trash_dir = config.IMAGES_DIR / ".trash"
     trash_dir.mkdir(exist_ok=True)
     sidecar_path = image_path.with_suffix(".json")
-    trash_name = image_path.name
-    if (trash_dir / trash_name).exists():
-        stem, suffix = image_path.stem, image_path.suffix
-        trash_name = f"{stem}_{int(time.time())}{suffix}"
+    trash_target = trash_dir / image_path.name
+    if trash_target.exists():
+        timestamp = int(time.time())
+        sequence = 0
+        while trash_target.exists():
+            suffix = f"_{sequence}" if sequence else ""
+            trash_target = (
+                trash_dir
+                / f"{image_path.stem}_{timestamp}{suffix}{image_path.suffix}"
+            )
+            sequence += 1
+    trash_name = trash_target.name
     master_path = print_master.master_path_for(image_path, config.IMAGES_DIR)
-    shutil.move(str(image_path), str(trash_dir / trash_name))
+    shutil.move(str(image_path), str(trash_target))
     if sidecar_path.exists():
         trash_sidecar = Path(trash_name).with_suffix(".json").name
         shutil.move(str(sidecar_path), str(trash_dir / trash_sidecar))
     if master_path.is_file():
-        # The print master is derived from this image; keep it with the
-        # trashed original rather than leaking it on the volume.
+        # Derive the trashed master name from the collision-safe image name
+        # so repeated delete/re-upload cycles preserve every matching set.
         trash_masters = trash_dir / print_master.PRINT_MASTER_DIRNAME
         trash_masters.mkdir(exist_ok=True)
-        shutil.move(str(master_path), str(trash_masters / master_path.name))
+        trash_master_name = print_master.master_path_for(
+            Path(trash_name), Path(".")
+        ).name
+        shutil.move(str(master_path), str(trash_masters / trash_master_name))
     logger.info("Soft-deleted %s to .trash/", image_name)
     return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
 
