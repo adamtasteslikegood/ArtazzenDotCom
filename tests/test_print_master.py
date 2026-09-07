@@ -290,6 +290,28 @@ def test_print_master_endpoints(art_image, authed_client, monkeypatch):
     assert state["created"] > first_created
 
 
+
+def test_initial_print_master_link_honors_root_path(art_image, monkeypatch):
+    sidecar = art_image.with_suffix(".json")
+    data = json.loads(sidecar.read_text())
+    data["print_master"] = {
+        "status": "done",
+        "url_path": f"/admin/print-master/{IMG_NAME}/file",
+        "width": 160,
+        "height": 240,
+        "dpi": 300,
+    }
+    sidecar.write_text(json.dumps(data))
+
+    monkeypatch.setenv("ADMIN_PASSWORD", "testpass")
+    with TestClient(app, root_path="/gallery") as client:
+        client.headers.update(_basic_auth_header())
+        page = client.get(f"/admin/review/{IMG_NAME}")
+
+    assert page.status_code == 200
+    assert f'href="/gallery/admin/print-master/{IMG_NAME}/file"' in page.text
+
+
 def test_print_master_no_backend_returns_503(art_image, authed_client, monkeypatch):
     monkeypatch.setattr(pm, "available_backend", lambda: None)
     resp = authed_client.post(f"/admin/print-master/{IMG_NAME}")
@@ -327,6 +349,12 @@ def test_print_master_in_flight_run_is_not_duplicated(
 
         status_resp = authed_client.get(f"/admin/print-master/{IMG_NAME}")
         assert status_resp.json()["print_master"]["status"] == "processing"
+
+        # Deleting the source while its master is being written could orphan
+        # the task output or recreate a master for a deleted image.
+        delete = authed_client.post(f"/admin/delete/{IMG_NAME}")
+        assert delete.status_code == 409
+        assert art_image.is_file()
     finally:
         gate.set()
 
@@ -397,3 +425,42 @@ def test_soft_delete_moves_master_to_trash(art_image, authed_client, monkeypatch
     assert resp.status_code == 200
     assert not master.exists()
     assert (IMAGES_DIR / ".trash" / pm.PRINT_MASTER_DIRNAME / master.name).is_file()
+
+
+def test_soft_delete_preserves_existing_trash_master(
+    art_image, authed_client, monkeypatch
+):
+    monkeypatch.setattr(pm, "available_backend", lambda: "torch")
+    monkeypatch.setitem(pm._BACKENDS, "torch", _fake_backend_factory())
+    authed_client.post(f"/admin/print-master/{IMG_NAME}")
+    assert _wait_for_settled(authed_client, IMG_NAME)["status"] == "done"
+
+    trash = IMAGES_DIR / ".trash"
+    trash_masters = trash / pm.PRINT_MASTER_DIRNAME
+    trash_masters.mkdir(parents=True, exist_ok=True)
+    old_image = trash / IMG_NAME
+    old_master = trash_masters / pm.master_path_for(art_image, IMAGES_DIR).name
+    old_image.write_bytes(b"older image")
+    old_master.write_bytes(b"older master")
+    renamed_image = None
+    renamed_sidecar = None
+    renamed_master = None
+    try:
+        resp = authed_client.post(f"/admin/delete/{IMG_NAME}")
+        assert resp.status_code == 200
+        assert old_image.read_bytes() == b"older image"
+        assert old_master.read_bytes() == b"older master"
+
+        candidates = list(trash.glob(f"{art_image.stem}_*{art_image.suffix}"))
+        assert len(candidates) == 1
+        renamed_image = candidates[0]
+        renamed_sidecar = renamed_image.with_suffix(".json")
+        renamed_master = trash_masters / pm.master_path_for(
+            renamed_image, trash
+        ).name
+        assert renamed_sidecar.is_file()
+        assert renamed_master.is_file()
+    finally:
+        for path in (renamed_image, renamed_sidecar, renamed_master):
+            if path is not None:
+                path.unlink(missing_ok=True)
