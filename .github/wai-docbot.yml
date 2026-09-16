@@ -158,8 +158,15 @@ include_extensions:
 # Glob patterns for files and directories to EXCLUDE from documentation
 # Customize by adding your own patterns or removing defaults that don't apply
 exclude:
-  # Custom exclusions for this project (uncomment and modify as needed)
-  # - "iac/**"  # Infrastructure as code
+  # Repository-specific internal tooling and generated artifacts.
+  # Keep this aligned with the "Excluded Paths" policy in copilot-instructions.md.
+  - ".claude/skills/**"
+  - ".claude/agents/**"
+  - ".claude/commands/**"
+  - ".copilot/skills/**"
+  - ".github/instructions/**"
+  - "artazzen-design-system/**"
+  - "AGENTS.md"
 
   ## STANDARD EXCLUSIONS ##
 
