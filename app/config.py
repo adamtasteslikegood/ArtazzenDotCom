@@ -110,6 +110,11 @@ def _get_ai_config() -> dict[str, Any]:
     # too small a budget yields incomplete (empty-text) responses.
     if model.startswith("gpt-5") and max_output_tokens < 1200:
         max_output_tokens = 1200
+    try:
+        upscale_scale = int(cfg.get("upscale_scale", 4))
+    except (TypeError, ValueError):
+        upscale_scale = 4
+    upscale_model = str(cfg.get("upscale_model", "general"))
     return {
         "enabled": enabled,
         "model": model,
@@ -117,6 +122,11 @@ def _get_ai_config() -> dict[str, Any]:
         "max_output_tokens": max_output_tokens,
         "default_artist": str(cfg.get("default_artist", "")),
         "default_copyright": str(cfg.get("default_copyright", "")),
+        "upscale_enabled": _coerce_bool(cfg.get("upscale_enabled", False)),
+        "upscale_scale": max(2, min(4, upscale_scale)),
+        "upscale_model": (
+            upscale_model if upscale_model in ("general", "digital") else "general"
+        ),
     }
 
 
@@ -164,6 +174,10 @@ def _default_ai_config_from_env() -> dict[str, Any]:
         ),
         "default_artist": os.getenv("DEFAULT_ARTIST", ""),
         "default_copyright": os.getenv("DEFAULT_COPYRIGHT", ""),
+        # Print-master upscaling (opt-in; see app/print_master.py)
+        "upscale_enabled": _parse_bool_env(os.getenv("UPSCALE_ENABLED"), False),
+        "upscale_scale": _parse_int_env(os.getenv("UPSCALE_SCALE"), 4),
+        "upscale_model": os.getenv("UPSCALE_MODEL", "general"),
     }
 
 
@@ -188,6 +202,15 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
             out["default_artist"] = cfg["default_artist"].strip()
         if isinstance(cfg.get("default_copyright"), str):
             out["default_copyright"] = cfg["default_copyright"].strip()
+        if "upscale_enabled" in cfg:
+            out["upscale_enabled"] = _coerce_bool(cfg.get("upscale_enabled"))
+        try:
+            s = int(cfg.get("upscale_scale", out["upscale_scale"]))
+            out["upscale_scale"] = max(2, min(4, s))
+        except (TypeError, ValueError):
+            pass
+        if cfg.get("upscale_model") in ("general", "digital"):
+            out["upscale_model"] = cfg["upscale_model"]
     return out
 
 
