@@ -13,13 +13,6 @@ updates:
       - dependencies
     commit-message:
       prefix: "chore(deps)"
-    # pydantic hard-pins an exact pydantic-core; bumping them separately
-    # produces an unresolvable requirements.txt.
-    groups:
-      pydantic:
-        patterns:
-          - "pydantic"
-          - "pydantic-core"
 
   # GitHub Actions versions
   - package-ecosystem: github-actions
