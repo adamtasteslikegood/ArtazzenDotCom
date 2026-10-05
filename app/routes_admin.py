@@ -5,6 +5,7 @@ import copy
 import logging
 import os
 import shutil
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -19,16 +20,38 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from starlette import status
 
-from app import ai_metadata, config, curation, sidecars, watcher
+from app import ai_metadata, config, curation, print_master, sidecars, watcher
 from app.security import _verify_admin
 from app.watcher import get_pending_files
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _install_incoming_file(source: Path, destination: Path, *, move: bool) -> None:
+    """Install an uploaded/imported file without racing sidecar mutations."""
+
+    def install() -> None:
+        if move:
+            os.replace(source, destination)
+        else:
+            shutil.copy2(source, destination)
+
+    if destination.suffix.lower() == ".json":
+        with sidecars.sidecar_mutation_lock.held():
+            install()
+    else:
+        install()
 
 
 def _select_import_files(candidate: str) -> list[Path]:
@@ -260,6 +283,16 @@ async def update_admin_config(
             cfg["default_artist"] = ai["default_artist"].strip()
         if "default_copyright" in ai and isinstance(ai["default_copyright"], str):
             cfg["default_copyright"] = ai["default_copyright"].strip()
+        if "upscale_enabled" in ai:
+            cfg["upscale_enabled"] = config._coerce_bool(ai["upscale_enabled"])
+        if "upscale_scale" in ai:
+            try:
+                s = int(ai["upscale_scale"])
+                cfg["upscale_scale"] = max(2, min(4, s))
+            except (TypeError, ValueError):
+                pass
+        if ai.get("upscale_model") in ("general", "digital"):
+            cfg["upscale_model"] = ai["upscale_model"]
     config.runtime_ai_config = cfg
     config._save_ai_config(cfg)
     return JSONResponse({"ai": cfg, "message": "Configuration updated and saved"})
@@ -411,6 +444,19 @@ async def upload_images(
                 upload.file.close()
                 continue
 
+        if (
+            destination.exists()
+            and sidecars._allowed_image(filename)
+            and print_master.is_in_flight(destination)
+        ):
+            logger.warning(
+                "Upload skipped while print master is in progress: %s", filename
+            )
+            skipped.append(filename)
+            upload.file.close()
+            continue
+
+        staged_path: Path | None = None
         try:
             # Fast pre-check using Content-Length / spooled size when available
             upload_size = getattr(upload, "size", None)
@@ -422,10 +468,18 @@ async def upload_images(
                 )
                 skipped.append(filename)
                 continue
-            # Stream to disk in chunks to avoid holding entire files in memory
+            # Stage next to the destination, then atomically replace it. This
+            # keeps readers from observing partial bytes and preserves an
+            # existing image when a replacement exceeds the upload limit.
+            fd, staged_name = tempfile.mkstemp(
+                dir=destination.parent,
+                prefix=f".{destination.name}.",
+                suffix=".upload",
+            )
+            staged_path = Path(staged_name)
             bytes_written = 0
             exceeded = False
-            with destination.open("wb") as buffer:
+            with os.fdopen(fd, "wb") as buffer:
                 while True:
                     chunk = await upload.read(config.UPLOAD_CHUNK_SIZE)
                     if not chunk:
@@ -436,7 +490,6 @@ async def upload_images(
                         break
                     buffer.write(chunk)
             if exceeded:
-                destination.unlink(missing_ok=True)
                 logger.warning(
                     "Upload rejected: %s exceeds size limit (%d MB)",
                     filename,
@@ -444,16 +497,25 @@ async def upload_images(
                 )
                 skipped.append(filename)
                 continue
+            await asyncio.to_thread(
+                _install_incoming_file, staged_path, destination, move=True
+            )
+            staged_path = None
             saved.append(filename)
             if sidecars._allowed_image(filename):
                 # Ensure sidecar exists for newly uploaded images
                 sidecars._ensure_sidecar(
                     destination, sidecars._load_metadata(destination)
                 )
+                # Opt-in AI upscaling to a 300 DPI print master (no-op unless
+                # upscale_enabled is set and a backend is configured).
+                print_master._schedule_print_master(destination)
         except OSError as exc:
             logger.error("Failed to save %s: %s", filename, exc)
             skipped.append(filename)
         finally:
+            if staged_path is not None:
+                staged_path.unlink(missing_ok=True)
             upload.file.close()
 
     message = "Uploaded files successfully" if saved else "No supported files uploaded"
@@ -523,11 +585,25 @@ async def import_from_path(
                     )
                     continue
 
+            if (
+                target.exists()
+                and sidecars._allowed_image(target_name)
+                and print_master.is_in_flight(target)
+            ):
+                logger.warning(
+                    "Import skipped while print master is in progress: %s", target_name
+                )
+                skipped.append(target_name)
+                continue
+
             try:
-                shutil.copy2(file_path, target)
+                await asyncio.to_thread(
+                    _install_incoming_file, file_path, target, move=False
+                )
                 copied.append(target_name)
                 if sidecars._allowed_image(target_name):
                     sidecars._ensure_sidecar(target, sidecars._load_metadata(target))
+                    print_master._schedule_print_master(target)
             except OSError as exc:
                 logger.error("Failed to copy %s: %s", file_path, exc)
                 skipped.append(target_name)
@@ -569,6 +645,9 @@ async def preview_image_metadata(
     sidecars._ensure_sidecar(image_path, metadata)
     metadata = ai_metadata._populate_missing_metadata(
         image_path, sidecars._load_metadata(image_path)
+    )
+    metadata["print_master"] = print_master.reconcile_state(
+        image_path, metadata.get("print_master")
     )
 
     current_status = metadata.get("status", "pending")
@@ -720,17 +799,46 @@ async def soft_delete_image(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
+    if print_master.is_in_flight(image_path):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Print master generation is in progress",
+        )
+
     trash_dir = config.IMAGES_DIR / ".trash"
     trash_dir.mkdir(exist_ok=True)
     sidecar_path = image_path.with_suffix(".json")
+    master_path = print_master.master_path_for(image_path, config.IMAGES_DIR)
+    trash_masters = trash_dir / print_master.PRINT_MASTER_DIRNAME
+    has_master = master_path.is_file()
+    if has_master:
+        trash_masters.mkdir(exist_ok=True)
+
+    # Pick one collision-free stem for the image, sidecar, and derived master
+    # so repeated delete/re-upload cycles preserve every matching asset set.
     trash_name = image_path.name
-    if (trash_dir / trash_name).exists():
-        stem, suffix = image_path.stem, image_path.suffix
-        trash_name = f"{stem}_{int(time.time())}{suffix}"
-    shutil.move(str(image_path), str(trash_dir / trash_name))
+    timestamp = int(time.time())
+    sequence = 0
+    while True:
+        trash_target = trash_dir / trash_name
+        trash_master_name = print_master.master_path_for(
+            Path(trash_name), Path(".")
+        ).name
+        trash_master_target = trash_masters / trash_master_name
+        if not trash_target.exists() and (
+            not has_master or not trash_master_target.exists()
+        ):
+            break
+        suffix = f"_{sequence}" if sequence else ""
+        trash_name = f"{image_path.stem}_{timestamp}{suffix}{image_path.suffix}"
+        sequence += 1
+
+    shutil.move(str(image_path), str(trash_target))
     if sidecar_path.exists():
         trash_sidecar = Path(trash_name).with_suffix(".json").name
         shutil.move(str(sidecar_path), str(trash_dir / trash_sidecar))
+    if has_master:
+        shutil.move(str(master_path), str(trash_master_target))
     logger.info("Soft-deleted %s to .trash/", image_name)
     return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
 
@@ -786,3 +894,133 @@ async def accept_all_pending(
         except Exception:
             logger.warning("Failed to approve %s", name, exc_info=True)
     return JSONResponse({"approved": approved, "count": len(approved)})
+
+
+@router.post("/admin/print-master/{image_name}", response_class=JSONResponse)
+async def create_print_master(
+    image_name: str,
+    force: bool = Form(False),
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Kick off (or re-run) 300 DPI print-master generation for one image."""
+    filename = sidecars._sanitize_filename(image_name)
+    if not filename or not sidecars._allowed_image(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    image_path = sidecars._resolve_image_path(filename)
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+
+    settings = print_master._print_master_settings()
+    if not settings["backend"]:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No upscale backend configured. Set REPLICATE_API_TOKEN, "
+                "REALESRGAN_BIN, or install requirements-upscale.txt."
+            ),
+        )
+
+    existing = sidecars._load_metadata(image_path).get("print_master") or {}
+    # An in-flight run wins even over force: two jobs would race on the same
+    # output file. A stale "processing" block with no worker (app restarted
+    # mid-run) is not in flight, so it can simply be re-run.
+    if print_master.is_in_flight(image_path):
+        return JSONResponse(
+            {
+                "name": filename,
+                "print_master": print_master.reconcile_state(image_path, existing),
+                "message": "Already processing",
+            }
+        )
+    if existing.get("status") == "done" and not force:
+        return JSONResponse(
+            {
+                "name": filename,
+                "print_master": existing,
+                "message": "Print master already exists (use force to regenerate)",
+            }
+        )
+
+    if not print_master.schedule_print_master(image_path):
+        current = sidecars._load_metadata(image_path).get("print_master") or existing
+        return JSONResponse(
+            {
+                "name": filename,
+                "print_master": print_master.reconcile_state(image_path, current),
+                "message": "Already processing",
+            }
+        )
+    return JSONResponse(
+        {
+            "name": filename,
+            "print_master": {"status": "processing"},
+            "message": "Print master generation started",
+        }
+    )
+
+
+@router.get("/admin/print-master/{image_name}", response_class=JSONResponse)
+async def print_master_status(
+    image_name: str,
+    _: None = Depends(_verify_admin),
+) -> JSONResponse:
+    """Return print-master status for one image (poll target for the admin UI)."""
+    filename = sidecars._sanitize_filename(image_name)
+    if not filename or not sidecars._allowed_image(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    image_path = sidecars._resolve_image_path(filename)
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    pm = print_master.reconcile_state(
+        image_path, sidecars._load_metadata(image_path).get("print_master")
+    )
+    return JSONResponse(
+        {
+            "name": filename,
+            "print_master": pm,
+            "backend": print_master._print_master_settings()["backend"],
+        }
+    )
+
+
+@router.get("/admin/print-master/{image_name}/file")
+async def download_print_master(
+    image_name: str,
+    _: None = Depends(_verify_admin),
+) -> FileResponse:
+    """Stream the 300 DPI master to the admin.
+
+    Masters are the full-resolution sellable asset: they live under
+    ``IMAGES_DIR`` (so they persist on the Railway volume) but the public
+    static mounts refuse to serve ``print_masters/``, so this authenticated
+    route is the only way to fetch one.
+    """
+    filename = sidecars._sanitize_filename(image_name)
+    if not filename or not sidecars._allowed_image(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    image_path = sidecars._resolve_image_path(filename)
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    master_path = print_master.master_path_for(image_path, config.IMAGES_DIR)
+    if not master_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Print master not found"
+        )
+    return FileResponse(
+        master_path,
+        media_type="image/png",
+        filename=master_path.name,
+        headers={"Cache-Control": "private, no-store"},
+    )
