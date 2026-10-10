@@ -2374,9 +2374,7 @@ def test_watcher_prunes_retry_budget_for_deleted_images(monkeypatch, tmp_path):
     assert key not in gallery_app.ai_metadata._auto_retries
 
 
-def test_watcher_preserves_retry_budget_while_ai_unavailable(
-    monkeypatch, tmp_path
-):
+def test_watcher_preserves_retry_budget_while_ai_unavailable(monkeypatch, tmp_path):
     """Disabled AI or a missing key must not consume an image's retry budget."""
     image_root = tmp_path / "images"
     image_root.mkdir()
