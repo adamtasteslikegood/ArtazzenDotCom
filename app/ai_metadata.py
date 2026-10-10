@@ -401,11 +401,12 @@ def _request_openai_metadata(
     return result
 
 
-# Automatic retries used per image since process start, keyed by image path.
+# Automatic retry state per image since process start, keyed by image path.
+# Each value holds (file signature, retries used, most recent dispatch time).
 # Kept in memory on purpose: a restart or deploy grants a fresh set of tries.
 # The stored file signature ties the count to the file on disk, so a
 # replacement under the same filename starts with a full budget.
-_auto_retries: dict[str, tuple[tuple[int, int, int], int]] = {}
+_auto_retries: dict[str, tuple[tuple[int, int, int], int, float]] = {}
 
 
 def _file_signature(image_path: Path) -> tuple[int, int, int]:
@@ -449,35 +450,54 @@ def _auto_retry_due(image_path: Path, metadata: dict[str, Any]) -> bool:
     if not _has_missing_ai_fields(metadata):
         _auto_retries.pop(key, None)
         return True
+
     ai_details = metadata.get("ai_details")
-    if not isinstance(ai_details, dict):
-        return True
-    if ai_details.get("status") == "skipped_no_api_key":
-        return bool(_get_openai_api_key())
-    try:
-        attempted_at = float(ai_details.get("attempted_at") or 0)
-    except (TypeError, ValueError):
-        return True
-    if attempted_at <= 0:
-        return True
-    # Do not spend a retry when the watcher cannot make an OpenAI request.
-    # Runtime config and credentials may become available again without a
-    # process restart, so preserve the existing image's remaining budget.
+    status = ai_details.get("status") if isinstance(ai_details, dict) else ""
+
+    # Do not reserve an attempt while the watcher cannot dispatch a request.
+    # A first missing-key scan is still allowed through so its diagnostic can
+    # be persisted; subsequent scans wait until a key becomes available.
     if not config._get_ai_config().get("enabled", True):
         return False
     if not _get_openai_api_key():
-        return False
+        return not isinstance(ai_details, dict) or not ai_details
+    if status == "skipped_no_api_key":
+        ai_details = None
+
     signature = _file_signature(image_path)
-    stored_signature, retries = _auto_retries.get(key, (signature, 0))
-    if stored_signature != signature:
-        retries = 0  # the file was replaced; the old count is not its own
+    retry_state = _auto_retries.get(key)
+    file_replaced = retry_state is not None and retry_state[0] != signature
+    if file_replaced:
+        _auto_retries.pop(key, None)
+        retry_state = None
+
+    persisted_attempted_at = 0.0
+    if isinstance(ai_details, dict) and not file_replaced:
+        try:
+            persisted_attempted_at = float(ai_details.get("attempted_at") or 0)
+        except (TypeError, ValueError):
+            persisted_attempted_at = 0.0
+
+    if retry_state is None:
+        retries = 0
+        in_memory_attempted_at = 0.0
+    else:
+        _, retries, in_memory_attempted_at = retry_state
+
+    attempted_at = max(persisted_attempted_at, in_memory_attempted_at)
+    if attempted_at <= 0:
+        # Reserve the initial dispatch before the request. If writing the
+        # resulting sidecar fails, the in-memory timestamp still enforces the
+        # delay and retry ceiling on later scans.
+        _auto_retries[key] = (signature, 0, time.time())
+        return True
     if retries >= config.AI_MAX_RETRIES:
         return False
     if time.time() - attempted_at < config.AI_RETRY_DELAY_SECONDS:
         return False
-    _auto_retries[key] = (signature, retries + 1)
-    return True
 
+    _auto_retries[key] = (signature, retries + 1, time.time())
+    return True
 
 def _populate_missing_metadata(
     image_path: Path,
