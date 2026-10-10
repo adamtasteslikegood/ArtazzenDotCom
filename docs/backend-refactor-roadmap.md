@@ -111,6 +111,10 @@ test that does not go through HTTP.
   `{"error": {"code": "...", "message": "...", "details": {...}}}`. Legacy
   adapters keep FastAPI's `{"detail": ...}` body and status codes; they
   translate the same service errors into that shape.
+  That includes failures raised before a service runs: handlers scoped to
+  the `/api/v1` prefix convert `RequestValidationError` and `HTTPException`
+  (including authentication failures, keeping `WWW-Authenticate`) into the
+  envelope, and leave every other path on FastAPI's default.
 - Mutations accept an `Idempotency-Key`. Phase 3 implements the durable
   coordinator as a SQLite operation journal with a unique
   `(principal, operation, key)` constraint and `BEGIN IMMEDIATE` claims. Each
@@ -124,7 +128,11 @@ test that does not go through HTTP.
   the recorded new hash, then completes the row. Staged files with no
   committed row belong to an operation that never happened and are deleted.
   Removals are journalled renames into `.trash/`, which recovery repeats the
-  same way. Matching complete
+  same way. The journal database (with its WAL and SHM files), the staging
+  directory and the outbox live in `IMAGES_DIR/.state/`: on the persistent
+  volume in production, and on the same filesystem as the sidecars so that
+  `os.replace` stays atomic. That directory is never served, and startup
+  fails if it is missing or not writable. Matching complete
   requests replay the stored response; mismatched payloads return `409`.
   External effects such as CDN purges use a durable outbox after the local
   commit. An endpoint is not advertised as idempotent until crash-injection and
