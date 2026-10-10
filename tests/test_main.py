@@ -802,6 +802,77 @@ def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
     assert cfg["max_output_tokens"] == 1200
 
 
+def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):
+    """GPT-6 models are reasoning models: token floor, no temperature sent."""
+    monkeypatch.setattr(
+        gallery_app.config,
+        "runtime_ai_config",
+        {"model": "gpt-6.1-sol", "max_output_tokens": 624},
+    )
+    assert gallery_app._get_ai_config()["max_output_tokens"] == 1200
+
+    _patch_openai_transport(monkeypatch, _output_text_payload('{"title": "T"}'))
+    fake_client = gallery_app.ai_metadata.httpx.Client
+    sent = {}
+
+    class RecordingClient(fake_client):
+        def post(self, url, **kwargs):
+            sent.update(kwargs.get("json") or {})
+            return super().post(url, **kwargs)
+
+    monkeypatch.setattr(gallery_app.ai_metadata.httpx, "Client", RecordingClient)
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert sent["model"] == "gpt-6.1-sol"
+    assert "temperature" not in sent
+    assert sent["reasoning"] == {"effort": "low"}
+
+
+def test_reasoning_effort_falls_back_when_model_rejects_it(monkeypatch):
+    for model, effort, expected in [
+        ("gpt-6-luna", "none", "none"),
+        ("gpt-6-astra", "none", "low"),
+        ("gpt-6.1-sol", "minimal", "low"),
+        ("gpt-6.1-sol", "high", "high"),
+        ("gpt-6-luna", "bogus", "low"),
+    ]:
+        monkeypatch.setattr(
+            gallery_app.config,
+            "runtime_ai_config",
+            {"model": model, "reasoning_effort": effort},
+        )
+        assert gallery_app._get_ai_config()["reasoning_effort"] == expected
+
+
+def test_admin_config_saves_reasoning_effort(monkeypatch, tmp_path):
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
+    monkeypatch.setattr(gallery_app.config, "runtime_ai_config", {})
+    client = TestClient(gallery_app.app)
+    auth = ("admin", "secret")
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+
+    saved = client.post(
+        "/admin/config",
+        json={"ai": {"model": "gpt-6-luna", "reasoning_effort": "none"}},
+        auth=auth,
+    ).json()["ai"]
+    assert saved["reasoning_effort"] == "none"
+    assert "temperature" in saved  # still returned for the iOS client
+
+    # Switching to a model that rejects the stored effort resets it.
+    saved = client.post(
+        "/admin/config", json={"ai": {"model": "gpt-6-astra"}}, auth=auth
+    ).json()["ai"]
+    assert saved["reasoning_effort"] == "low"
+    assert json.loads((tmp_path / "ai.json").read_text())["reasoning_effort"] == "low"
+
+
+def test_default_model_is_gpt6_luna():
+    assert gallery_app.config.OPENAI_DEFAULT_MODEL == "gpt-6-luna"
+    shipped = json.loads((gallery_app.config.BASE_DIR / "ai_config.json").read_text())
+    assert shipped["model"] == "gpt-6-luna"
+
+
 def test_stuffed_title_rejected(monkeypatch, tmp_path):
     """A title value containing embedded JSON keys is rejected, not injected."""
     stuffed = (
