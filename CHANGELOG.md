@@ -6,25 +6,48 @@ All notable changes to this project will be documented in this file.
 
 ## [0.3.0] - 2026-10-10
 
+### Added
+
+- Reasoning effort setting in the admin AI settings (`none`, `minimal`, `low`,
+  `medium`, `high`; default `low`), sent to GPT-5 and GPT-6 models. Efforts a
+  model rejects (`none` on `gpt-6-astra`; `none` and `minimal` on
+  `gpt-6.1-sol`) are disabled in the form and fall back to `low` on the
+  server.
+- `AI_MAX_RETRIES` (default 5) and `AI_RETRY_DELAY_SECONDS` (default 60)
+  environment variables for the watcher's automatic AI retries.
+- WAI DocBot configuration (`.github/wai-docbot.yml`).
+
 ### Changed
 
 - Default AI metadata model is now `gpt-6-luna` (code default and the shipped
-  `ai_config.json`). The admin model list is now `gpt-6.1-sol`,
-  `gpt-6-luna` and `gpt-6-astra`; older models are no longer offered.
-- The admin temperature setting is replaced by a reasoning effort setting
-  (`none`, `minimal`, `low`, `medium`, `high`; default `low`), sent to GPT-5
-  and GPT-6 models. Efforts a model rejects (`none` on `gpt-6-astra`; `none`
-  and `minimal` on `gpt-6.1-sol`) are disabled in the form and fall back to
-  `low` on the server. `/admin/config` still returns `temperature` for older
-  clients; it is only sent to non-reasoning models.
+  `ai_config.json`, which takes precedence over
+  `OPENAI_IMAGE_METADATA_MODEL`).
+- The admin model list is now `gpt-6.1-sol`, `gpt-6-luna` and `gpt-6-astra`;
+  older models are no longer offered. A previously saved model that is no
+  longer listed stays visible and selected.
+- GPT-6 models are handled like GPT-5: no `temperature` is sent and
+  `max_output_tokens` is raised to at least 1200.
+- The admin temperature control is removed. `/admin/config` still accepts and
+  returns `temperature` for older clients; it is sent only to non-reasoning
+  models.
+- Dependency updates, including FastAPI 0.142.2, Starlette 1.7.0, Uvicorn
+  0.54.0, Pydantic 2.13.5 and sentry-sdk 2.70.0. `pydantic-core` is no longer
+  pinned directly.
 
 ### Fixed
 
 - Background watcher no longer re-sends an image to OpenAI on every 5-second
-  poll when an attempt leaves fields empty. Automatic retries are limited to
-  `AI_MAX_RETRIES` (default 5), spaced `AI_RETRY_DELAY_SECONDS` (default 60)
-  apart; both are environment variables. The count resets on restart.
-  Admin-triggered regeneration is unaffected.
+  poll when an attempt leaves fields empty. After the first attempt it makes
+  at most `AI_MAX_RETRIES` further tries per image, at least
+  `AI_RETRY_DELAY_SECONDS` apart. A restart grants a new set of retries.
+  Admin-triggered regeneration is not limited.
+- The retry count starts over when an image file is replaced under the same
+  name or regenerated from the admin page, is not used up while AI is
+  disabled or no API key is set, and is dropped when the image is deleted.
+- An unexpected error during an automatic AI request is recorded on the
+  sidecar as `error_processing` and counts as a failed attempt, instead of
+  being retried on every poll;
+  preview and other non-saving requests still raise it.
 
 ## [0.2.0] - 2026-09-02
 
