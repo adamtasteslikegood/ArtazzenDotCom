@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from starlette import status
 
-from app import config, curation, seo, sidecars
+from app import config, curation, media, seo, sidecars
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +189,13 @@ async def artwork_detail(request: Request, image_filename: str):
         )
 
     metadata = sidecars._load_metadata(image_path)
-    image_url = f"{config.IMAGES_URL_PREFIX}/{filename}"
+    if metadata.get("status", "pending") != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Artwork not found"
+        )
+    # Social cards and JSON-LD keep the original: several link-preview
+    # crawlers do not read WebP.
+    image_url = media.public_url(filename)
 
     artwork_data = {
         "title": metadata.get("title", "Artwork"),
@@ -200,6 +206,7 @@ async def artwork_detail(request: Request, image_filename: str):
         "copyright": metadata.get("copyright", ""),
         "collection": metadata.get("collection", ""),
         "image_url": image_url,
+        "display_url": media.derivative_url(filename, config.DISPLAY_WIDTH),
     }
 
     gallery = sidecars.get_artwork_files(status_filter="approved")
@@ -259,7 +266,7 @@ async def read_root(request: Request):
     It gets the list of artwork files and renders the index.html template.
     """
     logger.info("Request received for root path ('/')")
-    artwork_list = sidecars.get_artwork_files()
+    artwork_list = media.list_artworks()
 
     # Data to pass to the HTML template
     context = {

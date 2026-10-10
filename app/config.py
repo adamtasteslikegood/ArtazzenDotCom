@@ -16,7 +16,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "Static"
 IMAGES_DIR = Path(os.getenv("IMAGES_DIR", STATIC_DIR / "images"))
 _USING_VOLUME = IMAGES_DIR != STATIC_DIR / "images"
-IMAGES_URL_PREFIX = "/images" if _USING_VOLUME else "/static/images"
+# Images are always served from /images (approved-only, see app/media.py),
+# whether or not IMAGES_DIR is a mounted volume.
+IMAGES_URL_PREFIX = "/images"
+# Pre-generated WebP derivative widths: gallery grids and the detail page.
+THUMB_WIDTH = 480
+DISPLAY_WIDTH = 1600
+WEBP_QUALITY = 80
+# Derivatives built for existing images per watcher scan (5 s apart).
+DERIVATIVE_BACKFILL_PER_SCAN = 5
+# Cloudflare cache purge for images that stop being public; both optional.
+CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+CLOUDFLARE_ZONE_ID = os.getenv("CLOUDFLARE_ZONE_ID", "").strip()
 IMPORT_ROOT = Path(os.getenv("IMPORT_ROOT", BASE_DIR / "imports"))
 GALLERY_TITLE = os.getenv("GALLERY_TITLE", "Artazzen Gallery")
 SITE_URL = os.getenv("SITE_URL", "https://artazzen.com").rstrip("/")

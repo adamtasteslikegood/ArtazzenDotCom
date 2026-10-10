@@ -42,6 +42,7 @@ main.py                  # Entrypoint + compat shim (uvicorn main:app)
 app/
   config.py              # Paths, env, runtime AI config (single source of truth)
   sidecars.py            # Schema, path safety, sidecar/metadata I/O
+  media.py               # Image URLs, cache headers, WebP derivatives, CDN purge
   ai_metadata.py         # OpenAI prompt/request/populate pipeline
   curation.py            # Collections + series registries, migration, dedup
   watcher.py             # Pending-file detection and background poll
@@ -63,7 +64,7 @@ scripts/                 # Migration, branch status, codegen utilities
 tests/test_main.py       # Pytest suite
 ```
 
-Module layering (no cycles): `config -> sidecars -> ai_metadata -> curation -> watcher -> seo -> security/routes -> factory -> main`.
+Module layering (no cycles): `config -> sidecars -> media -> ai_metadata -> curation -> watcher -> seo -> security/routes -> factory -> main`.
 
 ## Route Map
 
@@ -129,6 +130,10 @@ See `.env.example` for the full list. Key variables:
 | `AI_MAX_RETRIES`              | `5`                    | Automatic AI retries per image after a failed attempt |
 | `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum seconds between automatic AI retries          |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                  |
+| `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; enables purge on unapprove/delete  |
+| `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone id, required with the token           |
+
+Images are served from `/images`, approved artwork only. Gallery grids load 480 px WebP thumbnails and the detail page a 1600 px WebP, both generated into `IMAGES_DIR/.derived/`. Image and stylesheet URLs carry a version segment and are cached for a year; unversioned URLs are cached for an hour. Pending and hidden images are visible only to the admin through `/admin/image/{name}`.
 
 ## Testing
 

@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -19,10 +20,16 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from starlette import status
 
-from app import ai_metadata, config, curation, sidecars, watcher
+from app import ai_metadata, config, curation, media, sidecars, watcher
 from app.security import _verify_admin
 from app.watcher import get_pending_files
 
@@ -86,7 +93,7 @@ async def admin_home(
     _: None = Depends(_verify_admin),
 ) -> HTMLResponse:
     """Render the admin review dashboard."""
-    gallery_images = sidecars.get_artwork_files(status_filter="approved")
+    gallery_images = media.list_artworks(status_filter="approved")
     return config.templates.TemplateResponse(
         request,
         "reviewAddedFiles.html",
@@ -105,7 +112,7 @@ async def review_added_files(
     _: None = Depends(_verify_admin),
 ) -> HTMLResponse:
     """Render the admin review dashboard. Alias for /admin."""
-    gallery_images = sidecars.get_artwork_files(status_filter="approved")
+    gallery_images = media.list_artworks(status_filter="approved")
     return config.templates.TemplateResponse(
         request,
         "reviewAddedFiles.html",
@@ -123,8 +130,31 @@ async def api_new_files(
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     """Return pending and gallery files as JSON."""
-    gallery = sidecars.get_artwork_files(status_filter="approved")
+    gallery = media.list_artworks(status_filter="approved")
     return JSONResponse({"pending": pending, "gallery": gallery})
+
+
+@router.get("/admin/image/{image_name}")
+async def admin_image(
+    image_name: str,
+    w: int | None = Query(None),
+    _: None = Depends(_verify_admin),
+) -> FileResponse:
+    """Serve an image of any status to the admin (never cached).
+
+    `w` selects a pre-generated derivative width; the original is sent when
+    that derivative does not exist.
+    """
+    filename = sidecars._sanitize_filename(image_name)
+    if not filename or not sidecars._allowed_image(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    if not sidecars._resolve_image_path(filename).is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
+        )
+    return FileResponse(media.admin_preview_path(filename, w), headers=media.NO_STORE)
 
 
 @router.get("/admin/api/collections", response_class=JSONResponse)
@@ -409,7 +439,7 @@ async def upload_images(
                 duplicates.append(
                     {
                         "name": filename,
-                        "existing_url": f"{config.IMAGES_URL_PREFIX}/{filename}",
+                        "existing_url": media.admin_url(filename, config.THUMB_WIDTH),
                         "existing_size": existing_size,
                     }
                 )
@@ -454,6 +484,9 @@ async def upload_images(
                 # Ensure sidecar exists for newly uploaded images
                 sidecars._ensure_sidecar(
                     destination, sidecars._load_metadata(destination)
+                )
+                await asyncio.to_thread(
+                    media.ensure_derivatives, destination, force=True
                 )
         except OSError as exc:
             logger.error("Failed to save %s: %s", filename, exc)
@@ -522,7 +555,9 @@ async def import_from_path(
                     duplicates.append(
                         {
                             "name": target_name,
-                            "existing_url": f"{config.IMAGES_URL_PREFIX}/{target_name}",
+                            "existing_url": media.admin_url(
+                                target_name, config.THUMB_WIDTH
+                            ),
                             "existing_size": existing_size,
                         }
                     )
@@ -533,6 +568,11 @@ async def import_from_path(
                 copied.append(target_name)
                 if sidecars._allowed_image(target_name):
                     sidecars._ensure_sidecar(target, sidecars._load_metadata(target))
+                    # copy2 keeps the source mtime, so freshness checks cannot
+                    # tell a re-import apart: always rebuild.
+                    await asyncio.to_thread(
+                        media.ensure_derivatives, target, force=True
+                    )
             except OSError as exc:
                 logger.error("Failed to copy %s: %s", file_path, exc)
                 skipped.append(target_name)
@@ -593,7 +633,8 @@ async def preview_image_metadata(
         "previewImageText.html",
         {
             "image_name": filename,
-            "image_url": f"{config.IMAGES_URL_PREFIX}/{filename}",
+            "image_url": media.admin_url(filename),
+            "display_url": media.admin_url(filename, config.DISPLAY_WIDTH),
             "metadata": metadata,
             "review_url": request.url_for("review_added_files"),
             "prev_image": prev_image,
@@ -702,6 +743,7 @@ async def update_image_metadata(
 @router.post("/admin/unapprove/{image_name}", response_class=JSONResponse)
 async def unapprove_image(
     image_name: str,
+    background_tasks: BackgroundTasks,
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     """Move an approved image back to pending status."""
@@ -711,12 +753,14 @@ async def unapprove_image(
             status_code=status.HTTP_404_NOT_FOUND, detail="Image not found"
         )
     await asyncio.to_thread(sidecars._set_status_sidecar, image_path, "pending")
+    background_tasks.add_task(media.purge_public, image_path.name)
     return JSONResponse({"status": "ok", "image": image_name, "new_status": "pending"})
 
 
 @router.post("/admin/delete/{image_name}", response_class=JSONResponse)
 async def soft_delete_image(
     image_name: str,
+    background_tasks: BackgroundTasks,
     _: None = Depends(_verify_admin),
 ) -> JSONResponse:
     """Soft-delete an image by moving it and its sidecar to .trash/."""
@@ -736,6 +780,8 @@ async def soft_delete_image(
     if sidecar_path.exists():
         trash_sidecar = Path(trash_name).with_suffix(".json").name
         shutil.move(str(sidecar_path), str(trash_dir / trash_sidecar))
+    media.remove_derivatives(image_path.name)
+    background_tasks.add_task(media.purge_public, image_path.name)
     logger.info("Soft-deleted %s to .trash/", image_name)
     return JSONResponse({"status": "ok", "image": image_name, "action": "deleted"})
 
