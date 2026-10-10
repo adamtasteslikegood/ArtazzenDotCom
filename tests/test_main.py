@@ -2355,6 +2355,25 @@ def test_regenerate_leaves_sidecar_unchanged_on_unexpected_ai_failure(
     assert sidecar.read_text() == before
 
 
+def test_watcher_prunes_retry_budget_for_deleted_images(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "deleted.jpg"
+    image_path.touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+
+    key = str(image_path)
+    gallery_app.ai_metadata._auto_retries[key] = (
+        gallery_app.ai_metadata._file_signature(image_path),
+        1,
+    )
+    image_path.unlink()
+
+    gallery_app.watcher._scan_pending_files()
+
+    assert key not in gallery_app.ai_metadata._auto_retries
+
+
 def test_watcher_preserves_retry_budget_while_ai_unavailable(
     monkeypatch, tmp_path
 ):
