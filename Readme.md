@@ -126,6 +126,8 @@ See `.env.example` for the full list. Key variables:
 | `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                        |
 | `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Startup model fallback; persisted AI config wins      |
 | `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                              |
+| `AI_MAX_RETRIES`              | `5`                    | Automatic AI retries per image after a failed attempt |
+| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum seconds between automatic AI retries          |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                  |
 
 ## Testing
