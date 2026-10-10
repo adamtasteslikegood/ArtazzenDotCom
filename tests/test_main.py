@@ -6,6 +6,7 @@ import os
 import re
 import time
 from contextlib import suppress
+from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
@@ -1762,6 +1763,49 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
     assert retry_key not in gallery_app.ai_metadata._auto_retries
 
 
+def test_regenerate_resets_watcher_budget_with_relative_images_dir(
+    monkeypatch, tmp_path
+):
+    """Admin's resolved path must clear state created from a watcher path."""
+    monkeypatch.chdir(tmp_path)
+    image_root = Path("images")
+    image_root.mkdir()
+    _write_regen_sidecar(image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata,
+        "_populate_missing_metadata",
+        lambda path, meta, only_fields=None, persist=True: {
+            **meta,
+            "title": "AI Title",
+            "ai_details": {"status": "success"},
+        },
+    )
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
+
+    watcher_path = image_root / "regen_test.jpg"
+    resolved_path = gallery_app.sidecars._resolve_image_path("regen_test.jpg")
+    assert watcher_path != resolved_path
+    retry_key = gallery_app.ai_metadata._retry_key(watcher_path)
+    monkeypatch.setitem(
+        gallery_app.ai_metadata._auto_retries,
+        retry_key,
+        (gallery_app.ai_metadata._file_signature(watcher_path), 5, time.time()),
+    )
+
+    response = asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            _regen_request(
+                {"images": ["regen_test.jpg"], "fields": ["title"], "force": True}
+            ),
+            _=None,
+        )
+    )
+
+    assert json.loads(response.body)["errors"] == []
+    assert retry_key not in gallery_app.ai_metadata._auto_retries
+
+
 def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
     image_root = tmp_path / "images"
     image_root.mkdir()
@@ -2236,7 +2280,7 @@ def test_watcher_does_not_resend_failed_image_every_poll(monkeypatch, tmp_path):
 
 def _age_auto_retry_state(image_path):
     """Advance an image's in-memory retry clock past the configured delay."""
-    key = str(image_path)
+    key = gallery_app.ai_metadata._retry_key(image_path)
     signature, retries, _ = gallery_app.ai_metadata._auto_retries[key]
     gallery_app.ai_metadata._auto_retries[key] = (
         signature,
