@@ -4,6 +4,10 @@
 
 ArtazzenDotCom is a FastAPI + Jinja2 artwork gallery and curation platform. Public gallery at `/`, admin dashboard at `/admin`. Deployed on Railway, auto-deploys from `main`.
 
+## Code Review
+
+When reviewing a pull request, follow `.github/instructions/code-review.instructions.md`. In short: report every finding in the first review; on later passes comment only on lines changed since your last review, and raise new findings on unchanged code only if they are critical; do not repeat points already answered in resolved threads; quote the code or documentation each finding relies on; and calibrate to a single-admin, single-process app with hundreds of images at most.
+
 ## Architecture
 
 Modular FastAPI app with layered `app/` package. `main.py` is the uvicorn entrypoint and compatibility shim; application logic lives in the `app/` package.

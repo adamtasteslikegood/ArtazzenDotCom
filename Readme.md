@@ -107,10 +107,10 @@ Enable automatic suggestions via environment variables:
 
 ```bash
 export MY_OPENAI_API_KEY=sk-...
-export OPENAI_IMAGE_METADATA_MODEL=gpt-5.6-luna   # optional override (this is the default)
+export OPENAI_IMAGE_METADATA_MODEL=gpt-6-luna   # startup fallback
 ```
 
-Runtime settings persist in `ai_config.json` and are editable from the admin UI under **AI Metadata Settings**. The app triggers AI generation when new assets arrive or when you request suggestions during review. Per-field regeneration and preview mode are available from the review detail page.
+Runtime settings persist in `ai_config.json` and are editable from the admin UI under **AI Metadata Settings**. When that file contains a model, it takes precedence over `OPENAI_IMAGE_METADATA_MODEL`; use the admin reset action to reload and persist the environment defaults. The app triggers AI generation when new assets arrive or when you request suggestions during review. Per-field regeneration and preview mode are available from the review detail page.
 
 ## Environment Variables
 
@@ -124,8 +124,10 @@ See `.env.example` for the full list. Key variables:
 | `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                         |
 | `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin access)   |
 | `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                        |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`         | Model for AI descriptions                             |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Startup model fallback; persisted AI config wins      |
 | `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                              |
+| `AI_MAX_RETRIES`              | `5`                    | Automatic AI retries per image after a failed attempt |
+| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum seconds between automatic AI retries          |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                  |
 
 ## Testing
