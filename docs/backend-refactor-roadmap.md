@@ -131,8 +131,12 @@ test that does not go through HTTP.
   same way. The journal database (with its WAL and SHM files), the staging
   directory and the outbox live in `IMAGES_DIR/.state/`: on the persistent
   volume in production, and on the same filesystem as the sidecars so that
-  `os.replace` stays atomic. That directory is never served, and startup
-  fails if it is missing or not writable. Matching complete
+  `os.replace` stays atomic. That directory is never served. Startup creates
+  it when it is absent (mode `0700`, `mkdir` with `exist_ok`), so the first
+  Phase 3 deploy needs no manual step on an existing or empty volume, and then
+  validates it: a real directory rather than a symlink, on the same device as
+  `IMAGES_DIR`, and writable (create, fsync and remove a probe file). Startup
+  fails if creation or any of those checks fails. Matching complete
   requests replay the stored response; mismatched payloads return `409`.
   External effects such as CDN purges use a durable outbox after the local
   commit. An endpoint is not advertised as idempotent until crash-injection and
