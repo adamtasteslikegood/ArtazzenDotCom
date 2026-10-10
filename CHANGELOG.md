@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Default AI metadata model is now `gpt-6-luna` (code default and the shipped
-  `ai_config.json`). The admin model list adds `gpt-6-luna`, `gpt-6-terra` and
+  `ai_config.json`). The admin model list adds `gpt-6-luna` and
   `gpt-6.1-sol`; GPT-6 models are treated like GPT-5 (no `temperature`,
   1200-token output floor).
 
