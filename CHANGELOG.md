@@ -7,9 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Background watcher no longer re-sends an image to OpenAI on every 5-second
-  poll when an attempt leaves fields empty. Automatic retries now wait
-  `AI_RETRY_COOLDOWN_SECONDS` (6 hours); admin-triggered regeneration is
-  unaffected.
+  poll when an attempt leaves fields empty. Automatic retries are limited to
+  `AI_MAX_RETRIES` (default 5), spaced `AI_RETRY_DELAY_SECONDS` (default 60)
+  apart; both are environment variables. The count resets on restart.
+  Admin-triggered regeneration is unaffected.
 
 ## [0.2.0] - 2026-09-02
 

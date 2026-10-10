@@ -2225,7 +2225,7 @@ def test_watcher_does_not_resend_failed_image_every_poll(monkeypatch, tmp_path):
     assert len(calls) == 1
 
 
-def test_watcher_retries_failed_image_after_cooldown(monkeypatch, tmp_path):
+def test_watcher_retries_failed_image_after_delay(monkeypatch, tmp_path):
     image_root = tmp_path / "images"
     image_root.mkdir()
     (image_root / "stuck.jpg").touch()
@@ -2237,7 +2237,7 @@ def test_watcher_retries_failed_image_after_cooldown(monkeypatch, tmp_path):
 
     def stale_failure(_path, _meta, _fields):
         calls.append(1)
-        stale = time.time() - gallery_app.config.AI_RETRY_COOLDOWN_SECONDS - 1
+        stale = time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1
         return {
             "title": "",
             "description": "",
@@ -2353,3 +2353,34 @@ def test_regenerate_leaves_sidecar_unchanged_on_unexpected_ai_failure(
         )
 
     assert sidecar.read_text() == before
+
+
+def test_watcher_stops_after_max_retries(monkeypatch, tmp_path):
+    """After AI_MAX_RETRIES spaced retries the watcher gives up on an image."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "stuck.jpg").touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "AI_MAX_RETRIES", 3)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def stale_failure(_path, _meta, _fields):
+        calls.append(1)
+        stale = time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": stale},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", stale_failure
+    )
+
+    for _ in range(10):
+        gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 1 + 3  # first attempt plus three retries

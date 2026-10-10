@@ -401,12 +401,30 @@ def _request_openai_metadata(
     return result
 
 
-def _auto_retry_due(metadata: dict[str, Any]) -> bool:
-    """Whether the watcher may send this image to OpenAI again.
+# Automatic retries used per image since process start, keyed by image path.
+# Kept in memory on purpose: a restart or deploy grants a fresh set of tries.
+_auto_retries: dict[str, int] = {}
 
-    False while the last attempt is younger than AI_RETRY_COOLDOWN_SECONDS.
-    Admin-triggered regeneration does not consult this.
+
+def _has_missing_ai_fields(metadata: dict[str, Any]) -> bool:
+    for field in ("title", "description", "caption"):
+        if not str(metadata.get(field) or "").strip():
+            return True
+    return not metadata.get("tags")
+
+
+def _auto_retry_due(image_path: Path, metadata: dict[str, Any]) -> bool:
+    """Whether the watcher may send this image to OpenAI now.
+
+    The first attempt is always allowed. After an attempt that left fields
+    empty, at most AI_MAX_RETRIES further tries are made, each at least
+    AI_RETRY_DELAY_SECONDS after the previous one. Admin-triggered
+    regeneration does not consult this.
     """
+    key = str(image_path)
+    if not _has_missing_ai_fields(metadata):
+        _auto_retries.pop(key, None)
+        return True
     ai_details = metadata.get("ai_details")
     if not isinstance(ai_details, dict):
         return True
@@ -418,7 +436,13 @@ def _auto_retry_due(metadata: dict[str, Any]) -> bool:
         return True
     if attempted_at <= 0:
         return True
-    return time.time() - attempted_at >= config.AI_RETRY_COOLDOWN_SECONDS
+    retries = _auto_retries.get(key, 0)
+    if retries >= config.AI_MAX_RETRIES:
+        return False
+    if time.time() - attempted_at < config.AI_RETRY_DELAY_SECONDS:
+        return False
+    _auto_retries[key] = retries + 1
+    return True
 
 
 def _populate_missing_metadata(
