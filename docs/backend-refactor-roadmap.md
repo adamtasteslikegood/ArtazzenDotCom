@@ -118,8 +118,13 @@ test that does not go through HTTP.
   intended filesystem changes with old/new content hashes. The service stages
   and fsyncs new files, commits the prepared journal row, promotes staged files
   with atomic `os.replace` plus directory fsyncs, and then marks the row
-  complete. Startup recovery must finish or roll back every prepared operation
-  by comparing the recorded hashes before accepting traffic. Matching complete
+  complete. Recovery only ever rolls forward, so it never needs the old bytes:
+  staged files are kept until the row is complete, and before accepting
+  traffic startup re-promotes any staged file whose target does not yet match
+  the recorded new hash, then completes the row. Staged files with no
+  committed row belong to an operation that never happened and are deleted.
+  Removals are journalled renames into `.trash/`, which recovery repeats the
+  same way. Matching complete
   requests replay the stored response; mismatched payloads return `409`.
   External effects such as CDN purges use a durable outbox after the local
   commit. An endpoint is not advertised as idempotent until crash-injection and
@@ -192,7 +197,10 @@ Exit: no `await request.json()` left in route code.
   to `Static/images` with one status-aware public image handler. Serve UI
   assets from a separate allowlisted static root, never expose sidecars through
   either static URL, and keep pending previews only behind the authenticated
-  no-store preview route.
+  no-store preview route. That route (`/admin/image/{name}`, added by the
+  image caching work) must already be live and in use by the released iOS app
+  before the mounts are replaced; if it is not, the mount replacement waits.
+  `GET /api/v1/artworks/{name}/image` succeeds it in phase 3.
 - Service tests call functions directly; HTTP tests stop monkeypatching
   internals.
 
@@ -205,9 +213,10 @@ imports `storage` directly.
   envelope, pagination and the durable journal-and-recovery idempotency contract. Every v1 route
   reuses the existing admin-auth dependency from its first release; phase 4
   replaces that credential mechanism rather than introducing authentication.
-- Old endpoints remain compatibility adapters and return a `Deprecation`
-  header while preserving their exact legacy request and response shapes,
-  including `{"detail": ...}` errors.
+- Old endpoints remain compatibility adapters that preserve their exact
+  legacy request and response shapes, including `{"detail": ...}` errors. The
+  one intended difference is an added `Deprecation` response header; the
+  phase 0 snapshots are updated to expect it in the same pull request.
 - Disable FastAPI's default `/openapi.json`, `/docs`, and `/redoc` endpoints.
   Serve the schema and documentation through explicitly authenticated admin
   routes; hand the generated client or spec file to the ArtazzenMobile repo.
