@@ -11,7 +11,7 @@ response, and a service layer that owns the business rules.
 
 | Fact                                                                                                               | Evidence                                      |
 | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| One 788-line module holds all 19 admin routes: HTML pages, JSON endpoints, upload, import, AI regeneration.        | `app/routes_admin.py`                         |
+| One 789-line module holds all 19 admin routes: HTML pages, JSON endpoints, upload, import, AI regeneration.        | `app/routes_admin.py`                         |
 | No typed request or response models. Four routes parse `await request.json()` by hand; one takes 11 `Form` fields. | `app/routes_admin.py:152,195,237,285,604-614` |
 | JSON endpoints are spread over three URL shapes: `/admin/api/*`, `/admin/config`, `/admin/<verb>/{name}`.          | route decorators in `app/routes_admin.py`     |
 | The iOS app (ArtazzenMobile) calls these admin endpoints with Basic auth. They are an external contract already.   | paths found in the ArtazzenMobile source      |
@@ -19,7 +19,7 @@ response, and a service layer that owns the business rules.
 | "Is this artwork public?" is answered in several places with slightly different checks.                            | `app/curation.py:245`, `app/sidecars.py:396`  |
 | The public artwork page has no status check at all.                                                                | `app/routes_public.py:174-200`                |
 | Every gallery request lists the image directory and reads every sidecar.                                           | `app/sidecars.py:386-402`                     |
-| Errors are raised ad hoc: 29 `HTTPException` sites, 13 broad `except Exception`.                                   | `app/`                                        |
+| Errors are raised ad hoc: 29 `HTTPException` sites, 14 broad `except Exception`.                                   | `app/`                                        |
 | `sentry-sdk` is installed but never initialised. There is no health endpoint.                                      | `requirements.txt:57`; no import in `app/`    |
 | All 101 tests are in one 2,195-line file with 176 monkeypatches; `main.py` re-exports internals for them.          | `tests/test_main.py`, `main.py`               |
 | A separate `mypy app` run reports 3 errors on `dev`; CI currently checks only `main.py`.                           | PR #170 dev check; `.github/workflows/ci.yml` |
@@ -103,12 +103,19 @@ test that does not go through HTTP.
 **API behaviour**
 
 - Every error has one shape: `{"error": {"code": "...", "message": "...", "details": {...}}}`.
-- Mutations accept an `Idempotency-Key`. The service atomically reserves each
-  key scoped to the authenticated principal and operation, stores a request
-  fingerprint plus the completed response/status with a TTL, replays matching
-  requests, and rejects reuse with a different payload using `409`. The
-  mutation and idempotency record commit as one operation so concurrent
-  requests, restarts, and multiple workers cannot apply it twice.
+- Mutations accept an `Idempotency-Key`. Phase 3 implements the durable
+  coordinator as a SQLite operation journal with a unique
+  `(principal, operation, key)` constraint and `BEGIN IMMEDIATE` claims. Each
+  row stores the request fingerprint, state, response/status, expiry, and the
+  intended filesystem changes with old/new content hashes. The service stages
+  and fsyncs new files, commits the prepared journal row, promotes staged files
+  with atomic `os.replace` plus directory fsyncs, and then marks the row
+  complete. Startup recovery must finish or roll back every prepared operation
+  by comparing the recorded hashes before accepting traffic. Matching complete
+  requests replay the stored response; mismatched payloads return `409`.
+  External effects such as CDN purges use a durable outbox after the local
+  commit. An endpoint is not advertised as idempotent until crash-injection and
+  concurrent-worker tests prove this protocol for all of its writes.
 - Lists are paginated and state their total.
 
 ## API v1 surface
@@ -143,10 +150,12 @@ Each phase is one or more pull requests to `dev` and leaves the app releasable.
 
 ### Phase 0: safety net
 
-- Contract tests that pin the current JSON of every endpoint the iOS app
-  calls (`/admin/api/new-files`, `/admin/config`, `/admin/upload`,
+- Contract tests that pin each iOS endpoint's actual transport contract: JSON
+  bodies and wrappers for JSON routes; multipart/form fields for upload and
+  metadata; and every status, redirect location, and response header. Cover
+  `/admin/api/new-files`, `/admin/config`, `/admin/upload`,
   `/admin/api/collections`, `/admin/ai/regenerate`, `/admin/unapprove/`,
-  `/admin/metadata/`, `/admin/delete/`).
+  `/admin/metadata/`, and `/admin/delete/`.
 - Split `tests/test_main.py` by area without changing any test body.
 - Broaden CI from `mypy main.py` to `mypy app` (or the whole project), then fix
   the 3 errors exposed by that check.
@@ -164,12 +173,16 @@ Exit: no `await request.json()` left in route code.
 
 ### Phase 2: services
 
-- Move lifecycle, upload, import and AI orchestration out of
-  `routes_admin.py` into `app/services/`. Routes shrink to parse, call, render.
-- `is_public()` becomes the single approval check. Replace the plain `/images`
-  `StaticFiles` mount with a status-aware public image handler so pending and
-  hidden originals cannot bypass that check; pending previews remain available
-  only through the authenticated no-store preview route.
+- Move lifecycle, upload, import, AI orchestration, and every public/admin
+  gallery, artwork, collection, and series read out of `routes_admin.py` and
+  `routes_public.py` into `app/services/`. Routes shrink to parse, call, and
+  render; neither route module calls `sidecars`, `curation`, or storage.
+- `is_public()` becomes the single approval check. Replace both the `/images`
+  mount and the `/static/images` subtree exposed when `IMAGES_DIR` defaults
+  to `Static/images` with one status-aware public image handler. Serve UI
+  assets from a separate allowlisted static root, never expose sidecars through
+  either static URL, and keep pending previews only behind the authenticated
+  no-store preview route.
 - Service tests call functions directly; HTTP tests stop monkeypatching
   internals.
 
@@ -179,7 +192,7 @@ imports `storage` directly.
 ### Phase 3: API package
 
 - Add `app/api/` mounted at `/api/v1` with the table above, the error
-  envelope, pagination and the durable idempotency contract. Every v1 route
+  envelope, pagination and the durable journal-and-recovery idempotency contract. Every v1 route
   reuses the existing admin-auth dependency from its first release; phase 4
   replaces that credential mechanism rather than introducing authentication.
 - Old endpoints remain compatibility adapters and return a `Deprecation`
