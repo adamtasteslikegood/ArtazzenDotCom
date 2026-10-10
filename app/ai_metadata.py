@@ -470,7 +470,25 @@ def _populate_missing_metadata(
     if not _get_openai_api_key() and ai_details.get("status") == "skipped_no_api_key":
         return metadata
 
-    result = _request_openai_metadata(image_path, metadata, needed_fields)
+    attempt_started_at = time.time()
+    try:
+        result = _request_openai_metadata(image_path, metadata, needed_fields)
+    except Exception:
+        # The watcher already treats individual-image failures as non-fatal. Persist
+        # this attempt as well so an unexpected response-processing error cannot
+        # resend the same image on every poll.
+        logger.exception(
+            "Unexpected failure while processing OpenAI metadata for %s", image_path
+        )
+        result = {
+            "details": {
+                "provider": "openai",
+                "model": config._get_ai_config()["model"],
+                "attempted_at": attempt_started_at,
+                "status": "error_processing",
+                "error": "OpenAI metadata response processing failed.",
+            }
+        }
     details = result.get("details", {})
     metadata["ai_details"] = details
 
