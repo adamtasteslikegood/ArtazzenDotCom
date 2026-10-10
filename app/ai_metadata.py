@@ -499,6 +499,7 @@ def _auto_retry_due(image_path: Path, metadata: dict[str, Any]) -> bool:
     _auto_retries[key] = (signature, retries + 1, time.time())
     return True
 
+
 def _populate_missing_metadata(
     image_path: Path,
     metadata: dict[str, Any],
