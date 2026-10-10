@@ -439,13 +439,20 @@ def _auto_retry_due(image_path: Path, metadata: dict[str, Any]) -> bool:
     if not isinstance(ai_details, dict):
         return True
     if ai_details.get("status") == "skipped_no_api_key":
-        return True  # no request was sent; nothing to back off from
+        return bool(_get_openai_api_key())
     try:
         attempted_at = float(ai_details.get("attempted_at") or 0)
     except (TypeError, ValueError):
         return True
     if attempted_at <= 0:
         return True
+    # Do not spend a retry when the watcher cannot make an OpenAI request.
+    # Runtime config and credentials may become available again without a
+    # process restart, so preserve the existing image's remaining budget.
+    if not config._get_ai_config().get("enabled", True):
+        return False
+    if not _get_openai_api_key():
+        return False
     signature = _file_signature(image_path)
     stored_signature, retries = _auto_retries.get(key, (signature, 0))
     if stored_signature != signature:
