@@ -403,17 +403,26 @@ def _request_openai_metadata(
 
 # Automatic retries used per image since process start, keyed by image path.
 # Kept in memory on purpose: a restart or deploy grants a fresh set of tries.
-# The stored file signature ties the count to the bytes on disk, so a
+# The stored file signature ties the count to the file on disk, so a
 # replacement under the same filename starts with a full budget.
-_auto_retries: dict[str, tuple[tuple[int, int], int]] = {}
+_auto_retries: dict[str, tuple[tuple[int, int, int], int]] = {}
 
 
-def _file_signature(image_path: Path) -> tuple[int, int]:
+def _file_signature(image_path: Path) -> tuple[int, int, int]:
     try:
         stat = image_path.stat()
     except OSError:
-        return (0, 0)
-    return (stat.st_mtime_ns, stat.st_size)
+        return (0, 0, 0)
+    # ctime changes on overwrite even when copy2 preserves the source mtime.
+    return (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+
+
+def _prune_auto_retries(existing_paths: list[Path]) -> None:
+    """Forget retry state for images that are no longer on disk."""
+    existing_keys = {str(path) for path in existing_paths}
+    for key in tuple(_auto_retries):
+        if key not in existing_keys:
+            _auto_retries.pop(key, None)
 
 
 def _has_missing_ai_fields(metadata: dict[str, Any]) -> bool:
