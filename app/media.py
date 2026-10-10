@@ -38,13 +38,19 @@ _derivative_lock = threading.Lock()
 
 
 def version_token(path: Path) -> str:
-    """Token that changes whenever the file's bytes do ('' if unreadable)."""
+    """Token that changes whenever the file's bytes do ('' if unreadable).
+
+    The change time is included because an import (`shutil.copy2`) keeps the
+    source's modified time, so a same-size replacement would otherwise keep
+    its year-long immutable URL.
+    """
     try:
         stat = path.stat()
     except OSError:
         return ""
     digest = hashlib.sha1(
-        f"{stat.st_mtime_ns}-{stat.st_size}".encode(), usedforsecurity=False
+        f"{stat.st_mtime_ns}-{stat.st_ctime_ns}-{stat.st_size}".encode(),
+        usedforsecurity=False,
     ).hexdigest()
     return f"v{digest[:10]}"
 

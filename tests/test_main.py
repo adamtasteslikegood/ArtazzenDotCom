@@ -3192,7 +3192,7 @@ def test_forced_reimport_with_same_mtime_rebuilds_derivatives(
 ):
     from PIL import Image
 
-    _make_curation_root(tmp_path, monkeypatch)
+    image_root = _make_curation_root(tmp_path, monkeypatch)
     import_root = tmp_path / "imports"
     import_root.mkdir()
     monkeypatch.setattr(gallery_app.config, "IMPORT_ROOT", import_root)
@@ -3213,6 +3213,22 @@ def test_forced_reimport_with_same_mtime_rebuilds_derivatives(
     assert second.json()["copied"] == ["art.jpg"]
     assert _derived_size("art.jpg", 480) == (480, 480)
     assert not media.derivative_path("art.jpg", 1600).exists()
+
+    # Same size and same mtime, different bytes: the immutable URL of the
+    # original must still change.
+    size = source.stat().st_size
+    url_before = media.public_url("art.jpg")
+    source.write_bytes(bytes(reversed(source.read_bytes())))
+    os.utime(source, fixed)
+    time.sleep(0.02)  # let the change time advance past the previous copy
+    third = authed_client.post(
+        "/admin/import-path?force=true", data={"path": "art.jpg"}
+    )
+    assert third.json()["copied"] == ["art.jpg"]
+    imported = image_root / "art.jpg"
+    assert imported.stat().st_size == size
+    assert imported.stat().st_mtime == fixed[1]
+    assert media.public_url("art.jpg") != url_before
 
 
 def test_derivatives_apply_exif_orientation(tmp_path, monkeypatch):
