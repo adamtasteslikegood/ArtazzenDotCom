@@ -3044,6 +3044,31 @@ def test_animated_gif_gets_no_derivative(tmp_path, monkeypatch):
     assert media.derivative_url("anim.gif", 480) == media.public_url("anim.gif")
 
 
+def test_concurrent_derivative_builds_do_not_corrupt(tmp_path, monkeypatch, caplog):
+    """An upload and the watcher backfill can build the same image at once."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg", size=(2000, 1000))
+    source = image_root / "a.jpg"
+
+    with (
+        caplog.at_level("WARNING", logger="app.media"),
+        ThreadPoolExecutor(max_workers=4) as pool,
+    ):
+        for _ in range(10):
+            media.remove_derivatives("a.jpg")
+            jobs = [
+                pool.submit(media.ensure_derivatives, source, force=forced)
+                for forced in (True, False, True, False)
+            ]
+            assert all(isinstance(job.result(), bool) for job in jobs)
+            assert _derived_size("a.jpg", 480) == (480, 240)
+            assert _derived_size("a.jpg", 1600) == (1600, 800)
+    assert "No derivatives" not in caplog.text
+    assert not list((image_root / ".derived").glob(".*.tmp"))
+
+
 def test_multi_picture_jpeg_is_not_treated_as_animated(tmp_path, monkeypatch):
     from PIL import Image
 

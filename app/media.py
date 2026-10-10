@@ -4,6 +4,7 @@ import hashlib
 import logging
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -30,6 +31,7 @@ _TOKEN_RE = re.compile(r"^v[0-9a-f]{10}$")
 # Sources whose derivatives failed to build, keyed by path with the file
 # signature that failed, so a corrupt image is not reopened on every scan.
 _failed_derivatives: dict[str, tuple[int, int]] = {}
+_derivative_lock = threading.Lock()
 
 
 # --- URLs -----------------------------------------------------------------
@@ -290,6 +292,13 @@ def ensure_derivatives(image_path: Path, *, force: bool = False) -> bool:
     the source as processed. The display size is written only when the source
     is wider than it. Animated images get no derivatives.
     """
+    # One build at a time: an upload and the watcher's backfill can reach the
+    # same image together, and a decoded photo is tens of megabytes.
+    with _derivative_lock:
+        return _ensure_derivatives(image_path, force)
+
+
+def _ensure_derivatives(image_path: Path, force: bool) -> bool:
     filename = image_path.name
     thumb = derivative_path(filename, config.THUMB_WIDTH)
     key = str(image_path)
