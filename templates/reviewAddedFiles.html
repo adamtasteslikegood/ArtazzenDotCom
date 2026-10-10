@@ -138,18 +138,20 @@
                     <div class="form-row">
                         <label for="ai-model">Model</label>
                         <select id="ai-model">
-                            <option value="gpt-5.6-luna">gpt-5.6-luna</option>
-                            <option value="gpt-5.6-terra">gpt-5.6-terra</option>
-                            <option value="gpt-5.4-mini">gpt-5.4-mini</option>
-                            <option value="gpt-5.4-nano">gpt-5.4-nano</option>
-                            <option value="gpt-5-mini">gpt-5-mini</option>
-                            <option value="gpt-5-nano">gpt-5-nano</option>
-                            <option value="gpt-4o-mini">gpt-4o-mini (legacy)</option>
+                            <option value="gpt-6.1-sol" data-unsupported-efforts="none minimal">gpt-6.1-sol</option>
+                            <option value="gpt-6-luna" selected>gpt-6-luna</option>
+                            <option value="gpt-6-astra" data-unsupported-efforts="none">gpt-6-astra</option>
                         </select>
                     </div>
                     <div class="form-row">
-                        <label for="ai-temp">Temperature</label>
-                        <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
+                        <label for="ai-effort">Reasoning effort</label>
+                        <select id="ai-effort">
+                            <option value="none">none</option>
+                            <option value="minimal">minimal</option>
+                            <option value="low" selected>low</option>
+                            <option value="medium">medium</option>
+                            <option value="high">high</option>
+                        </select>
                     </div>
                     <div class="form-row">
                         <label for="ai-tokens">Max output tokens</label>
@@ -278,7 +280,15 @@
     const aiForm = document.getElementById('ai-config-form');
     const aiEnabled = document.getElementById('ai-enabled');
     const aiModel = document.getElementById('ai-model');
-    const aiTemp = document.getElementById('ai-temp');
+    const aiEffort = document.getElementById('ai-effort');
+
+    // Grey out efforts the selected model rejects; fall back to 'low'.
+    function syncEffortOptions() {
+        const unsupported = (aiModel.selectedOptions[0]?.dataset.unsupportedEfforts || '').split(' ');
+        for (const option of aiEffort.options) option.disabled = unsupported.includes(option.value);
+        if (aiEffort.selectedOptions[0]?.disabled) aiEffort.value = 'low';
+    }
+    aiModel?.addEventListener('change', syncEffortOptions);
     const aiTokens = document.getElementById('ai-tokens');
     const selectAllBtn = document.getElementById('select-all');
     const regenBtn = document.getElementById('regen-selected');
@@ -467,8 +477,15 @@
             const data = await res.json();
             const cfg = data.ai || {};
             if (typeof cfg.enabled === 'boolean') aiEnabled.checked = cfg.enabled;
-            if (typeof cfg.model === 'string') aiModel.value = cfg.model;
-            if (typeof cfg.temperature === 'number') aiTemp.value = cfg.temperature;
+            if (typeof cfg.model === 'string' && cfg.model) {
+                // A model saved before the list changed stays visible and selected.
+                if (![...aiModel.options].some(option => option.value === cfg.model)) {
+                    aiModel.add(new Option(`${cfg.model} (saved, no longer listed)`, cfg.model));
+                }
+                aiModel.value = cfg.model;
+            }
+            if (typeof cfg.reasoning_effort === 'string') aiEffort.value = cfg.reasoning_effort;
+            syncEffortOptions();
             if (typeof cfg.max_output_tokens === 'number') aiTokens.value = cfg.max_output_tokens;
             if (typeof cfg.default_artist === 'string' && defaultArtist) defaultArtist.value = cfg.default_artist;
             if (typeof cfg.default_copyright === 'string' && defaultCopyright) defaultCopyright.value = cfg.default_copyright;
@@ -483,7 +500,7 @@
             ai: {
                 enabled: !!aiEnabled.checked,
                 model: aiModel.value,
-                temperature: parseFloat(aiTemp.value),
+                reasoning_effort: aiEffort.value,
                 max_output_tokens: parseInt(aiTokens.value, 10),
                 default_artist: defaultArtist?.value || '',
                 default_copyright: defaultCopyright?.value || ''

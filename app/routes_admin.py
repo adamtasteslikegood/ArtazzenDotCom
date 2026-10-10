@@ -260,6 +260,10 @@ async def update_admin_config(
             cfg["default_artist"] = ai["default_artist"].strip()
         if "default_copyright" in ai and isinstance(ai["default_copyright"], str):
             cfg["default_copyright"] = ai["default_copyright"].strip()
+        # Re-check against the model chosen in this same request.
+        cfg["reasoning_effort"] = config._coerce_reasoning_effort(
+            ai.get("reasoning_effort", cfg["reasoning_effort"]), cfg["model"]
+        )
     config.runtime_ai_config = cfg
     config._save_ai_config(cfg)
     return JSONResponse({"ai": cfg, "message": "Configuration updated and saved"})

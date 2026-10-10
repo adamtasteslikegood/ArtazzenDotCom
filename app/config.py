@@ -49,7 +49,29 @@ UPLOAD_CHUNK_SIZE = 64 * 1024  # 64 KB streaming chunks
 OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
 OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
 OPENAI_MODEL_ENV = "OPENAI_IMAGE_METADATA_MODEL"
-OPENAI_DEFAULT_MODEL = "gpt-5.6-luna"
+OPENAI_DEFAULT_MODEL = "gpt-6-luna"
+# Reasoning model families: no 'temperature' parameter, and they spend output
+# tokens on reasoning before emitting text.
+REASONING_MODEL_PREFIXES = ("gpt-5", "gpt-6")
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
+DEFAULT_REASONING_EFFORT = "low"
+# Efforts a model rejects with HTTP 400.
+UNSUPPORTED_REASONING_EFFORTS: dict[str, frozenset[str]] = {
+    "gpt-6-astra": frozenset({"none"}),
+    "gpt-6.1-sol": frozenset({"none", "minimal"}),
+}
+
+
+def _coerce_reasoning_effort(value: Any, model: str) -> str:
+    """Return a reasoning effort the given model accepts."""
+    effort = str(value or "").strip().lower()
+    if effort not in REASONING_EFFORTS:
+        return DEFAULT_REASONING_EFFORT
+    if effort in UNSUPPORTED_REASONING_EFFORTS.get(model, frozenset()):
+        return DEFAULT_REASONING_EFFORT
+    return effort
+
+
 try:
     OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
 except ValueError:
@@ -108,12 +130,15 @@ def _get_ai_config() -> dict[str, Any]:
         max_output_tokens = 600
     # Reasoning models spend output tokens on reasoning before emitting text;
     # too small a budget yields incomplete (empty-text) responses.
-    if model.startswith("gpt-5") and max_output_tokens < 1200:
+    if model.startswith(REASONING_MODEL_PREFIXES) and max_output_tokens < 1200:
         max_output_tokens = 1200
     return {
         "enabled": enabled,
         "model": model,
         "temperature": temperature,
+        "reasoning_effort": _coerce_reasoning_effort(
+            cfg.get("reasoning_effort"), model
+        ),
         "max_output_tokens": max_output_tokens,
         "default_artist": str(cfg.get("default_artist", "")),
         "default_copyright": str(cfg.get("default_copyright", "")),
@@ -169,6 +194,7 @@ def _default_ai_config_from_env() -> dict[str, Any]:
         "temperature": _parse_float_env(
             os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE"), 0.6
         ),
+        "reasoning_effort": DEFAULT_REASONING_EFFORT,
         "max_output_tokens": _parse_int_env(
             os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600
         ),
@@ -198,6 +224,9 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
             out["default_artist"] = cfg["default_artist"].strip()
         if isinstance(cfg.get("default_copyright"), str):
             out["default_copyright"] = cfg["default_copyright"].strip()
+        out["reasoning_effort"] = _coerce_reasoning_effort(
+            cfg.get("reasoning_effort", out["reasoning_effort"]), out["model"]
+        )
     return out
 
 
