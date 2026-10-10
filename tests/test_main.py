@@ -2355,6 +2355,63 @@ def test_regenerate_leaves_sidecar_unchanged_on_unexpected_ai_failure(
     assert sidecar.read_text() == before
 
 
+def test_watcher_preserves_retry_budget_while_ai_unavailable(
+    monkeypatch, tmp_path
+):
+    """Disabled AI or a missing key must not consume an image's retry budget."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "stuck.jpg").touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "AI_MAX_RETRIES", 1)
+
+    runtime = {"enabled": True, "key": "test-key"}
+    monkeypatch.setattr(
+        gallery_app.config,
+        "_get_ai_config",
+        lambda: {"enabled": runtime["enabled"]},
+    )
+    monkeypatch.setattr(
+        gallery_app.ai_metadata,
+        "_get_openai_api_key",
+        lambda: runtime["key"],
+    )
+    calls = []
+
+    def stale_failure(_path, _meta, _fields):
+        calls.append(1)
+        stale = time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": stale},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", stale_failure
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 1
+
+    runtime["enabled"] = False
+    for _ in range(3):
+        gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 1
+
+    runtime["enabled"] = True
+    runtime["key"] = None
+    for _ in range(3):
+        gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 1
+
+    runtime["key"] = "restored-test-key"
+    gallery_app.watcher._scan_pending_files()
+    gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 2  # the one retry was preserved until AI was available
+
+
 def test_watcher_stops_after_max_retries(monkeypatch, tmp_path):
     """After AI_MAX_RETRIES spaced retries the watcher gives up on an image."""
     image_root = tmp_path / "images"
