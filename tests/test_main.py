@@ -1734,7 +1734,7 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
     monkeypatch.setitem(
         gallery_app.ai_metadata._auto_retries,
         retry_key,
-        (gallery_app.ai_metadata._file_signature(image_path), 5),
+        (gallery_app.ai_metadata._file_signature(image_path), 5, time.time()),
     )
 
     writes = []
@@ -2292,6 +2292,66 @@ def test_watcher_persists_unexpected_processing_failure(monkeypatch, tmp_path):
     assert stored["ai_details"]["attempted_at"] > 0
 
 
+def test_watcher_retry_limit_survives_sidecar_write_failures(
+    monkeypatch, tmp_path
+):
+    """A failed sidecar write must not turn every poll into a first attempt."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "stuck.jpg"
+    image_path.touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "AI_MAX_RETRIES", 1)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def failing_request(_path, _meta, _fields):
+        calls.append(1)
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": time.time()},
+        }
+
+    def failing_persist(_path, _metadata, _applied_fields):
+        raise OSError("temporary sidecar write failure")
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", failing_request
+    )
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_persist_populated_fields", failing_persist
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 1
+
+    key = str(image_path)
+    signature, retries, attempted_at = gallery_app.ai_metadata._auto_retries[key]
+    assert retries == 0
+    gallery_app.ai_metadata._auto_retries[key] = (
+        signature,
+        retries,
+        attempted_at - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1,
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 2
+
+    signature, retries, attempted_at = gallery_app.ai_metadata._auto_retries[key]
+    assert retries == 1
+    gallery_app.ai_metadata._auto_retries[key] = (
+        signature,
+        retries,
+        attempted_at - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1,
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 2
+
+
 def test_watcher_retries_immediately_when_api_key_becomes_available(
     monkeypatch, tmp_path
 ):
@@ -2375,6 +2435,7 @@ def test_watcher_prunes_retry_budget_for_deleted_images(monkeypatch, tmp_path):
     gallery_app.ai_metadata._auto_retries[key] = (
         gallery_app.ai_metadata._file_signature(image_path),
         1,
+        time.time(),
     )
     image_path.unlink()
 
@@ -2392,7 +2453,7 @@ def test_watcher_keeps_retry_budget_when_directory_scan_fails(monkeypatch, tmp_p
     monkeypatch.setitem(
         gallery_app.ai_metadata._auto_retries,
         key,
-        ((1, 2, 3), 1),
+        ((1, 2, 3), 1, time.time()),
     )
 
     def failing_listdir(_path):
