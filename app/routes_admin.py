@@ -355,6 +355,7 @@ async def regenerate_ai_metadata(
                 updated.append({"name": fname, "metadata": candidate, "preview": True})
             else:
                 sidecars._write_sidecar(path, candidate)
+                ai_metadata._reset_auto_retry_budget(path)
                 updated.append({"name": fname, "metadata": candidate})
         except Exception:
             logger.exception("Failed to regenerate metadata for %s", fname)

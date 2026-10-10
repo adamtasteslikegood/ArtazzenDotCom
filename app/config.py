@@ -35,9 +35,6 @@ ALLOWED_IMAGE_EXTENSIONS = {
 }
 
 POLL_INTERVAL_SECONDS = 5
-# Minimum wait before the watcher re-sends an image to OpenAI after an attempt
-# that left fields empty. Without it one failing image is retried every poll.
-AI_RETRY_COOLDOWN_SECONDS = 6 * 60 * 60
 
 ADMIN_USERNAME_ENV = "ADMIN_USERNAME"
 ADMIN_PASSWORD_ENV = "ADMIN_PASSWORD"
@@ -153,6 +150,16 @@ def _parse_int_env(value: str | None, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+# Automatic (watcher) OpenAI retries for an image whose attempt left fields
+# empty: at most AI_MAX_RETRIES more tries, AI_RETRY_DELAY_SECONDS apart.
+# Without a limit one failing image is re-uploaded on every poll.
+AI_MAX_RETRIES = max(0, _parse_int_env(os.getenv("AI_MAX_RETRIES"), 5))
+AI_RETRY_DELAY_SECONDS = max(
+    float(POLL_INTERVAL_SECONDS),
+    _parse_float_env(os.getenv("AI_RETRY_DELAY_SECONDS"), 60.0),
+)
 
 
 def _default_ai_config_from_env() -> dict[str, Any]:
