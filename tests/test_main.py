@@ -1729,6 +1729,14 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
 
+    image_path = image_root / "regen_test.jpg"
+    retry_key = str(image_path)
+    monkeypatch.setitem(
+        gallery_app.ai_metadata._auto_retries,
+        retry_key,
+        (gallery_app.ai_metadata._file_signature(image_path), 5),
+    )
+
     writes = []
     orig_write = gallery_app._write_sidecar
 
@@ -1751,6 +1759,7 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
     assert len(payload["updated"]) == 1
     assert writes == ["regen_test.jpg"]
     assert json.loads(sidecar.read_text())["title"] == "AI Title"
+    assert retry_key not in gallery_app.ai_metadata._auto_retries
 
 
 def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
