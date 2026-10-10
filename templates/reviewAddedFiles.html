@@ -477,7 +477,13 @@
             const data = await res.json();
             const cfg = data.ai || {};
             if (typeof cfg.enabled === 'boolean') aiEnabled.checked = cfg.enabled;
-            if (typeof cfg.model === 'string') aiModel.value = cfg.model;
+            if (typeof cfg.model === 'string' && cfg.model) {
+                // A model saved before the list changed stays visible and selected.
+                if (![...aiModel.options].some(option => option.value === cfg.model)) {
+                    aiModel.add(new Option(`${cfg.model} (saved, no longer listed)`, cfg.model));
+                }
+                aiModel.value = cfg.model;
+            }
             if (typeof cfg.reasoning_effort === 'string') aiEffort.value = cfg.reasoning_effort;
             syncEffortOptions();
             if (typeof cfg.max_output_tokens === 'number') aiTokens.value = cfg.max_output_tokens;
