@@ -30,6 +30,8 @@ All notable changes to this project will be documented in this file.
 - The admin temperature control is removed. `/admin/config` still accepts and
   returns `temperature` for older clients; it is sent only to non-reasoning
   models.
+- Copilot code-review instructions now ask for all findings in the first
+  review and limit re-reviews to changed lines.
 - Dependency updates, including FastAPI 0.142.2, Starlette 1.7.0, Uvicorn
   0.54.0, Pydantic 2.13.5 and sentry-sdk 2.70.0. `pydantic-core` is no longer
   pinned directly.
