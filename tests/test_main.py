@@ -2252,3 +2252,72 @@ def test_watcher_retries_failed_image_after_cooldown(monkeypatch, tmp_path):
     gallery_app.watcher._scan_pending_files()
 
     assert len(calls) == 2
+
+
+def test_watcher_persists_unexpected_processing_failure(monkeypatch, tmp_path):
+    """A post-request exception must still put the image on cooldown."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "stuck.jpg"
+    image_path.touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def raising_request(_path, _meta, _fields):
+        calls.append(1)
+        raise ValueError("invalid post-request payload")
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", raising_request
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 1
+    stored = json.loads(image_path.with_suffix(".json").read_text())
+    assert stored["ai_details"]["status"] == "error_processing"
+    assert stored["ai_details"]["attempted_at"] > 0
+
+
+def test_watcher_retries_immediately_when_api_key_becomes_available(
+    monkeypatch, tmp_path
+):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "missing-key.jpg"
+    image_path.touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.ai_metadata, "_get_openai_api_key", lambda: None)
+
+    gallery_app.watcher._scan_pending_files()
+
+    stored = json.loads(image_path.with_suffix(".json").read_text())
+    assert stored["ai_details"]["status"] == "skipped_no_api_key"
+
+    calls = []
+
+    def successful_request(_path, _meta, _fields):
+        calls.append(1)
+        return {
+            "title": "Generated title",
+            "description": "Generated description",
+            "details": {
+                "status": "success",
+                "attempted_at": time.time(),
+            },
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "new-test-key"
+    )
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", successful_request
+    )
+
+    gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 1
