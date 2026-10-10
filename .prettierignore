@@ -19,5 +19,3 @@ logs/
 .copilot/**
 .github/instructions/**
 .git/**
-
-/docs/railway_logs/
