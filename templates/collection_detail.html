@@ -60,7 +60,7 @@
                 {% for artwork in artworks %}
                     <div class="artwork-item">
                         <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
-                            <img src="{{ artwork.url }}"
+                            <img src="{{ artwork.thumb_url }}"
                                  alt="{{ artwork.title }}"
                                  loading="lazy"
                                  onload="this.parentElement.classList.add('img-loaded');"

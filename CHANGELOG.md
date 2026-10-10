@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+> Do not release this section to `main` until ArtazzenMobile loads images
+> through `/admin/image/{name}` with credentials (or the public `/images`
+> URLs the API returns). The app currently builds `/static/images/<name>`
+> URLs itself and sends no auth, and those URLs now return 404.
+
+### Added
+
+- WebP derivatives for every image: 480 px for gallery, collection and series
+  grids and 1600 px for the artwork page, stored in `IMAGES_DIR/.derived/`.
+  Built on upload and import, backfilled by the watcher for existing images
+  (five per scan), never upscaled, EXIF orientation applied, none for animated
+  GIFs. Pages use the original until a derivative exists.
+- Versioned URLs for images and the stylesheet (`/images/v<token>/<name>`,
+  `/static/v<token>/css/styles.css`) served with
+  `Cache-Control: public, max-age=31536000, immutable`. Unversioned URLs get
+  one hour, and a stale or invented token redirects (308) to the current URL.
+- `GET /admin/image/{image_name}` (Basic auth, `no-store`, optional
+  `?w=480|1600`) for previews of images of any status.
+- Cloudflare purge by `Cache-Tag` when an image is unapproved or deleted,
+  enabled by `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID`. Without them
+  shared caches are capped at one day (`s-maxage=86400`).
+
+### Changed
+
+- **Breaking:** images are served only from `/images`, and only when their
+  status is `approved`. Sidecar JSON, `.curation/`, `.trash/`, and pending or
+  hidden images return 404. `/static/images/...` returns 404 in every
+  environment; previously it served every file in the folder when no volume
+  was configured.
+- `/artwork/{name}` returns 404 unless the image is approved; it used to show
+  the title, description and tags of pending and hidden images.
+- An unapproved collection cover is ignored in favour of the first approved
+  member.
+- `/admin/api/new-files` items carry `thumb_url` (and `display_url` for
+  gallery items); pending `url` values point at `/admin/image/{name}`.
+
 ## [0.3.0] - 2026-10-10
 
 ### Added

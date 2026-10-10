@@ -118,6 +118,8 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 | `MY_OPENAI_API_KEY`           | production key                                               | test key or unset             |
 | `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`                                                 | `gpt-6-luna`                  |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                          |
+| `CLOUDFLARE_API_TOKEN`        | Cache Purge token                                            | unset (no purge)              |
+| `CLOUDFLARE_ZONE_ID`          | artazzen.com zone id                                         | unset                         |
 | `PORT`                        | set by Railway                                               | set by Railway                |
 
 ## Workflow Summary

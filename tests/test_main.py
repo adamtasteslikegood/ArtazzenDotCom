@@ -86,8 +86,15 @@ def test_read_root(client: TestClient):
     assert 'aria-current="page">Collections</a>' not in response.text
 
 
+def _approve_test_image():
+    (IMAGES_DIR / "test_image.json").write_text(
+        '{"title": "Test Image", "description": "A test image.", "status": "approved"}'
+    )
+
+
 def test_artwork_detail(client: TestClient):
     """Test the artwork detail endpoint."""
+    _approve_test_image()
     response = client.get("/artwork/test_image.jpg")
     assert response.status_code == 200
     assert "Test Image" in response.text
@@ -255,9 +262,8 @@ def test_artwork_seo_json_ld_is_valid_and_script_safe(
     response = client.get("/artwork/seo.jpg")
     assert response.status_code == 200
     assert '<meta property="og:type" content="article">' in response.text
-    expected_image = (
-        f"https://artazzen.com{gallery_app.config.IMAGES_URL_PREFIX}/seo.jpg"
-    )
+    expected_image = f"https://artazzen.com{gallery_app.media.public_url('seo.jpg')}"
+    assert re.search(r"/images/v[0-9a-f]{10}/seo\.jpg$", expected_image)
     assert f'<meta property="og:image" content="{expected_image}">' in response.text
     assert "</script><script>alert(1)</script>" not in response.text
 
@@ -1567,6 +1573,7 @@ def test_main_shim_exposes_compat_surface():
 
 def test_base_template_on_public_pages(client: TestClient):
     """Public pages render through base.html: site nav, footer, theme-init."""
+    _approve_test_image()
     for path in ("/", "/artwork/test_image.jpg"):
         response = client.get(path)
         assert response.status_code == 200
@@ -2717,3 +2724,545 @@ def test_watcher_retry_budget_resets_when_image_is_replaced(monkeypatch, tmp_pat
         _age_auto_retry_state(image_path)
 
     assert len(calls) == 4  # replacement gets a fresh first attempt and one retry
+
+
+# ---------------------------------------------------------------------------
+# Image caching, approved-only serving, derivatives, CDN purge
+# ---------------------------------------------------------------------------
+
+media = gallery_app.media
+IMMUTABLE = "public, max-age=31536000, immutable"
+
+
+def _add_real_image(image_root, name, *, size=(2000, 1000), orientation=None, **fields):
+    """Like _add_image, but the file is a decodable image."""
+    from PIL import Image
+
+    sidecar = _add_image(image_root, name, **fields)
+    image = Image.new("RGB", size, (120, 40, 200))
+    exif = Image.Exif()
+    if orientation:
+        exif[0x0112] = orientation
+    image.save(image_root / name, exif=exif)
+    return sidecar
+
+
+def _derived_size(name, width):
+    from PIL import Image
+
+    with Image.open(media.derivative_path(name, width)) as image:
+        return image.size
+
+
+def _configure_purge(monkeypatch, calls, *, status_code=200, error=None):
+    """Enable Cloudflare purge with a stubbed HTTP call recorded in `calls`."""
+    import httpx
+
+    monkeypatch.setattr(gallery_app.config, "CLOUDFLARE_API_TOKEN", "token")
+    monkeypatch.setattr(gallery_app.config, "CLOUDFLARE_ZONE_ID", "zone")
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        if error:
+            raise error
+        return httpx.Response(status_code, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(media.httpx, "post", fake_post)
+
+
+def test_public_image_versioned_url_is_immutable_and_tagged(
+    client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+    _configure_purge(monkeypatch, [])
+
+    url = media.public_url("a.jpg")
+    assert re.fullmatch(r"/images/v[0-9a-f]{10}/a\.jpg", url)
+    response = client.get(url)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == IMMUTABLE
+    assert response.headers["cache-tag"] == media.cache_tag("a.jpg")
+    assert response.content == (image_root / "a.jpg").read_bytes()
+
+
+def test_public_image_unversioned_url_is_short_lived(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+
+    response = client.get("/images/a.jpg")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "public, max-age=3600"
+    assert response.headers["cache-tag"] == media.cache_tag("a.jpg")
+
+
+def test_public_image_stale_token_redirects_to_current(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+
+    response = client.get("/images/v0123456789/a.jpg", follow_redirects=False)
+    assert response.status_code == 308
+    assert response.headers["location"] == media.public_url("a.jpg")
+    assert "immutable" not in response.headers["cache-control"]
+
+
+@pytest.mark.parametrize("image_status", ["pending", "hidden"])
+def test_public_image_requires_approval(client, tmp_path, monkeypatch, image_status):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg", status=image_status)
+    media.ensure_derivatives(image_root / "a.jpg")
+    thumb = media.derivative_path("a.jpg", gallery_app.config.THUMB_WIDTH)
+    assert thumb.is_file()
+
+    token = media.version_token(image_root / "a.jpg")
+    for path in (
+        "/images/a.jpg",
+        f"/images/{token}/a.jpg",
+        f"/images/.derived/{thumb.name}",
+        f"/images/{media.version_token(thumb)}/.derived/{thumb.name}",
+    ):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 404, path
+        assert response.headers["cache-control"] == "no-store", path
+
+
+def test_public_image_mount_serves_nothing_but_images(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+    gallery_app.curation.ensure_registries()
+    trash = image_root / ".trash"
+    trash.mkdir()
+    (trash / "gone.jpg").write_bytes((image_root / "a.jpg").read_bytes())
+    (trash / "gone.json").write_text((image_root / "a.json").read_text())
+
+    for path in (
+        "/images/a.json",
+        "/images/.curation/collections.json",
+        "/images/.trash/gone.jpg",
+        "/images/.derived/",
+        "/images/",
+        "/images/missing.jpg",
+        "/images/%2e%2e/main.py",
+    ):
+        response = client.get(path)
+        assert response.status_code == 404, path
+
+
+def test_public_derivative_is_immutable_webp(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+    media.ensure_derivatives(image_root / "a.jpg")
+    _configure_purge(monkeypatch, [])
+
+    url = media.derivative_url("a.jpg", gallery_app.config.THUMB_WIDTH)
+    assert re.fullmatch(r"/images/v[0-9a-f]{10}/\.derived/a\.jpg\.480\.webp", url)
+    response = client.get(url)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
+    assert response.headers["cache-control"] == IMMUTABLE
+    assert response.headers["cache-tag"] == media.cache_tag("a.jpg")
+
+
+def test_public_image_edge_lifetime_capped_without_purge(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+    monkeypatch.setattr(gallery_app.config, "CLOUDFLARE_API_TOKEN", "")
+
+    response = client.get(media.public_url("a.jpg"))
+    assert response.headers["cache-control"] == f"{IMMUTABLE}, s-maxage=86400"
+
+
+def test_static_assets_versioned_and_images_subtree_blocked(client, monkeypatch):
+    url = media.static_url("css/styles.css")
+    assert re.fullmatch(r"/static/v[0-9a-f]{10}/css/styles\.css", url)
+    assert f'href="{url}"' in client.get("/").text
+
+    versioned = client.get(url)
+    assert versioned.status_code == 200
+    assert versioned.headers["cache-control"] == IMMUTABLE
+
+    plain = client.get("/static/css/styles.css")
+    assert plain.status_code == 200
+    assert plain.headers["cache-control"] == "public, max-age=3600"
+
+    stale = client.get("/static/v0123456789/css/styles.css", follow_redirects=False)
+    assert stale.status_code == 308
+    assert stale.headers["location"] == url
+
+    _approve_test_image()
+    for path in ("/static/images/test_image.jpg", "/static/images/test_image.json"):
+        response = client.get(path)
+        assert response.status_code == 404, path
+        assert response.headers["cache-control"] == "no-store"
+
+
+def test_admin_image_serves_pending_with_auth_only(
+    authed_client, client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "p.jpg", status="pending")
+    media.ensure_derivatives(image_root / "p.jpg")
+
+    assert media.admin_url("p.jpg") == "/admin/image/p.jpg"
+    response = authed_client.get("/admin/image/p.jpg")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.content == (image_root / "p.jpg").read_bytes()
+
+    thumb = authed_client.get(media.admin_url("p.jpg", 480))
+    assert thumb.status_code == 200
+    assert thumb.headers["content-type"] == "image/webp"
+    assert thumb.headers["cache-control"] == "no-store"
+
+    assert client.get("/admin/image/p.jpg").status_code == 401
+    assert authed_client.get("/admin/image/p.json").status_code == 404
+    assert authed_client.get("/admin/image/missing.jpg").status_code == 404
+
+
+def test_upload_creates_derivatives(authed_client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    source = tmp_path / "src"
+    source.mkdir()
+    _add_real_image(source, "up.jpg", size=(2400, 1200))
+
+    response = authed_client.post(
+        "/admin/upload",
+        files={"files": ("up.jpg", (source / "up.jpg").read_bytes(), "image/jpeg")},
+    )
+    assert response.status_code == 200
+    assert response.json()["saved"] == ["up.jpg"]
+    assert _derived_size("up.jpg", 480) == (480, 240)
+    assert _derived_size("up.jpg", 1600) == (1600, 800)
+    pending = response.json()["pending"]
+    assert pending[0]["url"] == "/admin/image/up.jpg"
+    assert pending[0]["thumb_url"] == "/admin/image/up.jpg?w=480"
+    assert (image_root / "up.json").is_file()
+
+
+def test_derivatives_never_upscale(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "small.png", size=(300, 200))
+    _add_real_image(image_root, "mid.jpg", size=(1000, 500))
+
+    assert media.ensure_derivatives(image_root / "small.png") is True
+    assert _derived_size("small.png", 480) == (300, 200)
+    assert not media.derivative_path("small.png", 1600).exists()
+
+    media.ensure_derivatives(image_root / "mid.jpg")
+    assert _derived_size("mid.jpg", 480) == (480, 240)
+    assert not media.derivative_path("mid.jpg", 1600).exists()
+    # No 1600 derivative: the detail page falls back to the original.
+    assert media.derivative_url("mid.jpg", 1600) == media.public_url("mid.jpg")
+    # Already built and fresh: nothing to do.
+    assert media.ensure_derivatives(image_root / "mid.jpg") is False
+
+
+def test_watcher_backfills_derivatives_with_per_scan_cap(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    monkeypatch.setattr(gallery_app.config, "DERIVATIVE_BACKFILL_PER_SCAN", 2)
+    names = ["a.jpg", "b.jpg", "c.jpg"]
+    for name in names:
+        _add_real_image(image_root, name, size=(600, 300))
+
+    def built():
+        return sum(media.derivative_path(name, 480).exists() for name in names)
+
+    gallery_app.watcher._scan_pending_files()
+    assert built() == 2
+    gallery_app.watcher._scan_pending_files()
+    assert built() == 3
+
+
+def test_derivative_regenerated_when_source_replaced(tmp_path, monkeypatch):
+    from PIL import Image
+
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg", size=(2000, 1000))
+    source = image_root / "a.jpg"
+    media.ensure_derivatives(source)
+    old_token = media.version_token(source)
+    old_url = media.derivative_url("a.jpg", 480)
+
+    Image.new("RGB", (1000, 1000), (1, 2, 3)).save(source)
+    stat = source.stat()
+    os.utime(source, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
+
+    assert media.version_token(source) != old_token
+    # Stale derivative is not offered while the new one is missing.
+    assert media.derivative_url("a.jpg", 480) == media.public_url("a.jpg")
+    assert media.ensure_derivatives(source) is True
+    assert _derived_size("a.jpg", 480) == (480, 480)
+    assert not media.derivative_path("a.jpg", 1600).exists()
+    assert media.derivative_url("a.jpg", 480) != old_url
+
+
+def test_soft_delete_removes_derivatives_and_purges(
+    authed_client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+    media.ensure_derivatives(image_root / "a.jpg")
+    calls = []
+    _configure_purge(monkeypatch, calls)
+
+    response = authed_client.post("/admin/delete/a.jpg")
+    assert response.status_code == 200
+    assert not media.derivative_path("a.jpg", 480).exists()
+    assert not media.derivative_path("a.jpg", 1600).exists()
+    assert (image_root / ".trash" / "a.jpg").is_file()
+    assert len(calls) == 1
+    assert calls[0][1]["json"] == {"tags": [media.cache_tag("a.jpg")]}
+
+
+def test_corrupt_image_falls_back_to_original(client, tmp_path, monkeypatch, caplog):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "bad.jpg")
+    (image_root / "bad.jpg").write_bytes(b"not an image")
+
+    with caplog.at_level("WARNING", logger="app.media"):
+        assert media.ensure_derivatives(image_root / "bad.jpg") is True
+        # The failure is remembered, so later scans do not reopen the file.
+        assert media.ensure_derivatives(image_root / "bad.jpg") is False
+    assert caplog.text.count("No derivatives for bad.jpg") == 1
+    assert not media.derivative_path("bad.jpg", 480).exists()
+    assert media.derivative_url("bad.jpg", 480) == media.public_url("bad.jpg")
+    assert client.get("/").status_code == 200
+
+
+def test_animated_gif_gets_no_derivative(tmp_path, monkeypatch):
+    from PIL import Image
+
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "anim.gif")
+    frames = [Image.new("RGB", (600, 600), color) for color in ("red", "blue")]
+    frames[0].save(
+        image_root / "anim.gif", save_all=True, append_images=frames[1:], duration=50
+    )
+
+    media.ensure_derivatives(image_root / "anim.gif")
+    assert not media.derivative_path("anim.gif", 480).exists()
+    assert media.derivative_url("anim.gif", 480) == media.public_url("anim.gif")
+
+
+def test_concurrent_derivative_builds_do_not_corrupt(tmp_path, monkeypatch, caplog):
+    """An upload and the watcher backfill can build the same image at once."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg", size=(2000, 1000))
+    source = image_root / "a.jpg"
+
+    with (
+        caplog.at_level("WARNING", logger="app.media"),
+        ThreadPoolExecutor(max_workers=4) as pool,
+    ):
+        for _ in range(10):
+            media.remove_derivatives("a.jpg")
+            jobs = [
+                pool.submit(media.ensure_derivatives, source, force=forced)
+                for forced in (True, False, True, False)
+            ]
+            assert all(isinstance(job.result(), bool) for job in jobs)
+            assert _derived_size("a.jpg", 480) == (480, 240)
+            assert _derived_size("a.jpg", 1600) == (1600, 800)
+    assert "No derivatives" not in caplog.text
+    assert not list((image_root / ".derived").glob(".*.tmp"))
+
+
+def test_multi_picture_jpeg_is_not_treated_as_animated(tmp_path, monkeypatch):
+    from PIL import Image
+
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "phone.jpg")
+    frames = [Image.new("RGB", (2000, 1000), color) for color in ("red", "blue")]
+    frames[0].save(
+        image_root / "phone.jpg", format="MPO", save_all=True, append_images=frames[1:]
+    )
+    with Image.open(image_root / "phone.jpg") as opened:
+        assert opened.format == "MPO" and opened.is_animated
+
+    media.ensure_derivatives(image_root / "phone.jpg")
+    assert _derived_size("phone.jpg", 480) == (480, 240)
+    assert _derived_size("phone.jpg", 1600) == (1600, 800)
+
+
+def test_unapprove_purges_cdn_by_tag(authed_client, client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+    calls = []
+    _configure_purge(monkeypatch, calls)
+    assert client.get("/images/a.jpg").status_code == 200
+
+    response = authed_client.post("/admin/unapprove/a.jpg")
+    assert response.status_code == 200
+    assert len(calls) == 1
+    url, kwargs = calls[0]
+    assert url == "https://api.cloudflare.com/client/v4/zones/zone/purge_cache"
+    assert kwargs["headers"] == {"Authorization": "Bearer token"}
+    assert kwargs["json"] == {"tags": [media.cache_tag("a.jpg")]}
+    assert kwargs["timeout"] == 10.0
+    assert client.get("/images/a.jpg").status_code == 404
+
+
+@pytest.mark.parametrize("failure", ["http_500", "timeout"])
+def test_purge_failure_does_not_fail_admin_action(
+    authed_client, tmp_path, monkeypatch, caplog, failure
+):
+    import httpx
+
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+    calls = []
+    if failure == "timeout":
+        _configure_purge(monkeypatch, calls, error=httpx.ReadTimeout("slow"))
+    else:
+        _configure_purge(monkeypatch, calls, status_code=500)
+
+    with caplog.at_level("WARNING", logger="app.media"):
+        response = authed_client.post("/admin/unapprove/a.jpg")
+    assert response.status_code == 200
+    assert len(calls) == 1
+    assert "CDN purge failed for a.jpg" in caplog.text
+    assert json.loads((image_root / "a.json").read_text())["status"] == "pending"
+
+
+def test_purge_skipped_when_cloudflare_unconfigured(
+    authed_client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg")
+    calls = []
+    _configure_purge(monkeypatch, calls)
+    monkeypatch.setattr(gallery_app.config, "CLOUDFLARE_ZONE_ID", "")
+
+    assert authed_client.post("/admin/unapprove/a.jpg").status_code == 200
+    assert calls == []
+
+
+def test_grids_use_thumbnails_and_detail_uses_display(client, tmp_path, monkeypatch):
+    image_root = _curation_fixture(tmp_path, monkeypatch)
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        _add_real_image(image_root, name, size=(2000, 1000))
+        media.ensure_derivatives(image_root / name)
+    for name, slugs in (("a", ["flora"]), ("c", ["flora"])):
+        path = image_root / f"{name}.json"
+        path.write_text(
+            json.dumps({**json.loads(path.read_text()), "collections": slugs})
+        )
+
+    def thumb(name):
+        return f'<img src="{media.derivative_url(name, 480)}"'
+
+    assert ".480.webp" in thumb("a.jpg")
+    gallery = client.get("/").text
+    assert all(thumb(name) in gallery for name in ("a.jpg", "b.jpg", "c.jpg"))
+    assert media.public_url("a.jpg") not in gallery
+
+    collection = client.get("/collections/flora").text
+    assert thumb("c.jpg") in collection  # direct member grid
+    assert thumb("b.jpg") in collection  # series strip
+    assert thumb("a.jpg") in client.get("/collections").text  # cover
+
+    detail = client.get("/artwork/a.jpg").text
+    original = media.public_url("a.jpg")
+    assert f'<img src="{media.derivative_url("a.jpg", 1600)}"' in detail
+    assert ".1600.webp" in media.derivative_url("a.jpg", 1600)
+    assert f'<a href="{original}"' in detail
+    assert f'<meta property="og:image" content="https://artazzen.com{original}">' in (
+        detail
+    )
+
+
+def test_unapproved_collection_cover_falls_back_to_member(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "member.jpg", collections=["flora"])
+    _add_real_image(image_root, "draft.jpg", status="pending", collections=["flora"])
+    entry = gallery_app.curation.upsert_collection(
+        {"id": "flora", "title": "Flora", "cover": "draft.jpg"}
+    )
+    assert entry["cover"] == "draft.jpg"
+
+    cover = gallery_app.curation.collection_cover_url(entry)
+    assert "member.jpg" in cover
+    assert "draft.jpg" not in cover
+
+
+def test_forced_reimport_with_same_mtime_rebuilds_derivatives(
+    authed_client, tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    import_root = tmp_path / "imports"
+    import_root.mkdir()
+    monkeypatch.setattr(gallery_app.config, "IMPORT_ROOT", import_root)
+    source = import_root / "art.jpg"
+    Image.new("RGB", (2000, 1000), (9, 9, 9)).save(source)
+    fixed = (1_700_000_000, 1_700_000_000)
+    os.utime(source, fixed)
+
+    first = authed_client.post("/admin/import-path", data={"path": "art.jpg"})
+    assert first.json()["copied"] == ["art.jpg"]
+    assert _derived_size("art.jpg", 480) == (480, 240)
+
+    Image.new("RGB", (1000, 1000), (200, 9, 9)).save(source)
+    os.utime(source, fixed)  # changed bytes, identical mtime
+    second = authed_client.post(
+        "/admin/import-path?force=true", data={"path": "art.jpg"}
+    )
+    assert second.json()["copied"] == ["art.jpg"]
+    assert _derived_size("art.jpg", 480) == (480, 480)
+    assert not media.derivative_path("art.jpg", 1600).exists()
+
+    # Same size and same mtime, different bytes: the immutable URL of the
+    # original must still change.
+    size = source.stat().st_size
+    url_before = media.public_url("art.jpg")
+    source.write_bytes(bytes(reversed(source.read_bytes())))
+    os.utime(source, fixed)
+    time.sleep(0.02)  # let the change time advance past the previous copy
+    third = authed_client.post(
+        "/admin/import-path?force=true", data={"path": "art.jpg"}
+    )
+    assert third.json()["copied"] == ["art.jpg"]
+    imported = image_root / "art.jpg"
+    assert imported.stat().st_size == size
+    assert imported.stat().st_mtime == fixed[1]
+    assert media.public_url("art.jpg") != url_before
+
+
+def test_derivatives_apply_exif_orientation(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    # Stored landscape, EXIF orientation 6: displayed as portrait.
+    _add_real_image(image_root, "rot.jpg", size=(2000, 1000), orientation=6)
+
+    media.ensure_derivatives(image_root / "rot.jpg")
+    assert _derived_size("rot.jpg", 480) == (480, 960)
+    assert not media.derivative_path("rot.jpg", 1600).exists()
+
+
+def test_urls_percent_encode_filenames(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    name = "APEX-XO-21OCT2025- - 53.JPG"
+    _add_real_image(image_root, name)
+    media.ensure_derivatives(image_root / name)
+
+    url = media.public_url(name)
+    assert url.endswith("/APEX-XO-21OCT2025-%20-%2053.JPG")
+    thumb_url = media.derivative_url(name, 480)
+    assert " " not in thumb_url
+    assert media.admin_url(name) == "/admin/image/APEX-XO-21OCT2025-%20-%2053.JPG"
+    assert client.get(url).status_code == 200
+    assert client.get(thumb_url).headers["content-type"] == "image/webp"
+    stale = client.get(f"/images/v0123456789/{name}", follow_redirects=False)
+    assert stale.headers["location"] == url
+
+
+@pytest.mark.parametrize("image_status", ["pending", "hidden"])
+def test_artwork_page_requires_approval(client, tmp_path, monkeypatch, image_status):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg", title="Secret Title", status=image_status)
+
+    response = client.get("/artwork/a.jpg")
+    assert response.status_code == 404
+    assert "Secret Title" not in response.text

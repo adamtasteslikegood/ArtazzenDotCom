@@ -7,7 +7,7 @@
         {% for artwork in series.artworks %}
         <div class="series-item">
             <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
-                <img src="{{ artwork.url }}"
+                <img src="{{ artwork.thumb_url }}"
                      alt="{{ artwork.title }}"
                      loading="lazy"
                      onload="this.parentElement.classList.add('img-loaded');"
