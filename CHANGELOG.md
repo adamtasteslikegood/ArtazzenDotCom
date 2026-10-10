@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-10
+
 ### Changed
 
 - Default AI metadata model is now `gpt-6-luna` (code default and the shipped
