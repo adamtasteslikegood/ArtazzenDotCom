@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Default AI metadata model is now `gpt-6-luna` (code default and the shipped
+  `ai_config.json`). The admin model list adds `gpt-6-luna`, `gpt-6-terra` and
+  `gpt-6.1-sol`; GPT-6 models are treated like GPT-5 (no `temperature`,
+  1200-token output floor).
+
 ### Fixed
 
 - Background watcher no longer re-sends an image to OpenAI on every 5-second

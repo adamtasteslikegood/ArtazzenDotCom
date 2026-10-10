@@ -244,8 +244,8 @@ def _request_openai_metadata(
             }
         },
     }
-    # GPT-5.x models do not accept 'temperature' via the Responses API
-    if not str(model).startswith("gpt-5"):
+    # GPT-5.x and GPT-6.x models do not accept 'temperature' via the Responses API
+    if not str(model).startswith(config.REASONING_MODEL_PREFIXES):
         request_body["temperature"] = ai_cfg["temperature"]
 
     headers = {

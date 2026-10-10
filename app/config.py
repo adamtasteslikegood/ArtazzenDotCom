@@ -49,7 +49,10 @@ UPLOAD_CHUNK_SIZE = 64 * 1024  # 64 KB streaming chunks
 OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
 OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
 OPENAI_MODEL_ENV = "OPENAI_IMAGE_METADATA_MODEL"
-OPENAI_DEFAULT_MODEL = "gpt-5.6-luna"
+OPENAI_DEFAULT_MODEL = "gpt-6-luna"
+# Reasoning model families: no 'temperature' parameter, and they spend output
+# tokens on reasoning before emitting text.
+REASONING_MODEL_PREFIXES = ("gpt-5", "gpt-6")
 try:
     OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
 except ValueError:
@@ -108,7 +111,7 @@ def _get_ai_config() -> dict[str, Any]:
         max_output_tokens = 600
     # Reasoning models spend output tokens on reasoning before emitting text;
     # too small a budget yields incomplete (empty-text) responses.
-    if model.startswith("gpt-5") and max_output_tokens < 1200:
+    if model.startswith(REASONING_MODEL_PREFIXES) and max_output_tokens < 1200:
         max_output_tokens = 1200
     return {
         "enabled": enabled,

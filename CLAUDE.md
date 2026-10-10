@@ -204,7 +204,7 @@ See `.env.example` for the full list. Key vars:
 | `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                                          |
 | `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin)                           |
 | `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                                         |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`         | Model for AI descriptions                                              |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Model for AI descriptions                                              |
 | `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                                               |
 | `AI_MAX_RETRIES`              | `5`                    | Automatic retries after a failed AI metadata attempt (watcher only)    |
 | `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum wait between those automatic retries                           |
