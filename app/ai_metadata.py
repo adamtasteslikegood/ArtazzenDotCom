@@ -409,6 +409,11 @@ def _request_openai_metadata(
 _auto_retries: dict[str, tuple[tuple[int, int, int], int, float]] = {}
 
 
+def _retry_key(image_path: Path) -> str:
+    """Return one stable key for watcher and admin representations of a path."""
+    return os.path.realpath(os.fspath(image_path))
+
+
 def _file_signature(image_path: Path) -> tuple[int, int, int]:
     try:
         stat = image_path.stat()
@@ -420,12 +425,12 @@ def _file_signature(image_path: Path) -> tuple[int, int, int]:
 
 def _reset_auto_retry_budget(image_path: Path) -> None:
     """Grant an image a fresh automatic retry budget."""
-    _auto_retries.pop(str(image_path), None)
+    _auto_retries.pop(_retry_key(image_path), None)
 
 
 def _prune_auto_retries(existing_paths: list[Path]) -> None:
     """Forget retry state for images that are no longer on disk."""
-    existing_keys = {str(path) for path in existing_paths}
+    existing_keys = {_retry_key(path) for path in existing_paths}
     for key in tuple(_auto_retries):
         if key not in existing_keys:
             _auto_retries.pop(key, None)
@@ -446,7 +451,7 @@ def _auto_retry_due(image_path: Path, metadata: dict[str, Any]) -> bool:
     AI_RETRY_DELAY_SECONDS after the previous one. Admin-triggered
     regeneration does not consult this.
     """
-    key = str(image_path)
+    key = _retry_key(image_path)
     if not _has_missing_ai_fields(metadata):
         _auto_retries.pop(key, None)
         return True
