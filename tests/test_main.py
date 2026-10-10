@@ -4,7 +4,9 @@ import io
 import json
 import os
 import re
+import time
 from contextlib import suppress
+from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
@@ -798,6 +800,77 @@ def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
     )
     cfg = gallery_app._get_ai_config()
     assert cfg["max_output_tokens"] == 1200
+
+
+def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):
+    """GPT-6 models are reasoning models: token floor, no temperature sent."""
+    monkeypatch.setattr(
+        gallery_app.config,
+        "runtime_ai_config",
+        {"model": "gpt-6.1-sol", "max_output_tokens": 624},
+    )
+    assert gallery_app._get_ai_config()["max_output_tokens"] == 1200
+
+    _patch_openai_transport(monkeypatch, _output_text_payload('{"title": "T"}'))
+    fake_client = gallery_app.ai_metadata.httpx.Client
+    sent = {}
+
+    class RecordingClient(fake_client):
+        def post(self, url, **kwargs):
+            sent.update(kwargs.get("json") or {})
+            return super().post(url, **kwargs)
+
+    monkeypatch.setattr(gallery_app.ai_metadata.httpx, "Client", RecordingClient)
+    result = gallery_app._request_openai_metadata(tmp_path / "x.jpg", {}, ["title"])
+    assert result["details"]["status"] == "success"
+    assert sent["model"] == "gpt-6.1-sol"
+    assert "temperature" not in sent
+    assert sent["reasoning"] == {"effort": "low"}
+
+
+def test_reasoning_effort_falls_back_when_model_rejects_it(monkeypatch):
+    for model, effort, expected in [
+        ("gpt-6-luna", "none", "none"),
+        ("gpt-6-astra", "none", "low"),
+        ("gpt-6.1-sol", "minimal", "low"),
+        ("gpt-6.1-sol", "high", "high"),
+        ("gpt-6-luna", "bogus", "low"),
+    ]:
+        monkeypatch.setattr(
+            gallery_app.config,
+            "runtime_ai_config",
+            {"model": model, "reasoning_effort": effort},
+        )
+        assert gallery_app._get_ai_config()["reasoning_effort"] == expected
+
+
+def test_admin_config_saves_reasoning_effort(monkeypatch, tmp_path):
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
+    monkeypatch.setattr(gallery_app.config, "runtime_ai_config", {})
+    client = TestClient(gallery_app.app)
+    auth = ("admin", "secret")
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+
+    saved = client.post(
+        "/admin/config",
+        json={"ai": {"model": "gpt-6-luna", "reasoning_effort": "none"}},
+        auth=auth,
+    ).json()["ai"]
+    assert saved["reasoning_effort"] == "none"
+    assert "temperature" in saved  # still returned for the iOS client
+
+    # Switching to a model that rejects the stored effort resets it.
+    saved = client.post(
+        "/admin/config", json={"ai": {"model": "gpt-6-astra"}}, auth=auth
+    ).json()["ai"]
+    assert saved["reasoning_effort"] == "low"
+    assert json.loads((tmp_path / "ai.json").read_text())["reasoning_effort"] == "low"
+
+
+def test_default_model_is_gpt6_luna():
+    assert gallery_app.config.OPENAI_DEFAULT_MODEL == "gpt-6-luna"
+    shipped = json.loads((gallery_app.config.BASE_DIR / "ai_config.json").read_text())
+    assert shipped["model"] == "gpt-6-luna"
 
 
 def test_stuffed_title_rejected(monkeypatch, tmp_path):
@@ -1728,6 +1801,14 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
 
+    image_path = image_root / "regen_test.jpg"
+    retry_key = str(image_path)
+    monkeypatch.setitem(
+        gallery_app.ai_metadata._auto_retries,
+        retry_key,
+        (gallery_app.ai_metadata._file_signature(image_path), 5, time.time()),
+    )
+
     writes = []
     orig_write = gallery_app._write_sidecar
 
@@ -1750,6 +1831,50 @@ def test_regenerate_success_writes_once(monkeypatch, tmp_path):
     assert len(payload["updated"]) == 1
     assert writes == ["regen_test.jpg"]
     assert json.loads(sidecar.read_text())["title"] == "AI Title"
+    assert retry_key not in gallery_app.ai_metadata._auto_retries
+
+
+def test_regenerate_resets_watcher_budget_with_relative_images_dir(
+    monkeypatch, tmp_path
+):
+    """Admin's resolved path must clear state created from a watcher path."""
+    monkeypatch.chdir(tmp_path)
+    image_root = Path("images")
+    image_root.mkdir()
+    _write_regen_sidecar(image_root)
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata,
+        "_populate_missing_metadata",
+        lambda path, meta, only_fields=None, persist=True: {
+            **meta,
+            "title": "AI Title",
+            "ai_details": {"status": "success"},
+        },
+    )
+    monkeypatch.setattr(gallery_app.watcher, "new_files_detected", list)
+
+    watcher_path = image_root / "regen_test.jpg"
+    resolved_path = gallery_app.sidecars._resolve_image_path("regen_test.jpg")
+    assert watcher_path != resolved_path
+    retry_key = gallery_app.ai_metadata._retry_key(watcher_path)
+    monkeypatch.setitem(
+        gallery_app.ai_metadata._auto_retries,
+        retry_key,
+        (gallery_app.ai_metadata._file_signature(watcher_path), 5, time.time()),
+    )
+
+    response = asyncio.run(
+        gallery_app.regenerate_ai_metadata(
+            _regen_request(
+                {"images": ["regen_test.jpg"], "fields": ["title"], "force": True}
+            ),
+            _=None,
+        )
+    )
+
+    assert json.loads(response.body)["errors"] == []
+    assert retry_key not in gallery_app.ai_metadata._auto_retries
 
 
 def test_regenerate_with_fields_blanks_only_targeted(monkeypatch, tmp_path):
@@ -2193,3 +2318,402 @@ def test_config_artist_attribution_persists(authed_client, isolated_config):
     data = response.json()
     assert data["ai"]["default_artist"] == "Test Artist"
     assert data["ai"]["default_copyright"] == "CC0"
+
+
+def test_watcher_does_not_resend_failed_image_every_poll(monkeypatch, tmp_path):
+    """A failed OpenAI attempt must not be repeated on each watcher scan."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "stuck.jpg").touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def failing_request(_path, _meta, _fields):
+        calls.append(time.time())
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": time.time()},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", failing_request
+    )
+
+    for _ in range(5):
+        gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 1
+
+
+def _age_auto_retry_state(image_path):
+    """Advance an image's in-memory retry clock past the configured delay."""
+    key = gallery_app.ai_metadata._retry_key(image_path)
+    signature, retries, _ = gallery_app.ai_metadata._auto_retries[key]
+    gallery_app.ai_metadata._auto_retries[key] = (
+        signature,
+        retries,
+        time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1,
+    )
+
+
+def test_watcher_retries_failed_image_after_delay(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "stuck.jpg").touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def stale_failure(_path, _meta, _fields):
+        calls.append(1)
+        stale = time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": stale},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", stale_failure
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    _age_auto_retry_state(image_root / "stuck.jpg")
+    gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 2
+
+
+def test_watcher_persists_unexpected_processing_failure(monkeypatch, tmp_path):
+    """A post-request exception must still put the image on cooldown."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "stuck.jpg"
+    image_path.touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def raising_request(_path, _meta, _fields):
+        calls.append(1)
+        raise ValueError("invalid post-request payload")
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", raising_request
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 1
+    stored = json.loads(image_path.with_suffix(".json").read_text())
+    assert stored["ai_details"]["status"] == "error_processing"
+    assert stored["ai_details"]["attempted_at"] > 0
+
+
+def test_watcher_retry_limit_survives_sidecar_write_failures(monkeypatch, tmp_path):
+    """A failed sidecar write must not turn every poll into a first attempt."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "stuck.jpg"
+    image_path.touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "AI_MAX_RETRIES", 1)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def failing_request(_path, _meta, _fields):
+        calls.append(1)
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": time.time()},
+        }
+
+    def failing_persist(_path, _metadata, _applied_fields):
+        raise OSError("temporary sidecar write failure")
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", failing_request
+    )
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_persist_populated_fields", failing_persist
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 1
+
+    key = str(image_path)
+    signature, retries, attempted_at = gallery_app.ai_metadata._auto_retries[key]
+    assert retries == 0
+    gallery_app.ai_metadata._auto_retries[key] = (
+        signature,
+        retries,
+        attempted_at - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1,
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 2
+
+    signature, retries, attempted_at = gallery_app.ai_metadata._auto_retries[key]
+    assert retries == 1
+    gallery_app.ai_metadata._auto_retries[key] = (
+        signature,
+        retries,
+        attempted_at - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1,
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 2
+
+
+def test_watcher_retries_immediately_when_api_key_becomes_available(
+    monkeypatch, tmp_path
+):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "missing-key.jpg"
+    image_path.touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.ai_metadata, "_get_openai_api_key", lambda: None)
+
+    gallery_app.watcher._scan_pending_files()
+
+    stored = json.loads(image_path.with_suffix(".json").read_text())
+    assert stored["ai_details"]["status"] == "skipped_no_api_key"
+
+    calls = []
+
+    def successful_request(_path, _meta, _fields):
+        calls.append(1)
+        return {
+            "title": "Generated title",
+            "description": "Generated description",
+            "details": {
+                "status": "success",
+                "attempted_at": time.time(),
+            },
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "new-test-key"
+    )
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", successful_request
+    )
+
+    gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 1
+
+
+def test_regenerate_leaves_sidecar_unchanged_on_unexpected_ai_failure(
+    monkeypatch, tmp_path
+):
+    """Non-forced admin regeneration must report an unexpected AI failure as
+    an error, not write an error_processing candidate and call it updated."""
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", status="pending")
+    sidecar = image_root / "a.json"
+    data = json.loads(sidecar.read_text())
+    data["title"] = ""
+    sidecar.write_text(json.dumps(data))
+    before = sidecar.read_text()
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+
+    def exploding_request(_path, _meta, _fields):
+        raise RuntimeError("unexpected response shape")
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", exploding_request
+    )
+
+    meta = gallery_app.sidecars._load_metadata(image_root / "a.jpg")
+    with pytest.raises(RuntimeError):
+        gallery_app.ai_metadata._populate_missing_metadata(
+            image_root / "a.jpg", meta, only_fields=["title"], persist=False
+        )
+
+    assert sidecar.read_text() == before
+
+
+def test_watcher_prunes_retry_budget_for_deleted_images(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "deleted.jpg"
+    image_path.touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+
+    key = str(image_path)
+    gallery_app.ai_metadata._auto_retries[key] = (
+        gallery_app.ai_metadata._file_signature(image_path),
+        1,
+        time.time(),
+    )
+    image_path.unlink()
+
+    gallery_app.watcher._scan_pending_files()
+
+    assert key not in gallery_app.ai_metadata._auto_retries
+
+
+def test_watcher_keeps_retry_budget_when_directory_scan_fails(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+
+    key = str(image_root / "stuck.jpg")
+    monkeypatch.setitem(
+        gallery_app.ai_metadata._auto_retries,
+        key,
+        ((1, 2, 3), 1, time.time()),
+    )
+
+    def failing_listdir(_path):
+        raise OSError("temporary scan failure")
+
+    monkeypatch.setattr(gallery_app.watcher.os, "listdir", failing_listdir)
+
+    gallery_app.watcher._scan_pending_files()
+
+    assert key in gallery_app.ai_metadata._auto_retries
+
+
+def test_watcher_preserves_retry_budget_while_ai_unavailable(monkeypatch, tmp_path):
+    """Disabled AI or a missing key must not consume an image's retry budget."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "stuck.jpg").touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "AI_MAX_RETRIES", 1)
+
+    runtime = {"enabled": True, "key": "test-key"}
+    monkeypatch.setattr(
+        gallery_app.config,
+        "_get_ai_config",
+        lambda: {"enabled": runtime["enabled"]},
+    )
+    monkeypatch.setattr(
+        gallery_app.ai_metadata,
+        "_get_openai_api_key",
+        lambda: runtime["key"],
+    )
+    calls = []
+
+    def stale_failure(_path, _meta, _fields):
+        calls.append(1)
+        stale = time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": stale},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", stale_failure
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 1
+
+    runtime["enabled"] = False
+    for _ in range(3):
+        gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 1
+
+    runtime["enabled"] = True
+    runtime["key"] = None
+    for _ in range(3):
+        gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 1
+
+    runtime["key"] = "restored-test-key"
+    _age_auto_retry_state(image_root / "stuck.jpg")
+    gallery_app.watcher._scan_pending_files()
+    gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 2  # the one retry was preserved until AI was available
+
+
+def test_watcher_stops_after_max_retries(monkeypatch, tmp_path):
+    """After AI_MAX_RETRIES spaced retries the watcher gives up on an image."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "stuck.jpg").touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "AI_MAX_RETRIES", 3)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def stale_failure(_path, _meta, _fields):
+        calls.append(1)
+        stale = time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": stale},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", stale_failure
+    )
+
+    for _ in range(10):
+        gallery_app.watcher._scan_pending_files()
+        _age_auto_retry_state(image_root / "stuck.jpg")
+
+    assert len(calls) == 1 + 3  # first attempt plus three retries
+
+
+def test_watcher_retry_budget_resets_when_image_is_replaced(monkeypatch, tmp_path):
+    """A new upload under the same filename must not inherit the previous
+    file's exhausted retry count."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "stuck.jpg"
+    image_path.write_bytes(b"old")
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "AI_MAX_RETRIES", 1)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def stale_failure(_path, _meta, _fields):
+        calls.append(1)
+        stale = time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": stale},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", stale_failure
+    )
+
+    for _ in range(4):
+        gallery_app.watcher._scan_pending_files()
+        _age_auto_retry_state(image_path)
+    assert len(calls) == 2  # first attempt plus the single retry, then stop
+
+    image_path.write_bytes(b"replacement image bytes")  # sidecar stays in place
+    for _ in range(4):
+        gallery_app.watcher._scan_pending_files()
+        _age_auto_retry_state(image_path)
+
+    assert len(calls) == 4  # replacement gets a fresh first attempt and one retry

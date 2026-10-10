@@ -16,11 +16,21 @@ Review only application code. Skip these paths entirely — do not read, analyze
 
 ## Efficiency Rules
 
-Copilot reviews consume tokens. Follow these rules to avoid waste:
+Every push triggers a review, and each finding costs a fix-and-re-review round. Follow these rules:
 
-1. **No repeat comments.** If you have already posted a comment on a file in this PR, do not re-raise the same feedback on subsequent review passes. On re-review, comment only on lines changed since your last review.
-2. **No drive-by nitpicks.** Do not comment on style preferences, whitespace, import ordering, or formatting — automated tools (ruff, black, prettier) handle those. Only flag issues that tools cannot catch.
-3. **One comment per issue.** If the same pattern appears in multiple places, post one comment referencing all locations rather than separate comments on each.
+1. **Report everything in the first review.** Read the whole diff and list every finding at SUGGESTION or above in one pass. Do not hold findings back for later passes.
+2. **Re-reviews cover only what changed.** On a later pass, comment only on lines changed since your last review. Raise a new finding on unchanged code only if it is CRITICAL; otherwise leave it out, including "previously missed" items.
+3. **No repeat comments.** Do not re-raise feedback that was answered in a resolved thread, whether by a fix or by a rebuttal.
+4. **No drive-by nitpicks.** Do not comment on style, whitespace, import order, or formatting; ruff, black and prettier handle those.
+5. **One comment per issue.** If a pattern appears in several places, post one comment listing the locations.
+
+## Calibration
+
+- **Scale.** One admin, one process, tens to hundreds of images. Do not flag unbounded growth, multi-worker races, or high-traffic concerns unless you can state a realistic scenario at this scale; if you cannot, it is at most a SUGGESTION.
+- **Scope.** Judge the change against what the PR says it does. A gap in behaviour the PR does not touch is at most a SUGGESTION, and belongs in an issue, not this PR.
+- **Evidence.** Quote the code line or the documentation sentence a finding relies on. Do not say behaviour "contradicts the documentation" without quoting the text. Do not assert facts about external services (model names, API parameters) unless the diff, the repository, or current vendor documentation supports them; quote or link the source.
+- **Planning documents.** Files under `docs/` that describe proposals or roadmaps are not specifications. Flag factual errors about the current code and internal contradictions. Do not ask for more implementation detail, and do not flag approximate or slightly stale counts.
+- **Intended fallbacks.** A conservative failure mode (fewer retries, a delayed attempt, a fallback to a default) is not a defect unless it loses data or breaks a documented guarantee.
 
 ## Priority Levels
 
