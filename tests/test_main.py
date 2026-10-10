@@ -3242,16 +3242,6 @@ def test_urls_percent_encode_filenames(client, tmp_path, monkeypatch):
     assert stale.headers["location"] == url
 
 
-def test_gallery_skips_files_with_unservable_names(client, tmp_path, monkeypatch):
-    image_root = _make_curation_root(tmp_path, monkeypatch)
-    _add_real_image(image_root, "ok.jpg")
-    _add_real_image(image_root, "odd..name.jpg")
-
-    assert [item["name"] for item in media.list_artworks()] == ["ok.jpg"]
-    assert client.get("/").status_code == 200
-    assert client.get("/images/odd..name.jpg").status_code == 404
-
-
 @pytest.mark.parametrize("image_status", ["pending", "hidden"])
 def test_artwork_page_requires_approval(client, tmp_path, monkeypatch, image_status):
     image_root = _make_curation_root(tmp_path, monkeypatch)

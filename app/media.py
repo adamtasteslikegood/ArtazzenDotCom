@@ -116,15 +116,10 @@ def add_urls(meta: dict[str, Any], filename: str) -> dict[str, Any]:
 
 def list_artworks(*, status_filter: str = "approved") -> list[dict[str, Any]]:
     """`sidecars.get_artwork_files` with public URLs attached."""
-    artworks = []
-    for meta in sidecars.get_artwork_files(status_filter=status_filter):
-        try:
-            artworks.append(add_urls(meta, meta["name"]))
-        except HTTPException:
-            # A file on disk whose name the path checks reject cannot be
-            # served; leave it out rather than fail the whole page.
-            logger.warning("Skipping image with unservable name: %s", meta["name"])
-    return artworks
+    return [
+        add_urls(meta, meta["name"])
+        for meta in sidecars.get_artwork_files(status_filter=status_filter)
+    ]
 
 
 def admin_url(filename: str, width: int | None = None) -> str:
