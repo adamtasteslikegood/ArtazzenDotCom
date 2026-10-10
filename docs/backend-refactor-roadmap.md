@@ -9,20 +9,20 @@ response, and a service layer that owns the business rules.
 
 ## Where the backend is today
 
-| Fact                                                                                                               | Evidence                                      |
-| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| One 789-line module holds all 19 admin routes: HTML pages, JSON endpoints, upload, import, AI regeneration.        | `app/routes_admin.py`                         |
-| No typed request or response models. Four routes parse `await request.json()` by hand; one takes 11 `Form` fields. | `app/routes_admin.py:152,195,237,285,604-614` |
-| JSON endpoints are spread over three URL shapes: `/admin/api/*`, `/admin/config`, `/admin/<verb>/{name}`.          | route decorators in `app/routes_admin.py`     |
-| The iOS app (ArtazzenMobile) calls these admin endpoints with Basic auth. They are an external contract already.   | paths found in the ArtazzenMobile source      |
-| Business rules live inside route handlers (approve, unapprove, delete, upload conflict handling).                  | `app/routes_admin.py:600-735`                 |
-| "Is this artwork public?" is answered in several places with slightly different checks.                            | `app/curation.py:245`, `app/sidecars.py:396`  |
-| The public artwork page has no status check at all.                                                                | `app/routes_public.py:174-200`                |
-| Every gallery request lists the image directory and reads every sidecar.                                           | `app/sidecars.py:386-402`                     |
-| Errors are raised ad hoc: 29 `HTTPException` sites, 14 broad `except Exception`.                                   | `app/`                                        |
-| `sentry-sdk` is installed but never initialised. There is no health endpoint.                                      | `requirements.txt:57`; no import in `app/`    |
-| All 101 tests are in one 2,195-line file with 176 monkeypatches; `main.py` re-exports internals for them.          | `tests/test_main.py`, `main.py`               |
-| A separate `mypy app` run reports 3 errors on `dev`; CI currently checks only `main.py`.                           | PR #170 dev check; `.github/workflows/ci.yml` |
+| Fact                                                                                                                                                                                          | Evidence                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| One module of about 790 lines holds all 19 admin routes: HTML pages, JSON endpoints, upload, import, AI regeneration.                                                                         | `app/routes_admin.py`                         |
+| No typed request or response models. Four routes parse `await request.json()` by hand; one takes 11 `Form` fields.                                                                            | `app/routes_admin.py:152,195,237,285,604-614` |
+| JSON endpoints follow no single URL scheme: `/admin/api/*`, `/admin/config` and `/admin/config/reset`, `/admin/ai/regenerate`, `/admin/upload`, `/admin/import-path`, `/admin/<verb>/{name}`. | route decorators in `app/routes_admin.py`     |
+| The iOS app (ArtazzenMobile) calls these admin endpoints with Basic auth. They are an external contract already.                                                                              | paths found in the ArtazzenMobile source      |
+| Business rules live inside route handlers (approve, unapprove, delete, upload conflict handling).                                                                                             | `app/routes_admin.py:600-735`                 |
+| "Is this artwork public?" is answered in several places with slightly different checks.                                                                                                       | `app/curation.py:245`, `app/sidecars.py:396`  |
+| The public artwork page has no status check at all.                                                                                                                                           | `app/routes_public.py:174-200`                |
+| Every gallery request lists the image directory and reads every sidecar.                                                                                                                      | `app/sidecars.py:386-402`                     |
+| Errors are raised ad hoc: about 30 `HTTPException` sites and 14 broad `except Exception` handlers.                                                                                            | `app/`                                        |
+| `sentry-sdk` is installed but never initialised. There is no health endpoint.                                                                                                                 | `requirements.txt:57`; no import in `app/`    |
+| All tests (about 100) are in one file of over 2,000 lines with roughly 100 `monkeypatch` calls; `main.py` re-exports internals for them.                                                      | `tests/test_main.py`, `main.py`               |
+| A separate `mypy app` run reports 3 errors on `dev`; CI currently checks only `main.py`.                                                                                                      | PR #170 dev check; `.github/workflows/ci.yml` |
 
 ## Target shape
 
@@ -74,7 +74,12 @@ test that does not go through HTTP.
   page, collection pages, sitemap, social-card metadata. One function,
   `services.artworks.is_public()`, answers this everywhere.
 - Leaving `approved` purges the image from the CDN.
-- An admin edit always wins over a concurrent AI result.
+- An admin edit always wins over a concurrent AI result: under the sidecar
+  lock, an AI value is applied only to a field that is still empty (or, for a
+  forced regeneration, unchanged since the request started); otherwise it is
+  dropped and not recorded in `ai_fields`. Today's code does not do this for a
+  field edited while the request is in flight (issue #176). That fix lands as
+  its own pull request with a direct test before phase 2 moves the code.
 
 **Sidecars and registries**
 
@@ -90,8 +95,8 @@ test that does not go through HTTP.
 
 - AI fills only empty fields unless the caller forces regeneration.
 - `ai_fields` records which fields AI wrote.
-- Automatic retries are bounded (cooldown from PR #170). Manual regeneration
-  is never throttled.
+- Automatic retries are bounded (`AI_MAX_RETRIES`, `AI_RETRY_DELAY_SECONDS`;
+  PRs #170 and #172). Manual regeneration is never throttled.
 
 **Uploads and imports**
 
@@ -102,7 +107,10 @@ test that does not go through HTTP.
 
 **API behaviour**
 
-- Every error has one shape: `{"error": {"code": "...", "message": "...", "details": {...}}}`.
+- Every `/api/v1` error has one shape:
+  `{"error": {"code": "...", "message": "...", "details": {...}}}`. Legacy
+  adapters keep FastAPI's `{"detail": ...}` body and status codes; they
+  translate the same service errors into that shape.
 - Mutations accept an `Idempotency-Key`. Phase 3 implements the durable
   coordinator as a SQLite operation journal with a unique
   `(principal, operation, key)` constraint and `BEGIN IMMEDIATE` claims. Each
@@ -120,23 +128,25 @@ test that does not go through HTTP.
 
 ## API v1 surface
 
-| v1                                             | Replaces                                    |
-| ---------------------------------------------- | ------------------------------------------- |
-| `GET /api/v1/artworks?status=`                 | `GET /admin/api/new-files`                  |
-| `GET /api/v1/artworks/{name}`                  | `GET /admin/api/sidecar/{name}`             |
-| `PATCH /api/v1/artworks/{name}`                | `POST /admin/metadata/{name}`               |
-| `POST /api/v1/artworks/{name}/approve`         | `POST /admin/metadata/{name}` with `action` |
-| `POST /api/v1/artworks/{name}/unapprove`       | `POST /admin/unapprove/{name}`              |
-| `POST /api/v1/artworks/{name}/hide`            | new explicit lifecycle operation            |
-| `DELETE /api/v1/artworks/{name}`               | `POST /admin/delete/{name}`                 |
-| `POST /api/v1/artworks:approve-pending`        | `POST /admin/api/accept-all`                |
-| `POST /api/v1/uploads`                         | `POST /admin/upload`                        |
-| `POST /api/v1/imports`                         | `POST /admin/import-path`                   |
-| `GET/POST/PATCH/DELETE /api/v1/collections`    | `GET/POST /admin/api/collections`           |
-| `GET/POST/PATCH/DELETE /api/v1/series`         | `GET/POST /admin/api/series`                |
-| `GET/PUT/DELETE /api/v1/ai/config`             | `/admin/config`, `/admin/config/reset`      |
-| `POST /api/v1/ai/regenerations`                | `POST /admin/ai/regenerate`                 |
-| `GET /api/v1/artworks/{name}/image` (no-store) | pending previews loaded from `/images/`     |
+| v1                                             | Replaces                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------- |
+| `GET /api/v1/artworks?status=`                 | `GET /admin/api/new-files`                                          |
+| `GET /api/v1/artworks/{name}`                  | `GET /admin/api/sidecar/{name}`                                     |
+| `PATCH /api/v1/artworks/{name}`                | `POST /admin/metadata/{name}`                                       |
+| `POST /api/v1/artworks/{name}/approve`         | `POST /admin/metadata/{name}` with `action`                         |
+| `POST /api/v1/artworks/{name}/unapprove`       | `POST /admin/unapprove/{name}`                                      |
+| `POST /api/v1/artworks/{name}/hide`            | new explicit lifecycle operation                                    |
+| `DELETE /api/v1/artworks/{name}`               | `POST /admin/delete/{name}`                                         |
+| `POST /api/v1/artworks:approve-pending`        | `POST /admin/api/accept-all`                                        |
+| `POST /api/v1/uploads`                         | `POST /admin/upload`                                                |
+| `POST /api/v1/imports`                         | `POST /admin/import-path`                                           |
+| `GET/POST /api/v1/collections`                 | `GET /admin/api/collections`; `POST` with `action: create`          |
+| `GET/PATCH/DELETE /api/v1/collections/{slug}`  | `POST /admin/api/collections` with `action: update`, `delete`       |
+| `GET/POST /api/v1/series`                      | `GET /admin/api/series`; `POST` with `action: create`               |
+| `GET/PATCH/DELETE /api/v1/series/{id}`         | `POST /admin/api/series` with `action: update`, `reorder`, `delete` |
+| `GET/PUT/DELETE /api/v1/ai/config`             | `/admin/config`, `/admin/config/reset`                              |
+| `POST /api/v1/ai/regenerations`                | `POST /admin/ai/regenerate`                                         |
+| `GET /api/v1/artworks/{name}/image` (no-store) | pending previews loaded from `/images/`                             |
 
 Old paths stay as compatibility adapters until the iOS app has moved, then
 are removed in phase 5. Each adapter preserves the exact legacy transport
@@ -196,7 +206,8 @@ imports `storage` directly.
   reuses the existing admin-auth dependency from its first release; phase 4
   replaces that credential mechanism rather than introducing authentication.
 - Old endpoints remain compatibility adapters and return a `Deprecation`
-  header while preserving their exact legacy request and response shapes.
+  header while preserving their exact legacy request and response shapes,
+  including `{"detail": ...}` errors.
 - Disable FastAPI's default `/openapi.json`, `/docs`, and `/redoc` endpoints.
   Serve the schema and documentation through explicitly authenticated admin
   routes; hand the generated client or spec file to the ArtazzenMobile repo.
@@ -232,7 +243,7 @@ Exit: one way to do each thing; `main.py` under 15 lines.
 
 ## How this fits work already planned
 
-- PR #170 (watcher retry cooldown) and the image caching and thumbnail work
+- PRs #170 and #172 (watcher retry limits) and the image caching and thumbnail work
   go first. The image work adds `app/media.py`; in phase 2 its purge and
   approval calls move behind `services.artworks`.
 - The approved-only decision for `/images` breaks pending previews in the iOS
