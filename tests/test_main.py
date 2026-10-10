@@ -2234,6 +2234,17 @@ def test_watcher_does_not_resend_failed_image_every_poll(monkeypatch, tmp_path):
     assert len(calls) == 1
 
 
+def _age_auto_retry_state(image_path):
+    """Advance an image's in-memory retry clock past the configured delay."""
+    key = str(image_path)
+    signature, retries, _ = gallery_app.ai_metadata._auto_retries[key]
+    gallery_app.ai_metadata._auto_retries[key] = (
+        signature,
+        retries,
+        time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1,
+    )
+
+
 def test_watcher_retries_failed_image_after_delay(monkeypatch, tmp_path):
     image_root = tmp_path / "images"
     image_root.mkdir()
@@ -2258,6 +2269,7 @@ def test_watcher_retries_failed_image_after_delay(monkeypatch, tmp_path):
     )
 
     gallery_app.watcher._scan_pending_files()
+    _age_auto_retry_state(image_root / "stuck.jpg")
     gallery_app.watcher._scan_pending_files()
 
     assert len(calls) == 2
@@ -2513,6 +2525,7 @@ def test_watcher_preserves_retry_budget_while_ai_unavailable(monkeypatch, tmp_pa
     assert len(calls) == 1
 
     runtime["key"] = "restored-test-key"
+    _age_auto_retry_state(image_root / "stuck.jpg")
     gallery_app.watcher._scan_pending_files()
     gallery_app.watcher._scan_pending_files()
 
@@ -2546,6 +2559,7 @@ def test_watcher_stops_after_max_retries(monkeypatch, tmp_path):
 
     for _ in range(10):
         gallery_app.watcher._scan_pending_files()
+        _age_auto_retry_state(image_root / "stuck.jpg")
 
     assert len(calls) == 1 + 3  # first attempt plus three retries
 
@@ -2579,10 +2593,12 @@ def test_watcher_retry_budget_resets_when_image_is_replaced(monkeypatch, tmp_pat
 
     for _ in range(4):
         gallery_app.watcher._scan_pending_files()
+        _age_auto_retry_state(image_path)
     assert len(calls) == 2  # first attempt plus the single retry, then stop
 
     image_path.write_bytes(b"replacement image bytes")  # sidecar stays in place
     for _ in range(4):
         gallery_app.watcher._scan_pending_files()
+        _age_auto_retry_state(image_path)
 
-    assert len(calls) == 3  # the replacement gets its own retry
+    assert len(calls) == 4  # replacement gets a fresh first attempt and one retry
