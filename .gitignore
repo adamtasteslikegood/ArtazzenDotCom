@@ -19,3 +19,4 @@ logs/
 .claude/worktrees
 .coverage
 coverage.xml
+/docs/railway_logs/
