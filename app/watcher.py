@@ -59,11 +59,13 @@ def _apply_scan_result(state, seq: int, pending: list[dict[str, Any]]) -> None:
 
 def _scan_pending_files() -> list[dict[str, Any]]:
     pending: list[dict[str, Any]] = []
+    listing_succeeded = True
     try:
         disk_listing = os.listdir(config.IMAGES_DIR)
     except OSError as exc:
         logger.error("Unable to scan images directory %s: %s", config.IMAGES_DIR, exc)
         disk_listing = []
+        listing_succeeded = False
 
     existing_files = [
         name
@@ -71,7 +73,8 @@ def _scan_pending_files() -> list[dict[str, Any]]:
         if (config.IMAGES_DIR / name).is_file() and sidecars._allowed_image(name)
     ]
     existing_paths = [config.IMAGES_DIR / name for name in existing_files]
-    ai_metadata._prune_auto_retries(existing_paths)
+    if listing_succeeded:
+        ai_metadata._prune_auto_retries(existing_paths)
 
     for filename in existing_files:
         # One bad entry (unreadable file, rejected name) must not take down
