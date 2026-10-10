@@ -7,9 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Default AI metadata model is now `gpt-6-luna` (code default and the shipped
-  `ai_config.json`). The admin model list adds `gpt-6-luna` and
-  `gpt-6.1-sol`; GPT-6 models are treated like GPT-5 (no `temperature`,
-  1200-token output floor).
+  `ai_config.json`). The admin model list is now `gpt-6.1-sol`,
+  `gpt-6-luna` and `gpt-6-astra`; older models are no longer offered.
+- The admin temperature setting is replaced by a reasoning effort setting
+  (`none`, `minimal`, `low`, `medium`, `high`; default `low`), sent to GPT-5
+  and GPT-6 models. Efforts a model rejects (`none` on `gpt-6-astra`; `none`
+  and `minimal` on `gpt-6.1-sol`) are disabled in the form and fall back to
+  `low` on the server. `/admin/config` still returns `temperature` for older
+  clients; it is only sent to non-reasoning models.
 
 ### Fixed
 

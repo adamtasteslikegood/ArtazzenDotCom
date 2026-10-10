@@ -244,8 +244,11 @@ def _request_openai_metadata(
             }
         },
     }
-    # GPT-5.x and GPT-6.x models do not accept 'temperature' via the Responses API
-    if not str(model).startswith(config.REASONING_MODEL_PREFIXES):
+    # Reasoning models take an effort level and reject 'temperature'; older
+    # models are the reverse.
+    if str(model).startswith(config.REASONING_MODEL_PREFIXES):
+        request_body["reasoning"] = {"effort": ai_cfg["reasoning_effort"]}
+    else:
         request_body["temperature"] = ai_cfg["temperature"]
 
     headers = {
