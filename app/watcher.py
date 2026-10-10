@@ -79,7 +79,8 @@ def _scan_pending_files() -> list[dict[str, Any]]:
             metadata = sidecars._load_metadata(image_path)
             sidecars._ensure_sidecar(image_path, metadata)
             metadata = sidecars._load_metadata(image_path)
-            metadata = ai_metadata._populate_missing_metadata(image_path, metadata)
+            if ai_metadata._auto_retry_due(metadata):
+                metadata = ai_metadata._populate_missing_metadata(image_path, metadata)
         except FileNotFoundError:
             raise  # handled by the watcher loop's retry
         except Exception as exc:

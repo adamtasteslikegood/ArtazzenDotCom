@@ -35,6 +35,9 @@ ALLOWED_IMAGE_EXTENSIONS = {
 }
 
 POLL_INTERVAL_SECONDS = 5
+# Minimum wait before the watcher re-sends an image to OpenAI after an attempt
+# that left fields empty. Without it one failing image is retried every poll.
+AI_RETRY_COOLDOWN_SECONDS = 6 * 60 * 60
 
 ADMIN_USERNAME_ENV = "ADMIN_USERNAME"
 ADMIN_PASSWORD_ENV = "ADMIN_PASSWORD"

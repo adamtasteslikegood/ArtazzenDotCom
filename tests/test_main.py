@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import time
 from contextlib import suppress
 from xml.etree import ElementTree
 
@@ -2193,3 +2194,61 @@ def test_config_artist_attribution_persists(authed_client, isolated_config):
     data = response.json()
     assert data["ai"]["default_artist"] == "Test Artist"
     assert data["ai"]["default_copyright"] == "CC0"
+
+
+def test_watcher_does_not_resend_failed_image_every_poll(monkeypatch, tmp_path):
+    """A failed OpenAI attempt must not be repeated on each watcher scan."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "stuck.jpg").touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def failing_request(_path, _meta, _fields):
+        calls.append(time.time())
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": time.time()},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", failing_request
+    )
+
+    for _ in range(5):
+        gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 1
+
+
+def test_watcher_retries_failed_image_after_cooldown(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    (image_root / "stuck.jpg").touch()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def stale_failure(_path, _meta, _fields):
+        calls.append(1)
+        stale = time.time() - gallery_app.config.AI_RETRY_COOLDOWN_SECONDS - 1
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": stale},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", stale_failure
+    )
+
+    gallery_app.watcher._scan_pending_files()
+    gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 2

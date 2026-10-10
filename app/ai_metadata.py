@@ -401,6 +401,26 @@ def _request_openai_metadata(
     return result
 
 
+def _auto_retry_due(metadata: dict[str, Any]) -> bool:
+    """Whether the watcher may send this image to OpenAI again.
+
+    False while the last attempt is younger than AI_RETRY_COOLDOWN_SECONDS.
+    Admin-triggered regeneration does not consult this.
+    """
+    ai_details = metadata.get("ai_details")
+    if not isinstance(ai_details, dict):
+        return True
+    if ai_details.get("status") == "skipped_no_api_key":
+        return True  # no request was sent; nothing to back off from
+    try:
+        attempted_at = float(ai_details.get("attempted_at") or 0)
+    except (TypeError, ValueError):
+        return True
+    if attempted_at <= 0:
+        return True
+    return time.time() - attempted_at >= config.AI_RETRY_COOLDOWN_SECONDS
+
+
 def _populate_missing_metadata(
     image_path: Path,
     metadata: dict[str, Any],
