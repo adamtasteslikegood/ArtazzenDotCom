@@ -55,8 +55,20 @@ def cache_tag(filename: str) -> str:
     return f"img-{digest[:16]}"
 
 
+def _within(root: Path, relative: str) -> Path | None:
+    """Resolve `relative` beneath `root`, or None when it would escape it."""
+    root_path = os.path.realpath(os.fspath(root))
+    full_path = os.path.realpath(os.path.join(root_path, relative))
+    if not full_path.startswith(root_path + os.sep):
+        return None
+    return Path(full_path)
+
+
 def derivative_path(filename: str, width: int) -> Path:
-    return config.IMAGES_DIR / DERIVED_DIRNAME / f"{filename}.{width}.webp"
+    path = _within(config.IMAGES_DIR / DERIVED_DIRNAME, f"{filename}.{width}.webp")
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return path
 
 
 def _versioned(prefix: str, path: Path, relative: str) -> str:
@@ -67,7 +79,9 @@ def _versioned(prefix: str, path: Path, relative: str) -> str:
 
 def public_url(filename: str) -> str:
     """Versioned public URL of an original image."""
-    return _versioned(config.IMAGES_URL_PREFIX, config.IMAGES_DIR / filename, filename)
+    return _versioned(
+        config.IMAGES_URL_PREFIX, sidecars._resolve_image_path(filename), filename
+    )
 
 
 def _derivative_is_fresh(source: Path, derived: Path) -> bool:
@@ -80,7 +94,7 @@ def _derivative_is_fresh(source: Path, derived: Path) -> bool:
 def derivative_url(filename: str, width: int) -> str:
     """Versioned URL of a derivative; the original's URL when none exists."""
     derived = derivative_path(filename, width)
-    if _derivative_is_fresh(config.IMAGES_DIR / filename, derived):
+    if _derivative_is_fresh(sidecars._resolve_image_path(filename), derived):
         return _versioned(
             config.IMAGES_URL_PREFIX, derived, f"{DERIVED_DIRNAME}/{derived.name}"
         )
@@ -102,10 +116,15 @@ def add_urls(meta: dict[str, Any], filename: str) -> dict[str, Any]:
 
 def list_artworks(*, status_filter: str = "approved") -> list[dict[str, Any]]:
     """`sidecars.get_artwork_files` with public URLs attached."""
-    return [
-        add_urls(meta, meta["name"])
-        for meta in sidecars.get_artwork_files(status_filter=status_filter)
-    ]
+    artworks = []
+    for meta in sidecars.get_artwork_files(status_filter=status_filter):
+        try:
+            artworks.append(add_urls(meta, meta["name"]))
+        except HTTPException:
+            # A file on disk whose name the path checks reject cannot be
+            # served; leave it out rather than fail the whole page.
+            logger.warning("Skipping image with unservable name: %s", meta["name"])
+    return artworks
 
 
 def admin_url(filename: str, width: int | None = None) -> str:
@@ -116,7 +135,7 @@ def admin_url(filename: str, width: int | None = None) -> str:
 
 def admin_preview_path(filename: str, width: int | None) -> Path:
     """File the admin preview route should send for the requested width."""
-    source = config.IMAGES_DIR / filename
+    source = sidecars._resolve_image_path(filename)
     if width in (config.THUMB_WIDTH, config.DISPLAY_WIDTH):
         derived = derivative_path(filename, width)
         if _derivative_is_fresh(source, derived):
@@ -145,7 +164,10 @@ def _split_token(path: str) -> tuple[str, str]:
 
 
 def _is_approved(filename: str) -> bool:
-    source = config.IMAGES_DIR / filename
+    try:
+        source = sidecars._resolve_image_path(filename)
+    except HTTPException:
+        return False
     if not source.is_file():
         return False
     return sidecars._load_metadata(source).get("status", "pending") == "approved"
@@ -188,7 +210,9 @@ class _VersionedFiles(StaticFiles):
         tag = await anyio.to_thread.run_sync(self._allowed, relative)
         if tag is None:
             raise _not_found()
-        full_path = self._root() / relative
+        full_path = _within(self._root(), relative)
+        if full_path is None:
+            raise _not_found()
         current = await anyio.to_thread.run_sync(version_token, full_path)
         if token and token != current:
             if not current:
@@ -229,12 +253,11 @@ class PublicImageFiles(_VersionedFiles):
         # Resolved against config.IMAGES_DIR on every request (not the
         # directory captured at mount time); `_allowed` has already limited
         # `path` to an image filename or one of its derivatives.
-        root = os.path.realpath(config.IMAGES_DIR)
-        full_path = os.path.realpath(os.path.join(root, path))
-        if os.path.commonpath([full_path, root]) != root:
+        full_path = _within(config.IMAGES_DIR, path)
+        if full_path is None:
             return "", None
         try:
-            return full_path, os.stat(full_path)
+            return str(full_path), os.stat(full_path)
         except OSError:
             return "", None
 
