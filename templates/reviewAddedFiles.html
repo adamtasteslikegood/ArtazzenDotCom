@@ -151,7 +151,8 @@
                     </div>
                     <div class="form-row">
                         <label for="ai-temp">Temperature</label>
-                        <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6">
+                        <input type="number" id="ai-temp" min="0" max="2" step="0.1" value="0.6" aria-describedby="ai-temp-help">
+                        <p id="ai-temp-help" class="panel-description">Sent only for models that support temperature.</p>
                     </div>
                     <div class="form-row">
                         <label for="ai-tokens">Max output tokens</label>
@@ -281,6 +282,7 @@
     const aiEnabled = document.getElementById('ai-enabled');
     const aiModel = document.getElementById('ai-model');
     const aiTemp = document.getElementById('ai-temp');
+    const aiTempHelp = document.getElementById('ai-temp-help');
     const aiTokens = document.getElementById('ai-tokens');
     const selectAllBtn = document.getElementById('select-all');
     const regenBtn = document.getElementById('regen-selected');
@@ -463,6 +465,16 @@
         }
     });
 
+    function updateTemperatureControl() {
+        const ignored = aiModel.value.startsWith('gpt-5') || aiModel.value.startsWith('gpt-6');
+        aiTemp.disabled = ignored;
+        if (aiTempHelp) {
+            aiTempHelp.textContent = ignored
+                ? 'Not sent for GPT-5 or GPT-6 reasoning models.'
+                : 'Sent only for models that support temperature.';
+        }
+    }
+
     async function loadConfig() {
         try {
             const res = await fetch(`${ROOT}/admin/config`);
@@ -474,6 +486,7 @@
             if (typeof cfg.max_output_tokens === 'number') aiTokens.value = cfg.max_output_tokens;
             if (typeof cfg.default_artist === 'string' && defaultArtist) defaultArtist.value = cfg.default_artist;
             if (typeof cfg.default_copyright === 'string' && defaultCopyright) defaultCopyright.value = cfg.default_copyright;
+            updateTemperatureControl();
         } catch (e) {
             console.error(e);
         }
@@ -671,6 +684,7 @@
     });
 
     aiForm?.addEventListener('submit', saveConfig);
+    aiModel?.addEventListener('change', updateTemperatureControl);
     selectAllBtn?.addEventListener('click', () => {
         const boxes = document.querySelectorAll('.admin-card[data-section="pending"] .item-select');
         const allChecked = Array.from(boxes).every(cb => cb.checked);
