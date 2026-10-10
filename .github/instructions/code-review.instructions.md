@@ -28,7 +28,7 @@ Every push triggers a review, and each finding costs a fix-and-re-review round. 
 
 - **Scale.** One admin, one process, tens to hundreds of images. Do not flag unbounded growth, multi-worker races, or high-traffic concerns unless you can state a realistic scenario at this scale; if you cannot, it is at most a SUGGESTION.
 - **Scope.** Judge the change against what the PR says it does. A gap in behaviour the PR does not touch is at most a SUGGESTION, and belongs in an issue, not this PR.
-- **Evidence.** Quote the code line or the documentation sentence a finding relies on. Do not say behaviour "contradicts the documentation" without quoting the text. Do not assert facts about external services (model names, API parameters) unless the diff or repository shows them.
+- **Evidence.** Quote the code line or the documentation sentence a finding relies on. Do not say behaviour "contradicts the documentation" without quoting the text. Do not assert facts about external services (model names, API parameters) unless the diff, the repository, or current vendor documentation supports them; quote or link the source.
 - **Planning documents.** Files under `docs/` that describe proposals or roadmaps are not specifications. Flag factual errors about the current code and internal contradictions. Do not ask for more implementation detail, and do not flag approximate or slightly stale counts.
 - **Intended fallbacks.** A conservative failure mode (fewer retries, a delayed attempt, a fallback to a default) is not a defect unless it loses data or breaks a documented guarantee.
 
