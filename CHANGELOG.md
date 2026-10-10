@@ -25,6 +25,10 @@ All notable changes to this project will be documented in this file.
 - Cloudflare purge by `Cache-Tag` when an image is unapproved or deleted,
   enabled by `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID`. Without them
   shared caches are capped at one day (`s-maxage=86400`).
+- "Use artist's name in prompt" checkbox in the admin AI settings
+  (`artist_in_prompt`, on by default). When off, the artist's name is left out
+  of the AI metadata prompt, so generated descriptions and captions no longer
+  name the artist.
 
 ### Changed
 
@@ -39,6 +43,8 @@ All notable changes to this project will be documented in this file.
   member.
 - `/admin/api/new-files` items carry `thumb_url` (and `display_url` for
   gallery items); pending `url` values point at `/admin/image/{name}`.
+- The "Reasoning effort" setting in the admin AI settings is labelled
+  "Effort". The stored key (`reasoning_effort`) is unchanged.
 
 ## [0.3.0] - 2026-10-10
 

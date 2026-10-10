@@ -144,7 +144,7 @@
                         </select>
                     </div>
                     <div class="form-row">
-                        <label for="ai-effort">Reasoning effort</label>
+                        <label for="ai-effort">Effort</label>
                         <select id="ai-effort">
                             <option value="none">none</option>
                             <option value="minimal">minimal</option>
@@ -162,6 +162,12 @@
                     <div class="form-row">
                         <label for="default-artist">Default artist name</label>
                         <input type="text" id="default-artist" placeholder="Artist name for new imports">
+                    </div>
+                    <div class="form-row">
+                        <label class="checkbox">
+                            <input type="checkbox" id="artist-in-prompt" checked>
+                            <span>Use artist's name in prompt</span>
+                        </label>
                     </div>
                     <div class="form-row">
                         <label for="default-copyright">Default copyright notice</label>
@@ -297,6 +303,7 @@
     const resetConfigBtn = document.getElementById('reset-config');
     const acceptAllBtn = document.getElementById('accept-all');
     const defaultArtist = document.getElementById('default-artist');
+    const artistInPrompt = document.getElementById('artist-in-prompt');
     const defaultCopyright = document.getElementById('default-copyright');
     const ROOT = document.body.dataset.rootPath || '';
 
@@ -488,6 +495,7 @@
             syncEffortOptions();
             if (typeof cfg.max_output_tokens === 'number') aiTokens.value = cfg.max_output_tokens;
             if (typeof cfg.default_artist === 'string' && defaultArtist) defaultArtist.value = cfg.default_artist;
+            if (typeof cfg.artist_in_prompt === 'boolean' && artistInPrompt) artistInPrompt.checked = cfg.artist_in_prompt;
             if (typeof cfg.default_copyright === 'string' && defaultCopyright) defaultCopyright.value = cfg.default_copyright;
         } catch (e) {
             console.error(e);
@@ -503,6 +511,7 @@
                 reasoning_effort: aiEffort.value,
                 max_output_tokens: parseInt(aiTokens.value, 10),
                 default_artist: defaultArtist?.value || '',
+                artist_in_prompt: !!artistInPrompt?.checked,
                 default_copyright: defaultCopyright?.value || ''
             }
         };

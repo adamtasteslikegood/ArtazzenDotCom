@@ -288,6 +288,8 @@ async def update_admin_config(
                 pass
         if "default_artist" in ai and isinstance(ai["default_artist"], str):
             cfg["default_artist"] = ai["default_artist"].strip()
+        if "artist_in_prompt" in ai:
+            cfg["artist_in_prompt"] = config._coerce_bool(ai["artist_in_prompt"])
         if "default_copyright" in ai and isinstance(ai["default_copyright"], str):
             cfg["default_copyright"] = ai["default_copyright"].strip()
         # Re-check against the model chosen in this same request.

@@ -152,6 +152,7 @@ def _get_ai_config() -> dict[str, Any]:
         ),
         "max_output_tokens": max_output_tokens,
         "default_artist": str(cfg.get("default_artist", "")),
+        "artist_in_prompt": _coerce_bool(cfg.get("artist_in_prompt", True)),
         "default_copyright": str(cfg.get("default_copyright", "")),
     }
 
@@ -210,6 +211,7 @@ def _default_ai_config_from_env() -> dict[str, Any]:
             os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600
         ),
         "default_artist": os.getenv("DEFAULT_ARTIST", ""),
+        "artist_in_prompt": True,
         "default_copyright": os.getenv("DEFAULT_COPYRIGHT", ""),
     }
 
@@ -233,6 +235,8 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
             pass
         if isinstance(cfg.get("default_artist"), str):
             out["default_artist"] = cfg["default_artist"].strip()
+        if "artist_in_prompt" in cfg:
+            out["artist_in_prompt"] = _coerce_bool(cfg.get("artist_in_prompt"))
         if isinstance(cfg.get("default_copyright"), str):
             out["default_copyright"] = cfg["default_copyright"].strip()
         out["reasoning_effort"] = _coerce_reasoning_effort(

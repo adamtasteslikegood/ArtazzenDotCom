@@ -2327,6 +2327,32 @@ def test_config_artist_attribution_persists(authed_client, isolated_config):
     assert data["ai"]["default_copyright"] == "CC0"
 
 
+def test_artist_in_prompt_toggle_controls_prompt(authed_client, isolated_config):
+    """The artist's name reaches the prompt only while the setting is on."""
+    from pathlib import Path
+
+    metadata = {"title": "Dusk", "artist": "Ada Lovelace"}
+
+    def prompt() -> str:
+        return gallery_app.ai_metadata._build_openai_prompt(
+            Path("test.jpg"), metadata, ["description"]
+        )
+
+    assert authed_client.get("/admin/config").json()["ai"]["artist_in_prompt"] is True
+    assert "Existing artist: Ada Lovelace" in prompt()
+
+    response = authed_client.post(
+        "/admin/config", json={"ai": {"artist_in_prompt": False}}
+    )
+    assert response.json()["ai"]["artist_in_prompt"] is False
+    assert "Ada Lovelace" not in prompt()
+    assert "Existing title: Dusk" in prompt()
+
+    # Saving other settings leaves the choice alone, and it survives a reload.
+    authed_client.post("/admin/config", json={"ai": {"default_artist": "Ada"}})
+    assert gallery_app.config._load_ai_config()["artist_in_prompt"] is False
+
+
 def test_watcher_does_not_resend_failed_image_every_poll(monkeypatch, tmp_path):
     """A failed OpenAI attempt must not be repeated on each watcher scan."""
     image_root = tmp_path / "images"
