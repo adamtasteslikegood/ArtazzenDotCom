@@ -403,7 +403,17 @@ def _request_openai_metadata(
 
 # Automatic retries used per image since process start, keyed by image path.
 # Kept in memory on purpose: a restart or deploy grants a fresh set of tries.
-_auto_retries: dict[str, int] = {}
+# The stored file signature ties the count to the bytes on disk, so a
+# replacement under the same filename starts with a full budget.
+_auto_retries: dict[str, tuple[tuple[int, int], int]] = {}
+
+
+def _file_signature(image_path: Path) -> tuple[int, int]:
+    try:
+        stat = image_path.stat()
+    except OSError:
+        return (0, 0)
+    return (stat.st_mtime_ns, stat.st_size)
 
 
 def _has_missing_ai_fields(metadata: dict[str, Any]) -> bool:
@@ -436,12 +446,15 @@ def _auto_retry_due(image_path: Path, metadata: dict[str, Any]) -> bool:
         return True
     if attempted_at <= 0:
         return True
-    retries = _auto_retries.get(key, 0)
+    signature = _file_signature(image_path)
+    stored_signature, retries = _auto_retries.get(key, (signature, 0))
+    if stored_signature != signature:
+        retries = 0  # the file was replaced; the old count is not its own
     if retries >= config.AI_MAX_RETRIES:
         return False
     if time.time() - attempted_at < config.AI_RETRY_DELAY_SECONDS:
         return False
-    _auto_retries[key] = retries + 1
+    _auto_retries[key] = (signature, retries + 1)
     return True
 
 

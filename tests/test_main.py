@@ -2384,3 +2384,41 @@ def test_watcher_stops_after_max_retries(monkeypatch, tmp_path):
         gallery_app.watcher._scan_pending_files()
 
     assert len(calls) == 1 + 3  # first attempt plus three retries
+
+
+def test_watcher_retry_budget_resets_when_image_is_replaced(monkeypatch, tmp_path):
+    """A new upload under the same filename must not inherit the previous
+    file's exhausted retry count."""
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    image_path = image_root / "stuck.jpg"
+    image_path.write_bytes(b"old")
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+    monkeypatch.setattr(gallery_app.config, "AI_MAX_RETRIES", 1)
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+    calls = []
+
+    def stale_failure(_path, _meta, _fields):
+        calls.append(1)
+        stale = time.time() - gallery_app.config.AI_RETRY_DELAY_SECONDS - 1
+        return {
+            "title": "",
+            "description": "",
+            "details": {"status": "error_http", "attempted_at": stale},
+        }
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", stale_failure
+    )
+
+    for _ in range(4):
+        gallery_app.watcher._scan_pending_files()
+    assert len(calls) == 2  # first attempt plus the single retry, then stop
+
+    image_path.write_bytes(b"replacement image bytes")  # sidecar stays in place
+    for _ in range(4):
+        gallery_app.watcher._scan_pending_files()
+
+    assert len(calls) == 3  # the replacement gets its own retry
