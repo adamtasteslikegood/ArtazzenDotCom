@@ -417,6 +417,11 @@ def _file_signature(image_path: Path) -> tuple[int, int, int]:
     return (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
 
 
+def _reset_auto_retry_budget(image_path: Path) -> None:
+    """Grant an image a fresh automatic retry budget."""
+    _auto_retries.pop(str(image_path), None)
+
+
 def _prune_auto_retries(existing_paths: list[Path]) -> None:
     """Forget retry state for images that are no longer on disk."""
     existing_keys = {str(path) for path in existing_paths}
