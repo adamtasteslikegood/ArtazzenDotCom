@@ -2374,6 +2374,28 @@ def test_watcher_prunes_retry_budget_for_deleted_images(monkeypatch, tmp_path):
     assert key not in gallery_app.ai_metadata._auto_retries
 
 
+def test_watcher_keeps_retry_budget_when_directory_scan_fails(monkeypatch, tmp_path):
+    image_root = tmp_path / "images"
+    image_root.mkdir()
+    monkeypatch.setattr(gallery_app.config, "IMAGES_DIR", image_root)
+
+    key = str(image_root / "stuck.jpg")
+    monkeypatch.setitem(
+        gallery_app.ai_metadata._auto_retries,
+        key,
+        ((1, 2, 3), 1),
+    )
+
+    def failing_listdir(_path):
+        raise OSError("temporary scan failure")
+
+    monkeypatch.setattr(gallery_app.watcher.os, "listdir", failing_listdir)
+
+    gallery_app.watcher._scan_pending_files()
+
+    assert key in gallery_app.ai_metadata._auto_retries
+
+
 def test_watcher_preserves_retry_budget_while_ai_unavailable(monkeypatch, tmp_path):
     """Disabled AI or a missing key must not consume an image's retry budget."""
     image_root = tmp_path / "images"
