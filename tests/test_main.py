@@ -2292,9 +2292,7 @@ def test_watcher_persists_unexpected_processing_failure(monkeypatch, tmp_path):
     assert stored["ai_details"]["attempted_at"] > 0
 
 
-def test_watcher_retry_limit_survives_sidecar_write_failures(
-    monkeypatch, tmp_path
-):
+def test_watcher_retry_limit_survives_sidecar_write_failures(monkeypatch, tmp_path):
     """A failed sidecar write must not turn every poll into a first attempt."""
     image_root = tmp_path / "images"
     image_root.mkdir()
