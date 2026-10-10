@@ -474,6 +474,10 @@ def _populate_missing_metadata(
     try:
         result = _request_openai_metadata(image_path, metadata, needed_fields)
     except Exception:
+        if not persist:
+            # Admin regeneration works on a candidate copy and reports the
+            # failure itself; it must not receive a failed result to write.
+            raise
         # The watcher already treats individual-image failures as non-fatal. Persist
         # this attempt as well so an unexpected response-processing error cannot
         # resend the same image on every poll.

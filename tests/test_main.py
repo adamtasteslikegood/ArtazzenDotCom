@@ -2321,3 +2321,35 @@ def test_watcher_retries_immediately_when_api_key_becomes_available(
     gallery_app.watcher._scan_pending_files()
 
     assert len(calls) == 1
+
+
+def test_regenerate_leaves_sidecar_unchanged_on_unexpected_ai_failure(
+    monkeypatch, tmp_path
+):
+    """Non-forced admin regeneration must report an unexpected AI failure as
+    an error, not write an error_processing candidate and call it updated."""
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", status="pending")
+    sidecar = image_root / "a.json"
+    data = json.loads(sidecar.read_text())
+    data["title"] = ""
+    sidecar.write_text(json.dumps(data))
+    before = sidecar.read_text()
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_get_openai_api_key", lambda: "test-key"
+    )
+
+    def exploding_request(_path, _meta, _fields):
+        raise RuntimeError("unexpected response shape")
+
+    monkeypatch.setattr(
+        gallery_app.ai_metadata, "_request_openai_metadata", exploding_request
+    )
+
+    meta = gallery_app.sidecars._load_metadata(image_root / "a.jpg")
+    with pytest.raises(RuntimeError):
+        gallery_app.ai_metadata._populate_missing_metadata(
+            image_root / "a.jpg", meta, only_fields=["title"], persist=False
+        )
+
+    assert sidecar.read_text() == before
