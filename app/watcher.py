@@ -70,6 +70,8 @@ def _scan_pending_files() -> list[dict[str, Any]]:
         for name in disk_listing
         if (config.IMAGES_DIR / name).is_file() and sidecars._allowed_image(name)
     ]
+    existing_paths = [config.IMAGES_DIR / name for name in existing_files]
+    ai_metadata._prune_auto_retries(existing_paths)
 
     for filename in existing_files:
         # One bad entry (unreadable file, rejected name) must not take down
