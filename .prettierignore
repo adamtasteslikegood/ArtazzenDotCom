@@ -20,3 +20,4 @@ logs/
 .github/instructions/**
 .git/**
 
+/docs/railway_logs/
