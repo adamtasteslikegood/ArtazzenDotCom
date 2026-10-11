@@ -133,7 +133,7 @@ See `.env.example` for the full list. Key variables:
 | `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; enables purge on unapprove/delete  |
 | `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone id, required with the token           |
 
-Images are served from `/images`, approved artwork only. Gallery grids load 480 px WebP thumbnails and the detail page a 1600 px WebP, both generated into `IMAGES_DIR/.derived/`. Image and stylesheet URLs carry a version segment and are cached for a year; unversioned URLs are cached for an hour. Pending and hidden images are visible only to the admin through `/admin/image/{name}`.
+Images are served from `/images`, approved artwork only. Gallery grids load 480 px WebP thumbnails and the detail page a 1600 px WebP; its enlarged view uses a 2560 px WebP (built for sources wider than 1600 px) and fetches the original only when the visitor asks for full size. All are generated into `IMAGES_DIR/.derived/` and never upscaled. Image and stylesheet URLs carry a version segment and are cached for a year; unversioned URLs are cached for an hour. Pending and hidden images are visible only to the admin through `/admin/image/{name}`.
 
 ## Testing
 
