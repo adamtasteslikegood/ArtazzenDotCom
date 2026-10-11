@@ -924,6 +924,20 @@ footer {
     text-decoration: underline;
 }
 
+/* Keeps a separator with its crumb when the trail wraps. */
+.breadcrumb-item {
+    display: flex;
+    gap: 0.5rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.breadcrumb-item [aria-current="page"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .section-label {
     font-family: var(--font-mono);
     font-size: 0.75rem;

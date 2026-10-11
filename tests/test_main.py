@@ -1334,6 +1334,62 @@ def test_collection_breadcrumb_for_nested(client, tmp_path, monkeypatch):
     assert 'aria-current="page"' in response.text
 
 
+def _breadcrumb_nav(html: str) -> str:
+    return re.search(r'<nav class="breadcrumb".*?</nav>', html, flags=re.DOTALL).group(
+        0
+    )
+
+
+def _breadcrumb_json_ld(html: str) -> list[tuple[str, str]]:
+    bodies = re.findall(
+        r'<script type="application/ld[+]json">(.*?)</script>', html, flags=re.DOTALL
+    )
+    blocks = [json.loads(body) for body in bodies]
+    crumbs = next(b for b in blocks if b.get("@type") == "BreadcrumbList")
+    return [(item["name"], item["item"]) for item in crumbs["itemListElement"]]
+
+
+def test_artwork_breadcrumb_follows_collection_chain(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "root", "title": "Root"})
+    gallery_app.curation.upsert_collection(
+        {"id": "child", "title": "Child", "parent": "root"}
+    )
+    _add_image(image_root, "leaf.jpg", title="Leaf", collections=["child"])
+
+    response = client.get("/artwork/leaf.jpg")
+    assert response.status_code == 200
+    nav = _breadcrumb_nav(response.text)
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "/collections",
+        "/collections/root",
+        "/collections/child",
+    ]
+    assert '<span aria-current="page">Leaf</span>' in nav
+    assert _breadcrumb_json_ld(response.text) == [
+        ("Gallery", "https://artazzen.com/"),
+        ("Collections", "https://artazzen.com/collections"),
+        ("Root", "https://artazzen.com/collections/root"),
+        ("Child", "https://artazzen.com/collections/child"),
+        ("Leaf", "https://artazzen.com/artwork/leaf.jpg"),
+    ]
+
+
+def test_artwork_breadcrumb_without_collection(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "loose.jpg", title="Loose")
+
+    response = client.get("/artwork/loose.jpg")
+    assert response.status_code == 200
+    nav = _breadcrumb_nav(response.text)
+    assert re.findall(r'href="([^"]+)"', nav) == ["/"]
+    assert '<span aria-current="page">Loose</span>' in nav
+    assert _breadcrumb_json_ld(response.text) == [
+        ("Gallery", "https://artazzen.com/"),
+        ("Loose", "https://artazzen.com/artwork/loose.jpg"),
+    ]
+
+
 def test_collection_unknown_slug_404(client, tmp_path, monkeypatch):
     _make_curation_root(tmp_path, monkeypatch)
     assert client.get("/collections/nope").status_code == 404

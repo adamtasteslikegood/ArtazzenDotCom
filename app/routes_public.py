@@ -220,6 +220,19 @@ async def artwork_detail(request: Request, image_filename: str):
         if idx < len(filenames) - 1:
             next_artwork = filenames[idx + 1]
 
+    # An image in several collections is filed under the first (sorted) one.
+    collections = curation.collections_for_image(filename)
+    crumbs = [{"name": "Gallery", "path": "/"}]
+    if collections:
+        crumbs.append({"name": "Collections", "path": "/collections"})
+        crumbs.extend(
+            {"name": crumb["title"], "path": f"/collections/{quote(crumb['id'])}"}
+            for crumb in curation.breadcrumb(collections[0]["id"])
+        )
+    crumbs.append(
+        {"name": artwork_data["title"], "path": f"/artwork/{quote(filename)}"}
+    )
+
     context = seo.build_context(
         request,
         title=f"{artwork_data['title']} — Artazzen",
@@ -227,10 +240,7 @@ async def artwork_detail(request: Request, image_filename: str):
         or f"View {artwork_data['title']} in the Artazzen gallery.",
         image_url=image_url,
         page_type="article",
-        breadcrumbs=[
-            {"name": "Gallery", "path": "/"},
-            {"name": artwork_data["title"], "path": f"/artwork/{quote(filename)}"},
-        ],
+        breadcrumbs=crumbs,
         structured_data={
             "@context": "https://schema.org",
             "@type": "VisualArtwork",
@@ -252,7 +262,9 @@ async def artwork_detail(request: Request, image_filename: str):
             "artwork": artwork_data,
             "prev_artwork": prev_artwork,
             "next_artwork": next_artwork,
-            "collections": curation.collections_for_image(filename),
+            "collections": collections,
+            # Like the collection page, the visible trail starts at Collections.
+            "breadcrumb": crumbs[1:] if collections else crumbs,
             "series_memberships": curation.series_for_image(filename),
             **context,
         },

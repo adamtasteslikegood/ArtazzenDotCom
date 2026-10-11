@@ -4,7 +4,18 @@
 {% block page_heading %}{{ artwork.title }}{% endblock %}
 
 {% block header_pre %}
-<a href="{{ url_for('read_root') }}" class="artwork-meta-label" style="text-decoration: none; color: inherit; margin-bottom: 2rem; display: inline-block;">&larr; Back to Gallery</a>
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    {% for crumb in breadcrumb %}
+        <span class="breadcrumb-item">
+            {% if not loop.first %}<span aria-hidden="true">/</span>{% endif %}
+            {% if loop.last %}
+            <span aria-current="page">{{ crumb.name }}</span>
+            {% else %}
+            <a href="{{ crumb.path }}">{{ crumb.name }}</a>
+            {% endif %}
+        </span>
+    {% endfor %}
+</nav>
 {% endblock %}
 
 {% block content %}
