@@ -1337,6 +1337,7 @@ def test_collection_breadcrumb_for_nested(client, tmp_path, monkeypatch):
         "/collections",
         "/collections/root",
     ]
+    assert _breadcrumb_nav(response.text).count('class="breadcrumb-item"') == 4
     assert 'aria-current="page"' in response.text
 
 
