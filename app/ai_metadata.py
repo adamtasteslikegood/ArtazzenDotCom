@@ -27,7 +27,11 @@ def _build_openai_prompt(
 ) -> str:
     """Create a deterministic prompt for the OpenAI metadata request."""
     hints: list[str] = []
-    for key in ("title", "description", "caption", "artist"):
+    hint_keys = ["title", "description", "caption"]
+    # Naming the artist makes the model reference them in generated text.
+    if config._get_ai_config()["artist_in_prompt"]:
+        hint_keys.append("artist")
+    for key in hint_keys:
         if metadata.get(key):
             hints.append(f"Existing {key}: {metadata[key]}")
     tags = metadata.get("tags")
