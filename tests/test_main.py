@@ -1457,6 +1457,31 @@ def test_artwork_breadcrumb_defaults_to_deepest_collection(
     assert "from=" not in response.text
 
 
+def test_artwork_breadcrumb_depth_tie_uses_registry_order(
+    client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection(
+        {"id": "series-first", "title": "Series First", "order": 0}
+    )
+    gallery_app.curation.upsert_collection(
+        {"id": "direct-last", "title": "Direct Last", "order": 10}
+    )
+    _add_image(image_root, "shared.jpg", collections=["direct-last"])
+    gallery_app.curation.upsert_series(
+        {
+            "id": "run",
+            "title": "Run",
+            "collection": "series-first",
+            "images": ["shared.jpg"],
+        }
+    )
+
+    nav = _breadcrumb_nav(client.get("/artwork/shared.jpg").text)
+    assert "/collections/series-first" in nav
+    assert "/collections/direct-last" not in nav
+
+
 def test_artwork_prev_next_stay_in_visited_collection(client, tmp_path, monkeypatch):
     image_root = _make_curation_root(tmp_path, monkeypatch)
     gallery_app.curation.upsert_collection({"id": "set", "title": "Set"})
