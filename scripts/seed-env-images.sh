@@ -49,11 +49,11 @@ remote() {
         --service="$SERVICE" -- "$@"
 }
 
-local_count=$(find "$SOURCE" -type f -not -path '*/lost+found/*' | wc -l)
+local_count=$(find "$SOURCE" -type f ! -path '*/lost+found/*' | wc -l)
 echo "Sending $local_count files from $SOURCE to $REMOTE_DIR in $ENVIRONMENT"
 
 # base64 keeps the archive intact whatever the ssh channel does to bytes.
-tar czf - -C "$SOURCE" --exclude=./lost+found . | base64 -w0 |
+tar czf - -C "$SOURCE" --exclude=./lost+found . | base64 | tr -d '\n' |
     remote sh -c "mkdir -p '$REMOTE_DIR' && base64 -d | tar xzf - -C '$REMOTE_DIR' --no-same-owner"
 
 remote_count=$(remote sh -c "find '$REMOTE_DIR' -type f | wc -l" </dev/null | tr -dc '0-9')
