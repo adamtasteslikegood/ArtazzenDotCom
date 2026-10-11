@@ -1258,7 +1258,7 @@ def test_collection_page_series_order_anchor_and_dedup(client, tmp_path, monkeyp
     # Registry order preserved: b before a inside the strip.
     assert html.index("/artwork/b.jpg") < html.index("/artwork/a.jpg")
     # Dedup: a is in the series AND a direct member — rendered exactly once.
-    assert html.count('href="/artwork/a.jpg"') == 1
+    assert html.count('href="/artwork/a.jpg?from=flora"') == 1
     # c is standalone and renders in the grid; hidden is excluded.
     assert "/artwork/c.jpg" in html
     assert "hidden.jpg" not in html
@@ -1361,10 +1361,18 @@ def test_artwork_breadcrumb_follows_collection_chain(client, tmp_path, monkeypat
     gallery_app.curation.upsert_collection(
         {"id": "child", "title": "Child", "parent": "root"}
     )
-    _add_image(image_root, "leaf.jpg", title="Leaf", collections=["child"])
+    _add_image(image_root, "leaf.jpg", title="Leaf", collections=["root", "child"])
 
-    response = client.get("/artwork/leaf.jpg")
+    # The collection page links to the artwork with its own slug.
+    assert (
+        'href="/artwork/leaf.jpg?from=child"' in client.get("/collections/child").text
+    )
+
+    response = client.get("/artwork/leaf.jpg?from=child")
     assert response.status_code == 200
+    assert '<link rel="canonical" href="https://artazzen.com/artwork/leaf.jpg">' in (
+        response.text
+    )
     nav = _breadcrumb_nav(response.text)
     assert re.findall(r'href="([^"]+)"', nav) == [
         "/",
@@ -1381,12 +1389,44 @@ def test_artwork_breadcrumb_follows_collection_chain(client, tmp_path, monkeypat
         ("Leaf", "https://artazzen.com/artwork/leaf.jpg"),
     ]
 
+    # Arriving from the parent shows the parent's trail, not the child's.
+    nav = _breadcrumb_nav(client.get("/artwork/leaf.jpg?from=root").text)
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "/",
+        "/collections",
+        "/collections/root",
+    ]
 
-def test_artwork_breadcrumb_without_collection(client, tmp_path, monkeypatch):
+
+def test_artwork_breadcrumb_follows_series_collection(client, tmp_path, monkeypatch):
     image_root = _make_curation_root(tmp_path, monkeypatch)
-    _add_image(image_root, "loose.jpg", title="Loose")
+    gallery_app.curation.upsert_collection({"id": "edits", "title": "Edits"})
+    _add_image(image_root, "variant.jpg", title="Variant")
+    gallery_app.curation.upsert_series(
+        {"id": "run", "title": "Run", "collection": "edits", "images": ["variant.jpg"]}
+    )
 
-    response = client.get("/artwork/loose.jpg")
+    assert (
+        'href="/artwork/variant.jpg?from=edits"'
+        in client.get("/collections/edits").text
+    )
+    nav = _breadcrumb_nav(client.get("/artwork/variant.jpg?from=edits").text)
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "/",
+        "/collections",
+        "/collections/edits",
+    ]
+
+
+@pytest.mark.parametrize("query", ["", "?from=other", "?from=nope", "?from="])
+def test_artwork_breadcrumb_defaults_to_gallery(client, tmp_path, monkeypatch, query):
+    """Without a collection page that really shows the image, the trail is Gallery."""
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "mine", "title": "Mine"})
+    gallery_app.curation.upsert_collection({"id": "other", "title": "Other"})
+    _add_image(image_root, "loose.jpg", title="Loose", collections=["mine"])
+
+    response = client.get(f"/artwork/loose.jpg{query}")
     assert response.status_code == 200
     nav = _breadcrumb_nav(response.text)
     assert re.findall(r'href="([^"]+)"', nav) == ["/"]

@@ -220,14 +220,21 @@ async def artwork_detail(request: Request, image_filename: str):
         if idx < len(filenames) - 1:
             next_artwork = filenames[idx + 1]
 
-    # An image in several collections is filed under the first (sorted) one.
+    # The trail follows the collection page the visitor came from (?from=),
+    # provided that page really shows this image; otherwise it is Gallery.
     collections = curation.collections_for_image(filename)
+    series_memberships = curation.series_for_image(filename)
+    came_from = request.query_params.get("from", "")
+    shown_on = {c["id"] for c in collections} | {
+        s.get("collection") for s in series_memberships
+    }
+    chain = curation.breadcrumb(came_from) if came_from in shown_on else []
     crumbs = [{"name": "Gallery", "path": "/"}]
-    if collections:
+    if chain:
         crumbs.append({"name": "Collections", "path": "/collections"})
         crumbs.extend(
             {"name": crumb["title"], "path": f"/collections/{quote(crumb['id'])}"}
-            for crumb in curation.breadcrumb(collections[0]["id"])
+            for crumb in chain
         )
     crumbs.append(
         {"name": artwork_data["title"], "path": f"/artwork/{quote(filename)}"}
@@ -264,7 +271,7 @@ async def artwork_detail(request: Request, image_filename: str):
             "next_artwork": next_artwork,
             "collections": collections,
             "breadcrumb": crumbs,
-            "series_memberships": curation.series_for_image(filename),
+            "series_memberships": series_memberships,
             **context,
         },
     )

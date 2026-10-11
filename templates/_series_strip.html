@@ -6,7 +6,7 @@
     <div class="series-track">
         {% for artwork in series.artworks %}
         <div class="series-item">
-            <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
+            <a href="/artwork/{{ artwork.name }}?from={{ collection.id | urlencode }}" title="View details: {{ artwork.title }}">
                 <img src="{{ artwork.thumb_url }}"
                      alt="{{ artwork.title }}"
                      loading="lazy"

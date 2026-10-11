@@ -25,11 +25,13 @@ All notable changes to this project will be documented in this file.
 - Cloudflare purge by `Cache-Tag` when an image is unapproved or deleted,
   enabled by `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID`. Without them
   shared caches are capped at one day (`s-maxage=86400`).
-- Breadcrumb on the artwork page, replacing the "Back to Gallery" link. An
-  artwork in a collection shows Gallery / Collections / parent collections /
-  collection / title; one in several collections uses the first; one in none
-  shows Gallery / title. The `BreadcrumbList` JSON-LD follows the same chain.
-  The collection page's breadcrumb now starts at Gallery too.
+- Breadcrumb on the artwork page, replacing the "Back to Gallery" link. It
+  follows the page the visitor came from: reached from a collection page
+  (links there carry `?from=<slug>`) it shows Gallery / Collections / parent
+  collections / collection / title; otherwise Gallery / title. `from` is
+  honoured only for a collection whose page shows the image. The
+  `BreadcrumbList` JSON-LD follows the same chain, and the canonical URL stays
+  query-free. The collection page's breadcrumb now starts at Gallery too.
 - "Use artist's name in prompt" checkbox in the admin AI settings
   (`artist_in_prompt`, off by default). While off, the artist's name is left
   out of the AI metadata prompt, so generated descriptions and captions no

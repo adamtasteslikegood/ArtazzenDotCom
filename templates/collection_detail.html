@@ -61,7 +61,7 @@
             <div class="gallery-grid">
                 {% for artwork in artworks %}
                     <div class="artwork-item">
-                        <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
+                        <a href="/artwork/{{ artwork.name }}?from={{ collection.id | urlencode }}" title="View details: {{ artwork.title }}">
                             <img src="{{ artwork.thumb_url }}"
                                  alt="{{ artwork.title }}"
                                  loading="lazy"
