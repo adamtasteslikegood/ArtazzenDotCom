@@ -26,9 +26,10 @@ All notable changes to this project will be documented in this file.
   enabled by `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID`. Without them
   shared caches are capped at one day (`s-maxage=86400`).
 - Breadcrumb on the artwork page, replacing the "Back to Gallery" link. An
-  artwork in a collection shows Collections / parent collections / collection
-  / title; one in several collections uses the first; one in none shows
-  Gallery / title. The `BreadcrumbList` JSON-LD follows the same chain.
+  artwork in a collection shows Gallery / Collections / parent collections /
+  collection / title; one in several collections uses the first; one in none
+  shows Gallery / title. The `BreadcrumbList` JSON-LD follows the same chain.
+  The collection page's breadcrumb now starts at Gallery too.
 - "Use artist's name in prompt" checkbox in the admin AI settings
   (`artist_in_prompt`, off by default). While off, the artist's name is left
   out of the AI metadata prompt, so generated descriptions and captions no

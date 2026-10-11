@@ -7,6 +7,7 @@ import re
 import time
 from contextlib import suppress
 from pathlib import Path
+from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 import pytest
@@ -1330,7 +1331,12 @@ def test_collection_breadcrumb_for_nested(client, tmp_path, monkeypatch):
     )
     response = client.get("/collections/child")
     assert response.status_code == 200
-    assert "/collections/root" in response.text
+    links = re.findall(r'href="([^"]+)"', _breadcrumb_nav(response.text))
+    assert [urlparse(link).path for link in links] == [
+        "/",
+        "/collections",
+        "/collections/root",
+    ]
     assert 'aria-current="page"' in response.text
 
 
@@ -1361,6 +1367,7 @@ def test_artwork_breadcrumb_follows_collection_chain(client, tmp_path, monkeypat
     assert response.status_code == 200
     nav = _breadcrumb_nav(response.text)
     assert re.findall(r'href="([^"]+)"', nav) == [
+        "/",
         "/collections",
         "/collections/root",
         "/collections/child",

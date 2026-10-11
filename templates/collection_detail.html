@@ -5,6 +5,8 @@
 
 {% block header_pre %}
 <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="{{ url_for('read_root') }}">Gallery</a>
+    <span aria-hidden="true">/</span>
     <a href="{{ url_for('collections_index') }}">Collections</a>
     {% for crumb in breadcrumb %}
         <span aria-hidden="true">/</span>

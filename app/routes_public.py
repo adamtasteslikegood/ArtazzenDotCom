@@ -263,8 +263,7 @@ async def artwork_detail(request: Request, image_filename: str):
             "prev_artwork": prev_artwork,
             "next_artwork": next_artwork,
             "collections": collections,
-            # Like the collection page, the visible trail starts at Collections.
-            "breadcrumb": crumbs[1:] if collections else crumbs,
+            "breadcrumb": crumbs,
             "series_memberships": curation.series_for_image(filename),
             **context,
         },
