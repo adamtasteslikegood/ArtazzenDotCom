@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-> Do not release this section to `main` until ArtazzenMobile loads images
+## [0.4.0] - 2026-10-11
+
+> Do not release this version to `main` until ArtazzenMobile loads images
 > through `/admin/image/{name}` with credentials (or the public `/images`
 > URLs the API returns). The app currently builds `/static/images/<name>`
 > URLs itself and sends no auth, and those URLs now return 404.
@@ -38,6 +40,10 @@ All notable changes to this project will be documented in this file.
   out of the AI metadata prompt, so generated descriptions and captions no
   longer name the artist. Existing installs pick up the off default on upgrade;
   tick the box to send the name again.
+- `scripts/seed-env-images.sh` copies a local image folder (default
+  `test_data/images`, git-ignored) into a Railway environment's `/data/images`
+  over `railway ssh`. It refuses production and deletes nothing.
+- Backend refactor roadmap (`docs/backend-refactor-roadmap.md`).
 
 ### Changed
 
