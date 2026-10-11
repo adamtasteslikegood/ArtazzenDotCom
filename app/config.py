@@ -152,7 +152,7 @@ def _get_ai_config() -> dict[str, Any]:
         ),
         "max_output_tokens": max_output_tokens,
         "default_artist": str(cfg.get("default_artist", "")),
-        "artist_in_prompt": _coerce_bool(cfg.get("artist_in_prompt", True)),
+        "artist_in_prompt": _coerce_bool(cfg.get("artist_in_prompt", False)),
         "default_copyright": str(cfg.get("default_copyright", "")),
     }
 
@@ -211,7 +211,7 @@ def _default_ai_config_from_env() -> dict[str, Any]:
             os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600
         ),
         "default_artist": os.getenv("DEFAULT_ARTIST", ""),
-        "artist_in_prompt": True,
+        "artist_in_prompt": False,
         "default_copyright": os.getenv("DEFAULT_COPYRIGHT", ""),
     }
 

@@ -26,9 +26,10 @@ All notable changes to this project will be documented in this file.
   enabled by `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID`. Without them
   shared caches are capped at one day (`s-maxage=86400`).
 - "Use artist's name in prompt" checkbox in the admin AI settings
-  (`artist_in_prompt`, on by default). When off, the artist's name is left out
-  of the AI metadata prompt, so generated descriptions and captions no longer
-  name the artist.
+  (`artist_in_prompt`, off by default). While off, the artist's name is left
+  out of the AI metadata prompt, so generated descriptions and captions no
+  longer name the artist. Existing installs pick up the off default on upgrade;
+  tick the box to send the name again.
 
 ### Changed
 
