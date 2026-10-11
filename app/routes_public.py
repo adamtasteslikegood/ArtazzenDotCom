@@ -215,11 +215,17 @@ async def artwork_detail(request: Request, image_filename: str):
     # Previous/Next walk the gallery.
     collections = curation.collections_for_image(filename)
     series_memberships = curation.series_for_image(filename)
-    shown_on = [c["id"] for c in collections]
-    shown_on += [
-        s["collection"]
-        for s in series_memberships
-        if s.get("collection") and s["collection"] not in shown_on
+    shown_on_entries = {c["id"]: c for c in collections}
+    for series in series_memberships:
+        owner = curation.get_collection(series.get("collection", ""))
+        if owner:
+            shown_on_entries.setdefault(owner["id"], owner)
+    shown_on = [
+        entry["id"]
+        for entry in sorted(
+            shown_on_entries.values(),
+            key=lambda entry: (entry.get("order", 0), entry.get("title", "")),
+        )
     ]
     came_from = request.query_params.get("from", "")
     view = curation.collection_view(came_from) if came_from in shown_on else None
