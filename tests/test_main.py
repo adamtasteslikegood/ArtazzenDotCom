@@ -1420,14 +1420,64 @@ def test_artwork_breadcrumb_follows_series_collection(client, tmp_path, monkeypa
 
 
 @pytest.mark.parametrize("query", ["", "?from=other", "?from=nope", "?from="])
-def test_artwork_breadcrumb_defaults_to_gallery(client, tmp_path, monkeypatch, query):
-    """Without a collection page that really shows the image, the trail is Gallery."""
+def test_artwork_breadcrumb_defaults_to_deepest_collection(
+    client, tmp_path, monkeypatch, query
+):
+    """Without a collection page that shows the image, the deepest chain is used."""
     image_root = _make_curation_root(tmp_path, monkeypatch)
-    gallery_app.curation.upsert_collection({"id": "mine", "title": "Mine"})
+    gallery_app.curation.upsert_collection({"id": "a-top", "title": "Top"})
+    gallery_app.curation.upsert_collection(
+        {"id": "mid", "title": "Mid", "parent": "a-top"}
+    )
+    gallery_app.curation.upsert_collection(
+        {"id": "deep", "title": "Deep", "parent": "mid"}
+    )
     gallery_app.curation.upsert_collection({"id": "other", "title": "Other"})
-    _add_image(image_root, "loose.jpg", title="Loose", collections=["mine"])
+    _add_image(
+        image_root, "leaf.jpg", title="Leaf", collections=["a-top", "mid", "deep"]
+    )
+    _add_image(image_root, "next.jpg", title="Next")
 
-    response = client.get(f"/artwork/loose.jpg{query}")
+    response = client.get(f"/artwork/leaf.jpg{query}")
+    assert response.status_code == 200
+    nav = _breadcrumb_nav(response.text)
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "/",
+        "/collections",
+        "/collections/a-top",
+        "/collections/mid",
+        "/collections/deep",
+    ]
+    assert _breadcrumb_json_ld(response.text)[-2] == (
+        "Deep",
+        "https://artazzen.com/collections/deep",
+    )
+    # Previous/Next walk the gallery and carry no collection.
+    assert "/artwork/next.jpg" in response.text
+    assert "from=" not in response.text
+
+
+def test_artwork_prev_next_stay_in_visited_collection(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "set", "title": "Set"})
+    _add_image(image_root, "a.jpg", collections=["set"])
+    _add_image(image_root, "b.jpg")
+    _add_image(image_root, "c.jpg", collections=["set"])
+
+    html = client.get("/artwork/a.jpg?from=set").text
+    assert "/artwork/c.jpg?from=set" in html
+    assert "/artwork/b.jpg" not in html
+
+    html = client.get("/artwork/c.jpg?from=set").text
+    assert "/artwork/a.jpg?from=set" in html
+    assert "/artwork/b.jpg" not in html
+
+
+def test_artwork_breadcrumb_without_collection(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "loose.jpg", title="Loose")
+
+    response = client.get("/artwork/loose.jpg?from=nope")
     assert response.status_code == 200
     nav = _breadcrumb_nav(response.text)
     assert re.findall(r'href="([^"]+)"', nav) == ["/"]
