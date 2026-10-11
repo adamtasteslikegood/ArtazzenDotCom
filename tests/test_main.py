@@ -7,6 +7,7 @@ import re
 import time
 from contextlib import suppress
 from pathlib import Path
+from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 import pytest
@@ -1257,7 +1258,7 @@ def test_collection_page_series_order_anchor_and_dedup(client, tmp_path, monkeyp
     # Registry order preserved: b before a inside the strip.
     assert html.index("/artwork/b.jpg") < html.index("/artwork/a.jpg")
     # Dedup: a is in the series AND a direct member — rendered exactly once.
-    assert html.count('href="/artwork/a.jpg"') == 1
+    assert html.count('href="/artwork/a.jpg?from=flora"') == 1
     # c is standalone and renders in the grid; hidden is excluded.
     assert "/artwork/c.jpg" in html
     assert "hidden.jpg" not in html
@@ -1330,8 +1331,186 @@ def test_collection_breadcrumb_for_nested(client, tmp_path, monkeypatch):
     )
     response = client.get("/collections/child")
     assert response.status_code == 200
-    assert "/collections/root" in response.text
+    links = re.findall(r'href="([^"]+)"', _breadcrumb_nav(response.text))
+    assert [urlparse(link).path for link in links] == [
+        "/",
+        "/collections",
+        "/collections/root",
+    ]
+    assert _breadcrumb_nav(response.text).count('class="breadcrumb-item"') == 4
     assert 'aria-current="page"' in response.text
+
+
+def _breadcrumb_nav(html: str) -> str:
+    return re.search(r'<nav class="breadcrumb".*?</nav>', html, flags=re.DOTALL).group(
+        0
+    )
+
+
+def _breadcrumb_json_ld(html: str) -> list[tuple[str, str]]:
+    bodies = re.findall(
+        r'<script type="application/ld[+]json">(.*?)</script>', html, flags=re.DOTALL
+    )
+    blocks = [json.loads(body) for body in bodies]
+    crumbs = next(b for b in blocks if b.get("@type") == "BreadcrumbList")
+    return [(item["name"], item["item"]) for item in crumbs["itemListElement"]]
+
+
+def test_artwork_breadcrumb_follows_collection_chain(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "root", "title": "Root"})
+    gallery_app.curation.upsert_collection(
+        {"id": "child", "title": "Child", "parent": "root"}
+    )
+    _add_image(image_root, "leaf.jpg", title="Leaf", collections=["root", "child"])
+
+    # The collection page links to the artwork with its own slug.
+    assert (
+        'href="/artwork/leaf.jpg?from=child"' in client.get("/collections/child").text
+    )
+
+    response = client.get("/artwork/leaf.jpg?from=child")
+    assert response.status_code == 200
+    assert '<link rel="canonical" href="https://artazzen.com/artwork/leaf.jpg">' in (
+        response.text
+    )
+    nav = _breadcrumb_nav(response.text)
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "/",
+        "/collections",
+        "/collections/root",
+        "/collections/child",
+    ]
+    assert '<span aria-current="page">Leaf</span>' in nav
+    assert _breadcrumb_json_ld(response.text) == [
+        ("Gallery", "https://artazzen.com/"),
+        ("Collections", "https://artazzen.com/collections"),
+        ("Root", "https://artazzen.com/collections/root"),
+        ("Child", "https://artazzen.com/collections/child"),
+        ("Leaf", "https://artazzen.com/artwork/leaf.jpg"),
+    ]
+
+    # Arriving from the parent shows the parent's trail, not the child's.
+    nav = _breadcrumb_nav(client.get("/artwork/leaf.jpg?from=root").text)
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "/",
+        "/collections",
+        "/collections/root",
+    ]
+
+
+def test_artwork_breadcrumb_follows_series_collection(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "edits", "title": "Edits"})
+    _add_image(image_root, "variant.jpg", title="Variant")
+    gallery_app.curation.upsert_series(
+        {"id": "run", "title": "Run", "collection": "edits", "images": ["variant.jpg"]}
+    )
+
+    assert (
+        'href="/artwork/variant.jpg?from=edits"'
+        in client.get("/collections/edits").text
+    )
+    nav = _breadcrumb_nav(client.get("/artwork/variant.jpg?from=edits").text)
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "/",
+        "/collections",
+        "/collections/edits",
+    ]
+
+
+@pytest.mark.parametrize("query", ["", "?from=other", "?from=nope", "?from="])
+def test_artwork_breadcrumb_defaults_to_deepest_collection(
+    client, tmp_path, monkeypatch, query
+):
+    """Without a collection page that shows the image, the deepest chain is used."""
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "a-top", "title": "Top"})
+    gallery_app.curation.upsert_collection(
+        {"id": "mid", "title": "Mid", "parent": "a-top"}
+    )
+    gallery_app.curation.upsert_collection(
+        {"id": "deep", "title": "Deep", "parent": "mid"}
+    )
+    gallery_app.curation.upsert_collection({"id": "other", "title": "Other"})
+    _add_image(
+        image_root, "leaf.jpg", title="Leaf", collections=["a-top", "mid", "deep"]
+    )
+    _add_image(image_root, "next.jpg", title="Next")
+
+    response = client.get(f"/artwork/leaf.jpg{query}")
+    assert response.status_code == 200
+    nav = _breadcrumb_nav(response.text)
+    assert re.findall(r'href="([^"]+)"', nav) == [
+        "/",
+        "/collections",
+        "/collections/a-top",
+        "/collections/mid",
+        "/collections/deep",
+    ]
+    assert _breadcrumb_json_ld(response.text)[-2] == (
+        "Deep",
+        "https://artazzen.com/collections/deep",
+    )
+    # Previous/Next walk the gallery and carry no collection.
+    assert "/artwork/next.jpg" in response.text
+    assert "from=" not in response.text
+
+
+def test_artwork_breadcrumb_depth_tie_uses_registry_order(
+    client, tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection(
+        {"id": "series-first", "title": "Series First", "order": 0}
+    )
+    gallery_app.curation.upsert_collection(
+        {"id": "direct-last", "title": "Direct Last", "order": 10}
+    )
+    _add_image(image_root, "shared.jpg", collections=["direct-last"])
+    gallery_app.curation.upsert_series(
+        {
+            "id": "run",
+            "title": "Run",
+            "collection": "series-first",
+            "images": ["shared.jpg"],
+        }
+    )
+
+    nav = _breadcrumb_nav(client.get("/artwork/shared.jpg").text)
+    assert "/collections/series-first" in nav
+    assert "/collections/direct-last" not in nav
+
+
+def test_artwork_prev_next_stay_in_visited_collection(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "set", "title": "Set"})
+    _add_image(image_root, "a.jpg", collections=["set"])
+    _add_image(image_root, "b.jpg")
+    _add_image(image_root, "c.jpg", collections=["set"])
+
+    html = client.get("/artwork/a.jpg?from=set").text
+    assert "/artwork/c.jpg?from=set" in html
+    assert "/artwork/b.jpg" not in html
+
+    html = client.get("/artwork/c.jpg?from=set").text
+    assert "/artwork/a.jpg?from=set" in html
+    assert "/artwork/b.jpg" not in html
+
+
+def test_artwork_breadcrumb_without_collection(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "loose.jpg", title="Loose")
+
+    response = client.get("/artwork/loose.jpg?from=nope")
+    assert response.status_code == 200
+    nav = _breadcrumb_nav(response.text)
+    assert re.findall(r'href="([^"]+)"', nav) == ["/"]
+    assert '<span aria-current="page">Loose</span>' in nav
+    assert _breadcrumb_json_ld(response.text) == [
+        ("Gallery", "https://artazzen.com/"),
+        ("Loose", "https://artazzen.com/artwork/loose.jpg"),
+    ]
 
 
 def test_collection_unknown_slug_404(client, tmp_path, monkeypatch):

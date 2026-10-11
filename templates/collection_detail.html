@@ -5,14 +5,22 @@
 
 {% block header_pre %}
 <nav class="breadcrumb" aria-label="Breadcrumb">
-    <a href="{{ url_for('collections_index') }}">Collections</a>
-    {% for crumb in breadcrumb %}
+    <span class="breadcrumb-item">
+        <a href="{{ url_for('read_root') }}">Gallery</a>
+    </span>
+    <span class="breadcrumb-item">
         <span aria-hidden="true">/</span>
-        {% if loop.last %}
-        <span aria-current="page">{{ crumb.title }}</span>
-        {% else %}
-        <a href="{{ url_for('collection_detail', slug=crumb.id) }}">{{ crumb.title }}</a>
-        {% endif %}
+        <a href="{{ url_for('collections_index') }}">Collections</a>
+    </span>
+    {% for crumb in breadcrumb %}
+        <span class="breadcrumb-item">
+            <span aria-hidden="true">/</span>
+            {% if loop.last %}
+            <span aria-current="page">{{ crumb.title }}</span>
+            {% else %}
+            <a href="{{ url_for('collection_detail', slug=crumb.id) }}">{{ crumb.title }}</a>
+            {% endif %}
+        </span>
     {% endfor %}
 </nav>
 {% endblock %}
@@ -59,7 +67,7 @@
             <div class="gallery-grid">
                 {% for artwork in artworks %}
                     <div class="artwork-item">
-                        <a href="/artwork/{{ artwork.name }}" title="View details: {{ artwork.title }}">
+                        <a href="/artwork/{{ artwork.name }}?from={{ collection.id | urlencode }}" title="View details: {{ artwork.title }}">
                             <img src="{{ artwork.thumb_url }}"
                                  alt="{{ artwork.title }}"
                                  loading="lazy"
