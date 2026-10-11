@@ -868,6 +868,7 @@ footer {
 }
 
 .artwork-zoom.is-full .artwork-zoom-stage img {
+    width: var(--zoom-width);
     max-width: none;
     max-height: none;
     flex-shrink: 0;

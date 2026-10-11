@@ -3443,7 +3443,7 @@ def test_grids_use_thumbnails_and_detail_uses_display(client, tmp_path, monkeypa
     assert media.derivative_srcset("a.jpg") == srcset
     # Inline image and the enlarged view both offer the derivatives; the
     # original is only linked, never listed as a candidate.
-    assert f'srcset="{srcset}"' in detail
+    assert f'srcset="{srcset}" sizes="(max-width: 900px)' in detail
     assert f'data-srcset="{srcset}"' in detail
     assert original not in srcset
     assert f'<a href="{original}"' in detail

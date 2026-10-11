@@ -105,6 +105,7 @@
         var dialog = document.getElementById('artwork-zoom');
         if (!link || !dialog || !dialog.showModal) return;
         var img = dialog.querySelector('img');
+        var stage = dialog.querySelector('.artwork-zoom-stage');
         var toggle = dialog.querySelector('[data-zoom-toggle]');
         var status = dialog.querySelector('.artwork-zoom-status');
         var fullUrl = img.dataset.full;
@@ -117,12 +118,18 @@
             toggle.textContent = 'Full size';
         }
 
+        function enterFull() {
+            dialog.classList.add('is-full');
+            stage.scrollLeft = (stage.scrollWidth - stage.clientWidth) / 2;
+            stage.scrollTop = (stage.scrollHeight - stage.clientHeight) / 2;
+        }
+
         // The original is fetched only when the visitor asks for full size.
         function showFull() {
             full = true;
             toggle.textContent = 'Fit to screen';
             if (originalLoaded) {
-                dialog.classList.add('is-full');
+                enterFull();
                 return;
             }
             status.textContent = 'Loading full size\u2026';
@@ -133,10 +140,14 @@
                 // A fresh element: one that had `sizes` keeps reporting the
                 // scaled-down intrinsic size after its source is swapped.
                 original.addEventListener('click', toggleFull);
+                // One image pixel per screen pixel, but never smaller than
+                // the fitted view on a dense phone screen.
+                var width = Math.max(original.naturalWidth / (window.devicePixelRatio || 1), img.clientWidth);
+                dialog.style.setProperty('--zoom-width', width + 'px');
                 img.replaceWith(original);
                 img = original;
                 status.textContent = '';
-                if (full) dialog.classList.add('is-full');
+                if (full) enterFull();
             };
             original.onerror = function () {
                 fit();
@@ -165,7 +176,7 @@
         img.addEventListener('click', toggleFull);
         toggle.addEventListener('click', toggleFull);
         dialog.querySelector('[data-zoom-close]').addEventListener('click', function () { dialog.close(); });
-        dialog.querySelector('.artwork-zoom-stage').addEventListener('click', function (event) {
+        stage.addEventListener('click', function (event) {
             if (event.target === event.currentTarget) dialog.close();
         });
         dialog.addEventListener('close', function () {
