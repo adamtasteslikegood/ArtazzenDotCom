@@ -3151,15 +3151,76 @@ def test_derivatives_never_upscale(tmp_path, monkeypatch):
 
     assert media.ensure_derivatives(image_root / "small.png") is True
     assert _derived_size("small.png", 480) == (300, 200)
-    assert not media.derivative_path("small.png", 1600).exists()
+    assert _derived_size("small.png", 1600) == (300, 200)
+    assert not media.derivative_path("small.png", 2560).exists()
 
     media.ensure_derivatives(image_root / "mid.jpg")
     assert _derived_size("mid.jpg", 480) == (480, 240)
-    assert not media.derivative_path("mid.jpg", 1600).exists()
-    # No 1600 derivative: the detail page falls back to the original.
-    assert media.derivative_url("mid.jpg", 1600) == media.public_url("mid.jpg")
+    # Narrower than the display size: a WebP at the source's own width.
+    assert _derived_size("mid.jpg", 1600) == (1000, 500)
+    assert ".1600.webp" in media.derivative_url("mid.jpg", 1600)
+    assert not media.derivative_path("mid.jpg", 2560).exists()
     # Already built and fresh: nothing to do.
     assert media.ensure_derivatives(image_root / "mid.jpg") is False
+
+
+def test_large_derivative_only_for_sources_wider_than_display(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "huge.jpg", size=(6000, 3000))
+    _add_real_image(image_root, "wide.jpg", size=(2000, 1000))
+    _add_real_image(image_root, "exact.jpg", size=(1600, 800))
+    for name in ("huge.jpg", "wide.jpg", "exact.jpg"):
+        media.ensure_derivatives(image_root / name)
+
+    assert _derived_size("huge.jpg", 2560) == (2560, 1280)
+    assert _derived_size("huge.jpg", 1600) == (1600, 800)
+    assert _derived_size("wide.jpg", 2560) == (2000, 1000)
+    assert _derived_size("exact.jpg", 1600) == (1600, 800)
+    assert not media.derivative_path("exact.jpg", 2560).exists()
+    assert media.ensure_derivatives(image_root / "exact.jpg") is False
+
+
+def test_derivatives_backfilled_for_images_built_before_new_sizes(
+    tmp_path, monkeypatch
+):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "wide.jpg", size=(3000, 1500))
+    _add_real_image(image_root, "mid.jpg", size=(1000, 500))
+    for name in ("wide.jpg", "mid.jpg"):
+        media.ensure_derivatives(image_root / name)
+    # As left by the previous release: no large size, and no display size for
+    # a source narrower than it.
+    media.derivative_path("wide.jpg", 2560).unlink()
+    media.derivative_path("mid.jpg", 1600).unlink()
+    media._no_large_derivative.clear()
+
+    assert media.ensure_derivatives(image_root / "wide.jpg") is True
+    assert _derived_size("wide.jpg", 2560) == (2560, 1280)
+    assert media.ensure_derivatives(image_root / "mid.jpg") is True
+    assert _derived_size("mid.jpg", 1600) == (1000, 500)
+
+    # After a restart a narrow source is checked once, not rebuilt.
+    media._no_large_derivative.clear()
+    before = media.derivative_path("mid.jpg", 480).stat().st_mtime_ns
+    assert media.ensure_derivatives(image_root / "mid.jpg") is False
+    assert media.derivative_path("mid.jpg", 480).stat().st_mtime_ns == before
+
+
+def test_large_derivative_is_served_and_removed(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_real_image(image_root, "a.jpg", size=(3000, 1500))
+    media.ensure_derivatives(image_root / "a.jpg")
+
+    url = media.derivative_url("a.jpg", 2560)
+    assert ".2560.webp" in url
+    response = client.get(url)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
+
+    media.remove_derivatives("a.jpg")
+    assert not any(
+        media.derivative_path("a.jpg", w).exists() for w in (480, 1600, 2560)
+    )
 
 
 def test_watcher_backfills_derivatives_with_per_scan_cap(tmp_path, monkeypatch):
@@ -3197,7 +3258,9 @@ def test_derivative_regenerated_when_source_replaced(tmp_path, monkeypatch):
     assert media.derivative_url("a.jpg", 480) == media.public_url("a.jpg")
     assert media.ensure_derivatives(source) is True
     assert _derived_size("a.jpg", 480) == (480, 480)
-    assert not media.derivative_path("a.jpg", 1600).exists()
+    assert _derived_size("a.jpg", 1600) == (1000, 1000)
+    # The replacement is too narrow for the large size the old source had.
+    assert not media.derivative_path("a.jpg", 2560).exists()
     assert media.derivative_url("a.jpg", 480) != old_url
 
 
@@ -3214,6 +3277,7 @@ def test_soft_delete_removes_derivatives_and_purges(
     assert response.status_code == 200
     assert not media.derivative_path("a.jpg", 480).exists()
     assert not media.derivative_path("a.jpg", 1600).exists()
+    assert not media.derivative_path("a.jpg", 2560).exists()
     assert (image_root / ".trash" / "a.jpg").is_file()
     assert len(calls) == 1
     assert calls[0][1]["json"] == {"tags": [media.cache_tag("a.jpg")]}
@@ -3372,6 +3436,16 @@ def test_grids_use_thumbnails_and_detail_uses_display(client, tmp_path, monkeypa
     original = media.public_url("a.jpg")
     assert f'<img src="{media.derivative_url("a.jpg", 1600)}"' in detail
     assert ".1600.webp" in media.derivative_url("a.jpg", 1600)
+    srcset = (
+        f'{media.derivative_url("a.jpg", 1600)} 1600w, '
+        f'{media.derivative_url("a.jpg", 2560)} 2000w'
+    )
+    assert media.derivative_srcset("a.jpg") == srcset
+    # Inline image and the enlarged view both offer the derivatives; the
+    # original is only linked, never listed as a candidate.
+    assert f'srcset="{srcset}" sizes="(max-width: 900px)' in detail
+    assert f'data-srcset="{srcset}"' in detail
+    assert original not in srcset
     assert f'<a href="{original}"' in detail
     assert f'<meta property="og:image" content="https://artazzen.com{original}">' in (
         detail
@@ -3417,7 +3491,8 @@ def test_forced_reimport_with_same_mtime_rebuilds_derivatives(
     )
     assert second.json()["copied"] == ["art.jpg"]
     assert _derived_size("art.jpg", 480) == (480, 480)
-    assert not media.derivative_path("art.jpg", 1600).exists()
+    assert _derived_size("art.jpg", 1600) == (1000, 1000)
+    assert not media.derivative_path("art.jpg", 2560).exists()
 
     # Same size and same mtime, different bytes: the immutable URL of the
     # original must still change.
@@ -3443,7 +3518,13 @@ def test_derivatives_apply_exif_orientation(tmp_path, monkeypatch):
 
     media.ensure_derivatives(image_root / "rot.jpg")
     assert _derived_size("rot.jpg", 480) == (480, 960)
-    assert not media.derivative_path("rot.jpg", 1600).exists()
+    # 1000 px wide once rotated: display at its own width, no large size.
+    assert _derived_size("rot.jpg", 1600) == (1000, 2000)
+    assert not media.derivative_path("rot.jpg", 2560).exists()
+
+    _add_real_image(image_root, "tall.jpg", size=(1000, 2000), orientation=6)
+    media.ensure_derivatives(image_root / "tall.jpg")
+    assert _derived_size("tall.jpg", 2560) == (2000, 1000)
 
 
 def test_urls_percent_encode_filenames(client, tmp_path, monkeypatch):

@@ -22,7 +22,7 @@
     <main>
         <div class="artwork-detail-grid">
             <div>
-                <a href="{{ artwork.image_url }}" target="_blank" rel="noopener"><img src="{{ artwork.display_url }}" alt="{{ artwork.title }}"></a>
+                <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" id="artwork-zoom-link" class="artwork-zoom-link"><img src="{{ artwork.display_url }}"{% if artwork.srcset %} srcset="{{ artwork.srcset }}" sizes="(max-width: 900px) calc(100vw - 4rem), 536px"{% endif %} alt="{{ artwork.title }}"></a>
             </div>
             <div style="padding-top: 2rem;">
                 {% if artwork.caption %}
@@ -74,6 +74,17 @@
             </div>
         </div>
 
+        <dialog id="artwork-zoom" class="artwork-zoom" aria-label="{{ artwork.title }}, enlarged">
+            <div class="artwork-zoom-stage">
+                <img alt="{{ artwork.title }}" data-src="{{ artwork.display_url }}" data-srcset="{{ artwork.srcset }}" data-full="{{ artwork.image_url }}">
+            </div>
+            <div class="artwork-zoom-bar">
+                <span class="artwork-zoom-status" role="status"></span>
+                <button type="button" class="button secondary" data-zoom-toggle>Full size</button>
+                <button type="button" class="button" data-zoom-close>Close</button>
+            </div>
+        </dialog>
+
         {% if prev_artwork or next_artwork %}
         {% set from_query = ('?from=' ~ (came_from | urlencode)) if came_from else '' %}
         <nav style="display: flex; justify-content: space-between; margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
@@ -88,6 +99,92 @@
         </nav>
         {% endif %}
     </main>
+    <script>
+    (function () {
+        var link = document.getElementById('artwork-zoom-link');
+        var dialog = document.getElementById('artwork-zoom');
+        if (!link || !dialog || !dialog.showModal) return;
+        var img = dialog.querySelector('img');
+        var stage = dialog.querySelector('.artwork-zoom-stage');
+        var toggle = dialog.querySelector('[data-zoom-toggle]');
+        var status = dialog.querySelector('.artwork-zoom-status');
+        var fullUrl = img.dataset.full;
+        var full = false;
+        var originalLoaded = false;
+
+        function fit() {
+            full = false;
+            dialog.classList.remove('is-full');
+            toggle.textContent = 'Full size';
+        }
+
+        function enterFull() {
+            dialog.classList.add('is-full');
+            stage.scrollLeft = (stage.scrollWidth - stage.clientWidth) / 2;
+            stage.scrollTop = (stage.scrollHeight - stage.clientHeight) / 2;
+        }
+
+        // The original is fetched only when the visitor asks for full size.
+        function showFull() {
+            full = true;
+            toggle.textContent = 'Fit to screen';
+            if (originalLoaded) {
+                enterFull();
+                return;
+            }
+            status.textContent = 'Loading full size\u2026';
+            var original = new Image();
+            original.alt = img.alt;
+            original.onload = function () {
+                originalLoaded = true;
+                // A fresh element: one that had `sizes` keeps reporting the
+                // scaled-down intrinsic size after its source is swapped.
+                original.addEventListener('click', toggleFull);
+                // One image pixel per screen pixel, but never smaller than
+                // the fitted view on a dense phone screen.
+                var width = Math.max(original.naturalWidth / (window.devicePixelRatio || 1), img.clientWidth);
+                dialog.style.setProperty('--zoom-width', width + 'px');
+                img.replaceWith(original);
+                img = original;
+                status.textContent = '';
+                if (full) enterFull();
+            };
+            original.onerror = function () {
+                fit();
+                status.textContent = 'Full size image unavailable.';
+            };
+            original.src = fullUrl;
+        }
+
+        function toggleFull() {
+            if (full) fit(); else showFull();
+        }
+
+        link.addEventListener('click', function (event) {
+            // Modified clicks keep opening the original in a new tab.
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            if (!img.getAttribute('src')) {
+                if (img.dataset.srcset) {
+                    img.sizes = '100vw';
+                    img.srcset = img.dataset.srcset;
+                }
+                img.src = img.dataset.src;
+            }
+            dialog.showModal();
+        });
+        img.addEventListener('click', toggleFull);
+        toggle.addEventListener('click', toggleFull);
+        dialog.querySelector('[data-zoom-close]').addEventListener('click', function () { dialog.close(); });
+        stage.addEventListener('click', function (event) {
+            if (event.target === event.currentTarget) dialog.close();
+        });
+        dialog.addEventListener('close', function () {
+            fit();
+            status.textContent = '';
+        });
+    })();
+    </script>
 {% endblock %}
 
 {% block footer %}<p>Artazzen / {{ artwork.title }}</p>{% endblock %}

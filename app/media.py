@@ -31,6 +31,9 @@ _TOKEN_RE = re.compile(r"^v[0-9a-f]{10}$")
 # Sources whose derivatives failed to build, keyed by path with the file
 # signature that failed, so a corrupt image is not reopened on every scan.
 _failed_derivatives: dict[str, tuple[int, int]] = {}
+# Sources known to be too narrow for the large derivative, keyed the same way,
+# so its absence does not reopen them on every scan.
+_no_large_derivative: dict[str, tuple[int, int]] = {}
 _derivative_lock = threading.Lock()
 
 
@@ -97,14 +100,38 @@ def _derivative_is_fresh(source: Path, derived: Path) -> bool:
         return False
 
 
+def _derived_url(derived: Path) -> str:
+    return _versioned(
+        config.IMAGES_URL_PREFIX, derived, f"{DERIVED_DIRNAME}/{derived.name}"
+    )
+
+
 def derivative_url(filename: str, width: int) -> str:
     """Versioned URL of a derivative; the original's URL when none exists."""
     derived = derivative_path(filename, width)
     if _derivative_is_fresh(sidecars._resolve_image_path(filename), derived):
-        return _versioned(
-            config.IMAGES_URL_PREFIX, derived, f"{DERIVED_DIRNAME}/{derived.name}"
-        )
+        return _derived_url(derived)
     return public_url(filename)
+
+
+def derivative_srcset(filename: str) -> str:
+    """`srcset` of the display and large derivatives that exist ('' if none).
+
+    Each entry carries the file's real width: a derivative of a narrow source
+    is narrower than its nominal size.
+    """
+    source = sidecars._resolve_image_path(filename)
+    entries = []
+    for width in (config.DISPLAY_WIDTH, config.LARGE_WIDTH):
+        derived = derivative_path(filename, width)
+        if not _derivative_is_fresh(source, derived):
+            continue
+        try:
+            with Image.open(derived) as image:
+                entries.append(f"{_derived_url(derived)} {image.width}w")
+        except OSError as exc:
+            logger.warning("Unreadable derivative %s: %s", derived.name, exc)
+    return ", ".join(entries)
 
 
 def add_urls(meta: dict[str, Any], filename: str) -> dict[str, Any]:
@@ -137,7 +164,7 @@ def admin_url(filename: str, width: int | None = None) -> str:
 def admin_preview_path(filename: str, width: int | None) -> Path:
     """File the admin preview route should send for the requested width."""
     source = sidecars._resolve_image_path(filename)
-    if width in (config.THUMB_WIDTH, config.DISPLAY_WIDTH):
+    if width in config.DERIVATIVE_WIDTHS:
         derived = derivative_path(filename, width)
         if _derivative_is_fresh(source, derived):
             return derived
@@ -181,7 +208,7 @@ def _source_filename(relative: str) -> str | None:
         name = parts[0]
     elif len(parts) == 2 and parts[0] == DERIVED_DIRNAME:
         name = ""
-        for width in (config.THUMB_WIDTH, config.DISPLAY_WIDTH):
+        for width in config.DERIVATIVE_WIDTHS:
             suffix = f".{width}.webp"
             if parts[1].endswith(suffix):
                 name = parts[1][: -len(suffix)]
@@ -309,12 +336,19 @@ def _save_webp(image: Image.Image, target: Path) -> None:
     os.replace(tmp, target)
 
 
+def _oriented_width(image: Image.Image) -> int:
+    """Width once EXIF orientation is applied, read from the header alone."""
+    rotated = image.getexif().get(0x0112) in (5, 6, 7, 8)
+    return image.height if rotated else image.width
+
+
 def ensure_derivatives(image_path: Path, *, force: bool = False) -> bool:
     """Build missing or stale WebP derivatives; return True if any work ran.
 
-    The thumbnail is always written (never upscaled), so its presence marks
-    the source as processed. The display size is written only when the source
-    is wider than it. Animated images get no derivatives.
+    The thumbnail and display sizes are always written (never upscaled, so a
+    narrow source keeps its own width). The large size is written only when
+    the source is wider than the display size. Animated images get no
+    derivatives.
     """
     # One build at a time: an upload and the watcher's backfill can reach the
     # same image together, and a decoded photo is tens of megabytes.
@@ -324,12 +358,22 @@ def ensure_derivatives(image_path: Path, *, force: bool = False) -> bool:
 
 def _ensure_derivatives(image_path: Path, force: bool) -> bool:
     filename = image_path.name
-    thumb = derivative_path(filename, config.THUMB_WIDTH)
+    thumb, display, large = (
+        derivative_path(filename, width) for width in config.DERIVATIVE_WIDTHS
+    )
     key = str(image_path)
+    signature = _signature(image_path)
+    small_fresh = False
     if not force:
-        if _derivative_is_fresh(image_path, thumb):
+        if _failed_derivatives.get(key) == signature:
             return False
-        if _failed_derivatives.get(key) == _signature(image_path):
+        small_fresh = _derivative_is_fresh(image_path, thumb) and _derivative_is_fresh(
+            image_path, display
+        )
+        if small_fresh and (
+            _no_large_derivative.get(key) == signature
+            or _derivative_is_fresh(image_path, large)
+        ):
             return False
     try:
         thumb.parent.mkdir(exist_ok=True)
@@ -338,24 +382,32 @@ def _ensure_derivatives(image_path: Path, force: bool) -> bool:
             # frames but is a still image; its first frame is the photo.
             if opened.format != "MPO" and getattr(opened, "is_animated", False):
                 raise ValueError("animated image")
+            wants_large = _oriented_width(opened) > config.DISPLAY_WIDTH
+            if not wants_large:
+                _no_large_derivative[key] = signature
+                if small_fresh:
+                    return False
             # Lets the JPEG decoder downscale while decoding large sources.
-            opened.draft("RGB", (config.DISPLAY_WIDTH, config.DISPLAY_WIDTH))
+            opened.draft("RGB", (config.LARGE_WIDTH, config.LARGE_WIDTH))
             image = ImageOps.exif_transpose(opened)
             if image.mode not in ("RGB", "RGBA"):
                 alpha = "A" in image.getbands() or "transparency" in image.info
                 image = image.convert("RGBA" if alpha else "RGB")
-            display = derivative_path(filename, config.DISPLAY_WIDTH)
-            if image.width > config.DISPLAY_WIDTH:
-                image.thumbnail((config.DISPLAY_WIDTH, image.height * 2))
-                _save_webp(image, display)
+            if wants_large:
+                image.thumbnail((config.LARGE_WIDTH, image.height * 2))
+                _save_webp(image, large)
             else:
-                display.unlink(missing_ok=True)
-            if image.width > config.THUMB_WIDTH:
-                image.thumbnail((config.THUMB_WIDTH, image.height * 2))
-            _save_webp(image, thumb)
+                large.unlink(missing_ok=True)
+            for width, target in (
+                (config.DISPLAY_WIDTH, display),
+                (config.THUMB_WIDTH, thumb),
+            ):
+                if image.width > width:
+                    image.thumbnail((width, image.height * 2))
+                _save_webp(image, target)
     except Exception as exc:
         logger.warning("No derivatives for %s: %s", filename, exc)
-        _failed_derivatives[key] = _signature(image_path)
+        _failed_derivatives[key] = signature
         remove_derivatives(filename)
         return True
     _failed_derivatives.pop(key, None)
@@ -363,7 +415,7 @@ def _ensure_derivatives(image_path: Path, force: bool) -> bool:
 
 
 def remove_derivatives(filename: str) -> None:
-    for width in (config.THUMB_WIDTH, config.DISPLAY_WIDTH):
+    for width in config.DERIVATIVE_WIDTHS:
         try:
             derivative_path(filename, width).unlink(missing_ok=True)
         except OSError as exc:

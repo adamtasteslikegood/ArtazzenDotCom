@@ -19,9 +19,13 @@ _USING_VOLUME = IMAGES_DIR != STATIC_DIR / "images"
 # Images are always served from /images (approved-only, see app/media.py),
 # whether or not IMAGES_DIR is a mounted volume.
 IMAGES_URL_PREFIX = "/images"
-# Pre-generated WebP derivative widths: gallery grids and the detail page.
+# Pre-generated WebP derivative widths: gallery grids, the detail page, and
+# the detail page's enlarged view (built only for sources wider than the
+# display size).
 THUMB_WIDTH = 480
 DISPLAY_WIDTH = 1600
+LARGE_WIDTH = 2560
+DERIVATIVE_WIDTHS = (THUMB_WIDTH, DISPLAY_WIDTH, LARGE_WIDTH)
 WEBP_QUALITY = 80
 # Derivatives built for existing images per watcher scan (5 s apart).
 DERIVATIVE_BACKFILL_PER_SCAN = 5

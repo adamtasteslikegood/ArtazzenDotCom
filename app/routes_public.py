@@ -207,6 +207,7 @@ async def artwork_detail(request: Request, image_filename: str):
         "collection": metadata.get("collection", ""),
         "image_url": image_url,
         "display_url": media.derivative_url(filename, config.DISPLAY_WIDTH),
+        "srcset": media.derivative_srcset(filename),
     }
 
     # A visitor who arrived from a collection page (?from=<slug>) keeps that

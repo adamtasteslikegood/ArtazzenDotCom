@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Enlarged view on the artwork page: clicking the image opens it full-window
+  instead of opening the original in a new tab. "Full size" (or a click on the
+  image) then loads the original and shows it at its real size; the original
+  is not downloaded before that. Without JavaScript, and on Ctrl/Cmd/Shift
+  click, the link still opens the original.
+- 2560 px WebP derivative for images wider than 1600 px, used by the enlarged
+  view. The artwork page image now has a `srcset`, so the browser picks the
+  size that fits the screen.
+
+### Changed
+
+- Images 1600 px wide or narrower now get a detail-page WebP at their own
+  width; the artwork page used to load the original for them.
+- The watcher builds the new sizes for existing images (five images per
+  scan). An image whose sizes are rebuilt gets new thumbnail and detail URLs
+  once.
+
 ## [0.4.0] - 2026-10-11
 
 ### Added
