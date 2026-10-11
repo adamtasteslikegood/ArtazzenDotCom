@@ -4,7 +4,18 @@
 {% block page_heading %}{{ artwork.title }}{% endblock %}
 
 {% block header_pre %}
-<a href="{{ url_for('read_root') }}" class="artwork-meta-label" style="text-decoration: none; color: inherit; margin-bottom: 2rem; display: inline-block;">&larr; Back to Gallery</a>
+<nav class="breadcrumb" aria-label="Breadcrumb">
+    {% for crumb in breadcrumb %}
+        <span class="breadcrumb-item">
+            {% if not loop.first %}<span aria-hidden="true">/</span>{% endif %}
+            {% if loop.last %}
+            <span aria-current="page">{{ crumb.name }}</span>
+            {% else %}
+            <a href="{{ crumb.path }}">{{ crumb.name }}</a>
+            {% endif %}
+        </span>
+    {% endfor %}
+</nav>
 {% endblock %}
 
 {% block content %}
@@ -64,14 +75,15 @@
         </div>
 
         {% if prev_artwork or next_artwork %}
+        {% set from_query = ('?from=' ~ (came_from | urlencode)) if came_from else '' %}
         <nav style="display: flex; justify-content: space-between; margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
             {% if prev_artwork %}
-            <a href="{{ url_for('artwork_detail', image_filename=prev_artwork) }}" class="button secondary">&larr; Previous</a>
+            <a href="{{ url_for('artwork_detail', image_filename=prev_artwork) }}{{ from_query }}" class="button secondary">&larr; Previous</a>
             {% else %}
             <span></span>
             {% endif %}
             {% if next_artwork %}
-            <a href="{{ url_for('artwork_detail', image_filename=next_artwork) }}" class="button secondary">Next &rarr;</a>
+            <a href="{{ url_for('artwork_detail', image_filename=next_artwork) }}{{ from_query }}" class="button secondary">Next &rarr;</a>
             {% endif %}
         </nav>
         {% endif %}

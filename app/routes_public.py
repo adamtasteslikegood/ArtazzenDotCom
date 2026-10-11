@@ -209,8 +209,38 @@ async def artwork_detail(request: Request, image_filename: str):
         "display_url": media.derivative_url(filename, config.DISPLAY_WIDTH),
     }
 
-    gallery = sidecars.get_artwork_files(status_filter="approved")
-    filenames = [item["name"] for item in gallery]
+    # A visitor who arrived from a collection page (?from=<slug>) keeps that
+    # collection: the trail shows its chain and Previous/Next walk its page.
+    # Anyone else gets the deepest collection the image is shown in, and
+    # Previous/Next walk the gallery.
+    collections = curation.collections_for_image(filename)
+    series_memberships = curation.series_for_image(filename)
+    shown_on_entries = {c["id"]: c for c in collections}
+    for series in series_memberships:
+        owner = curation.get_collection(series.get("collection", ""))
+        if owner:
+            shown_on_entries.setdefault(owner["id"], owner)
+    shown_on = [
+        entry["id"]
+        for entry in sorted(
+            shown_on_entries.values(),
+            key=lambda entry: (entry.get("order", 0), entry.get("title", "")),
+        )
+    ]
+    came_from = request.query_params.get("from", "")
+    view = curation.collection_view(came_from) if came_from in shown_on else None
+    if view:
+        chain = view["breadcrumb"]
+        names = [a["name"] for s in view["series"] for a in s["artworks"]]
+        names += [a["name"] for a in view["artworks"]]
+        filenames = list(dict.fromkeys(names))
+    else:
+        came_from = ""
+        chain = max(
+            (curation.breadcrumb(slug) for slug in shown_on), key=len, default=[]
+        )
+        gallery = sidecars.get_artwork_files(status_filter="approved")
+        filenames = [item["name"] for item in gallery]
     prev_artwork = None
     next_artwork = None
     if filename in filenames:
@@ -220,6 +250,17 @@ async def artwork_detail(request: Request, image_filename: str):
         if idx < len(filenames) - 1:
             next_artwork = filenames[idx + 1]
 
+    crumbs = [{"name": "Gallery", "path": "/"}]
+    if chain:
+        crumbs.append({"name": "Collections", "path": "/collections"})
+        crumbs.extend(
+            {"name": crumb["title"], "path": f"/collections/{quote(crumb['id'])}"}
+            for crumb in chain
+        )
+    crumbs.append(
+        {"name": artwork_data["title"], "path": f"/artwork/{quote(filename)}"}
+    )
+
     context = seo.build_context(
         request,
         title=f"{artwork_data['title']} — Artazzen",
@@ -227,10 +268,7 @@ async def artwork_detail(request: Request, image_filename: str):
         or f"View {artwork_data['title']} in the Artazzen gallery.",
         image_url=image_url,
         page_type="article",
-        breadcrumbs=[
-            {"name": "Gallery", "path": "/"},
-            {"name": artwork_data["title"], "path": f"/artwork/{quote(filename)}"},
-        ],
+        breadcrumbs=crumbs,
         structured_data={
             "@context": "https://schema.org",
             "@type": "VisualArtwork",
@@ -252,8 +290,10 @@ async def artwork_detail(request: Request, image_filename: str):
             "artwork": artwork_data,
             "prev_artwork": prev_artwork,
             "next_artwork": next_artwork,
-            "collections": curation.collections_for_image(filename),
-            "series_memberships": curation.series_for_image(filename),
+            "came_from": came_from,
+            "collections": collections,
+            "breadcrumb": crumbs,
+            "series_memberships": series_memberships,
             **context,
         },
     )
