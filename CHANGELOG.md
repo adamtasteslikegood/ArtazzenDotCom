@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-11
+
+### Added
+
+- WebP derivatives for every image: 480 px for gallery, collection and series
+  grids and 1600 px for the artwork page, stored in `IMAGES_DIR/.derived/`.
+  Built on upload and import, backfilled by the watcher for existing images
+  (five per scan), never upscaled, EXIF orientation applied, none for animated
+  GIFs. Pages use the original until a derivative exists.
+- Versioned URLs for images and the stylesheet (`/images/v<token>/<name>`,
+  `/static/v<token>/css/styles.css`) served with
+  `Cache-Control: public, max-age=31536000, immutable`. Unversioned URLs get
+  one hour, and a stale or invented token redirects (308) to the current URL.
+- `GET /admin/image/{image_name}` (Basic auth, `no-store`, optional
+  `?w=480|1600`) for previews of images of any status.
+- Cloudflare purge by `Cache-Tag` when an image is unapproved or deleted,
+  enabled by `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID`. Without them
+  shared caches are capped at one day (`s-maxage=86400`).
+- Breadcrumb on the artwork page, replacing the "Back to Gallery" link:
+  Gallery / Collections / parent collections / collection / title. Reached
+  from a collection page (links there carry `?from=<slug>`) it shows that
+  collection, and Previous / Next step through that collection's page.
+  Otherwise it shows the deepest collection the artwork is in, or Gallery /
+  title for an artwork in none, and Previous / Next step through the gallery.
+  The `BreadcrumbList` JSON-LD follows the same chain, and the canonical URL
+  stays query-free. The collection page's breadcrumb now starts at Gallery too.
+- "Use artist's name in prompt" checkbox in the admin AI settings
+  (`artist_in_prompt`, off by default). While off, the artist's name is left
+  out of the AI metadata prompt, so generated descriptions and captions no
+  longer name the artist. Existing installs pick up the off default on upgrade;
+  tick the box to send the name again.
+- `scripts/seed-env-images.sh` copies a local image folder (default
+  `test_data/images`, git-ignored) into a Railway environment's `/data/images`
+  over `railway ssh`. It refuses production and deletes nothing.
+- Backend refactor roadmap (`docs/backend-refactor-roadmap.md`).
+
+### Changed
+
+- **Breaking:** images are served only from `/images`, and only when their
+  status is `approved`. Sidecar JSON, `.curation/`, `.trash/`, and pending or
+  hidden images return 404. `/static/images/...` returns 404 in every
+  environment; previously it served every file in the folder when no volume
+  was configured.
+- `/artwork/{name}` returns 404 unless the image is approved; it used to show
+  the title, description and tags of pending and hidden images.
+- An unapproved collection cover is ignored in favour of the first approved
+  member.
+- `/admin/api/new-files` items carry `thumb_url` (and `display_url` for
+  gallery items); pending `url` values point at `/admin/image/{name}`.
+- The "Reasoning effort" setting in the admin AI settings is labelled
+  "Effort". The stored key (`reasoning_effort`) is unchanged.
+
 ## [0.3.0] - 2026-10-10
 
 ### Added

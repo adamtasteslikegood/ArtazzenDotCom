@@ -17,6 +17,7 @@ main.py                  # Entrypoint + compat shim (uvicorn main:app)
 app/
   config.py              # Paths, env, runtime AI config
   sidecars.py            # Schema, path safety, sidecar/metadata I/O
+  media.py               # Image URLs, cache headers, WebP derivatives, CDN purge
   ai_metadata.py         # OpenAI prompt/request/populate pipeline
   curation.py            # Collections + series registries, migration
   watcher.py             # Pending-file detection and background poll
@@ -35,7 +36,7 @@ Static/                  # Mounted at /static (preserve capital S)
 tests/test_main.py       # Pytest suite
 ```
 
-Layering (no cycles): `config → sidecars → ai_metadata → curation → watcher → seo → security/routes → factory → main`.
+Layering (no cycles): `config → sidecars → media → ai_metadata → curation → watcher → seo → security/routes → factory → main`.
 
 ## Key Concepts
 
@@ -63,7 +64,9 @@ pip install -r requirements.txt
 uvicorn main:app --reload          # dev server → http://127.0.0.1:8000/
 ```
 
-Key env vars: `ADMIN_PASSWORD` (required for admin), `MY_OPENAI_API_KEY`, `IMAGES_DIR` (defaults to `Static/images`), `OPENAI_IMAGE_METADATA_MODEL`, `OPENAI_TIMEOUT_SECONDS`.
+Key env vars: `ADMIN_PASSWORD` (required for admin), `MY_OPENAI_API_KEY`, `IMAGES_DIR` (defaults to `Static/images`), `OPENAI_IMAGE_METADATA_MODEL`, `OPENAI_TIMEOUT_SECONDS`, `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` (optional cache purge).
+
+Images are public only when `status == "approved"`: `/images` (`media.PublicImageFiles`) enforces it, `/static` never serves `images/`, and admin previews use `/admin/image/{name}`. Build image URLs with `app/media.py` helpers, not by hand.
 
 ## Testing & Validation
 

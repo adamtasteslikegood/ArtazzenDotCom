@@ -1,15 +1,17 @@
 """Application factory: lifespan, mounts, middleware, routers."""
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
-from app import config, curation, sidecars, watcher
+from app import config, curation, media, sidecars, watcher
 from app.routes_admin import router as admin_router
 from app.routes_public import router as public_router
 from app.security import _SecurityHeadersMiddleware
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -20,6 +22,11 @@ async def lifespan(app: FastAPI):
     curation.ensure_registries()
     curation.migrate_legacy_collections()
     curation.sync_series_mirrors()
+    if not media.purge_configured():
+        logger.warning(
+            "CLOUDFLARE_API_TOKEN or CLOUDFLARE_ZONE_ID is unset: images that "
+            "stop being public are not purged, so edge copies are capped at 1 day"
+        )
     # Start empty: the watcher task's first cycle runs immediately (off the
     # event loop) and populates the cache; scanning inline here blocked
     # startup — and thus deploy readiness — for a full scan plus any
@@ -40,9 +47,9 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Artwork Gallery", lifespan=lifespan)
-    app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
-    if config._USING_VOLUME:
-        app.mount("/images", StaticFiles(directory=config.IMAGES_DIR), name="images")
+    config.templates.env.globals["static_url"] = media.static_url
+    app.mount("/static", media.VersionedStaticFiles(), name="static")
+    app.mount(config.IMAGES_URL_PREFIX, media.PublicImageFiles(), name="images")
     app.add_middleware(_SecurityHeadersMiddleware)
     app.include_router(admin_router)
     app.include_router(public_router)

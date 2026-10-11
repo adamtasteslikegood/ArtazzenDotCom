@@ -47,7 +47,7 @@ Do not post comments below SUGGESTION level. If a file has no issues worth a SUG
 - Sidecar JSON must conform to `ImageSidecar.schema.json`. Required fields: `title`, `description`, `ai_generated`, `ai_details`, `status`, `detected_at`.
 - `Static/` directory capitalisation must be preserved in all references.
 - Application code belongs in the `app/` package, not in `main.py`.
-- Module layering must be respected: `config → sidecars → ai_metadata → curation → watcher → security/routes → factory → main`. No cycles.
+- Module layering must be respected: `config → sidecars → media → ai_metadata → curation → watcher → security/routes → factory → main`. No cycles.
 - Atomic file writes for sidecars (write temp → rename).
 - No `print()` in production paths — use `logging.getLogger(__name__)`.
 
