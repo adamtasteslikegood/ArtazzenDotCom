@@ -6,11 +6,6 @@ All notable changes to this project will be documented in this file.
 
 ## [0.4.0] - 2026-10-11
 
-> Do not release this version to `main` until ArtazzenMobile loads images
-> through `/admin/image/{name}` with credentials (or the public `/images`
-> URLs the API returns). The app currently builds `/static/images/<name>`
-> URLs itself and sends no auth, and those URLs now return 404.
-
 ### Added
 
 - WebP derivatives for every image: 480 px for gallery, collection and series
