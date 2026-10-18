@@ -26,26 +26,20 @@ The Responses API contains several benefits over Chat Completions:
 - **Encrypted reasoning**: Use advanced reasoning without storing state.
 - **Future-proof**: Future-proofed for upcoming models.
 
-
-
-
-| Capabilities        | Chat Completions API  | Responses API         |
-| ------------------- | --------------------- | --------------------- |
-| Text generation     | | |
-| Audio               | | Coming soon           |
-| Vision              | | |
-| Structured Outputs  | | |
-| Function calling    | | |
-| Web search          | | |
-| File search         | | |
-| Computer use        | | |
-| Code interpreter    | | |
-| MCP                 | | |
-| Image generation    | | |
-| Reasoning summaries | | |
-
-
-
+| Capabilities        | Chat Completions API | Responses API |
+| ------------------- | -------------------- | ------------- |
+| Text generation     |                      |               |
+| Audio               |                      | Coming soon   |
+| Vision              |                      |               |
+| Structured Outputs  |                      |               |
+| Function calling    |                      |               |
+| Web search          |                      |               |
+| File search         |                      |               |
+| Computer use        |                      |               |
+| Code interpreter    |                      |               |
+| MCP                 |                      |               |
+| Image generation    |                      |               |
+| Reasoning summaries |                      |               |
 
 ### Examples
 
@@ -60,9 +54,7 @@ many concerns are glued together into one object, Items are distinct from one an
 
 Additionally, Chat Completions can return multiple parallel generations as `choices`, using the `n` parameter. The Responses API omits this parameter and returns only one generation.
 
-
-
-  Chat Completions API
+Chat Completions API
 
 ```python
 from openai import OpenAI
@@ -98,7 +90,7 @@ completion = client.chat.completions.create(
 puts(completion.choices.fetch(0).message.content)
 ```
 
-  Responses API
+Responses API
 
 ```python
 from openai import OpenAI
@@ -124,9 +116,6 @@ response = client.responses.create(
 puts(response.output_text)
 ```
 
-
-
-
 When you get a response back from the Responses API, the fields differ slightly.
 Instead of a `message`, you receive a typed `response` object with its own `id`.
 Responses are stored by default. Chat completions are stored by default for new accounts.
@@ -134,8 +123,6 @@ To disable storage when using either API, set `store: false`.
 
 The objects you receive back from these APIs will differ slightly. In Chat Completions, you receive an array of
 `choices`, each containing a `message`. In Responses, you receive an array of Items labeled `output`.
-
-
 
 #### Chat Completions API
 
@@ -194,8 +181,6 @@ The objects you receive back from these APIs will differ slightly. In Chat Compl
     ...
 }
 ```
-
-
 
 ### Additional differences
 
@@ -416,9 +401,6 @@ curl -s https://api.openai.com/v1/responses \
   }"
 ```
 
-
-
-
 Chat Completions
 
     With Chat Completions, you create a `messages` array and read the model text
@@ -550,12 +532,6 @@ curl https://api.openai.com/v1/chat/completions \
   }'
 ```
 
-
-  
-
-  
-
-    
 Responses
 
     With Responses, you can separate `instructions` and `input` at the top level
@@ -675,8 +651,6 @@ curl https://api.openai.com/v1/responses \
   }'
 ```
 
-
-
 ### 2. Map Messages to Items
 
 Chat Completions uses `messages` as both input and output. Responses uses `input` and `output` arrays of typed Items. A `message` is one Item type, alongside Items such as `reasoning`, `function_call`, and `function_call_output`.
@@ -700,8 +674,6 @@ If you have multi-turn conversations in your application, update your context lo
 - Use `previous_response_id` when you want OpenAI to manage prior response context. Resend stable `instructions` on each request, because `previous_response_id` does not carry over the previous response's top-level `instructions`.
 - Pass prior `output` Items back into the next request when you need to manage or trim context yourself.
 - Use the [Conversations API](https://developers.openai.com/api/docs/guides/conversation-state?api-mode=responses#using-the-conversations-api) when you need a persistent conversation object.
-
-
 
 Chat Completions
 
@@ -856,12 +828,6 @@ second = client.chat.completions.create(
 puts(second.choices.fetch(0).message.content)
 ```
 
-
-  
-
-  
-
-    
 Responses
 
     With Responses, you can manually pass outputs from one response into the
@@ -1191,8 +1157,6 @@ second = client.responses.create(
 puts(second.output_text)
 ```
 
-
-
 Even when using `previous_response_id`, all previous input tokens for responses in the chain are billed as input tokens in the API.
 
 <a id="4-decide-when-to-use-statefulness"></a>
@@ -1220,40 +1184,15 @@ Chat Completions and Responses define functions differently in two ways:
 
 The Responses API function example on the right is functionally equivalent to the Chat Completions example on the left.
 
-
-
 #### Chat Completions API
 
 ```json
 {
-    "type": "function",
-    "function": {
-      "name": "get_weather",
-      "description": "Determine weather in my location",
-      "strict": true,
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "location": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "location"
-        ]
-      }
-    }
-}
-```
-
-#### Responses API
-
-```json
-{
-    "type": "function",
+  "type": "function",
+  "function": {
     "name": "get_weather",
     "description": "Determine weather in my location",
+    "strict": true,
     "parameters": {
       "type": "object",
       "properties": {
@@ -1262,14 +1201,31 @@ The Responses API function example on the right is functionally equivalent to th
         }
       },
       "additionalProperties": false,
-      "required": [
-        "location"
-      ]
+      "required": ["location"]
     }
+  }
 }
 ```
 
+#### Responses API
 
+```json
+{
+  "type": "function",
+  "name": "get_weather",
+  "description": "Determine weather in my location",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "location": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "required": ["location"]
+  }
+}
+```
 
 #### Follow function-calling best practices
 
@@ -1279,8 +1235,6 @@ the [function calling docs](https://developers.openai.com/api/docs/guides/functi
 ### 6. Update Structured Outputs definitions
 
 In the Responses API, Structured Outputs definitions have moved from `response_format` to `text.format`:
-
-
 
 Chat Completions
 
@@ -1568,11 +1522,6 @@ curl https://api.openai.com/v1/chat/completions \
 }'
 ```
 
-  
-
-  
-
-    
 Responses
 
     Structured Outputs
@@ -1830,8 +1779,6 @@ curl https://api.openai.com/v1/responses \
 }'
 ```
 
-
-
 ### 7. Update streaming consumers
 
 Chat Completions streaming returns incremental chunks with a `delta` field. Responses streaming uses typed server-sent events. Update stream consumers to branch on each event's `type` and handle the events your UI or orchestration layer needs.
@@ -1848,8 +1795,6 @@ Function-calling streams can also emit events such as `response.function_call_ar
 ### 8. Upgrade to native tools
 
 If your application has use cases that would benefit from OpenAI's native [tools](https://developers.openai.com/api/docs/guides/tools), you can update your tool calls to use OpenAI's tools out of the box.
-
-
 
 Chat Completions
 
@@ -2032,11 +1977,6 @@ curl https://api.example.com/search \
   --data-urlencode "key=$SEARCH_API_KEY"\
 ```
 
-  
-
-  
-
-    
 Responses
 
     With Responses, you can specify the tools that you want the model to use.
@@ -2150,8 +2090,6 @@ curl https://api.openai.com/v1/responses \
     "tools": [{"type": "web_search"}]
   }'
 ```
-
-
 
 ### 9. Check common migration errors
 
