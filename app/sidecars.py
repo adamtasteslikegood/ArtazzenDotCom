@@ -384,7 +384,10 @@ def _validate_and_migrate_sidecars() -> None:
 
 
 def get_artwork_files(*, status_filter: str = "approved"):
-    """Scan IMAGES_DIR and return metadata for images matching status_filter."""
+    """Scan IMAGES_DIR and return metadata for images matching status_filter.
+
+    Entries carry `name` only; `media.list_artworks` adds the URLs.
+    """
     artwork = []
     logger.info(f"Scanning for artwork in: {config.IMAGES_DIR}")
     if config.IMAGES_DIR.exists() and config.IMAGES_DIR.is_dir():
@@ -395,8 +398,7 @@ def get_artwork_files(*, status_filter: str = "approved"):
                     meta = _load_metadata(file_path)
                     if status_filter and meta.get("status", "pending") != status_filter:
                         continue
-                    image_url = f"{config.IMAGES_URL_PREFIX}/{filename}"
-                    meta.update({"url": image_url, "name": filename})
+                    meta["name"] = filename
                     artwork.append(meta)
                     logger.debug(f"Loaded metadata for {filename}")
         except OSError as e:

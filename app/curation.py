@@ -27,7 +27,7 @@ from fastapi import HTTPException
 from jsonschema import ValidationError
 from jsonschema import validate as js_validate
 
-from app import config, sidecars
+from app import config, media, sidecars
 
 logger = logging.getLogger(__name__)
 
@@ -244,8 +244,7 @@ def _approved_metadata(filename: str) -> dict[str, Any] | None:
     meta = sidecars._load_metadata(image_path)
     if meta.get("status", "pending") != "approved":
         return None
-    meta.update({"url": f"{config.IMAGES_URL_PREFIX}/{filename}", "name": filename})
-    return meta
+    return media.add_urls(meta, filename)
 
 
 def collection_members(slug: str) -> list[dict[str, Any]]:
@@ -262,17 +261,18 @@ def collection_members(slug: str) -> list[dict[str, Any]]:
 def collection_cover_url(entry: dict[str, Any]) -> str:
     """Resolve a collection's cover image URL ('' when it has no artwork)."""
     cover = (entry.get("cover") or "").strip()
-    cover_path = _safe_image_path(cover) if cover else None
-    if cover_path is not None and cover_path.is_file():
-        return f"{config.IMAGES_URL_PREFIX}/{cover}"
+    # An unapproved cover is not publicly served; fall through to a member.
+    cover_meta = _approved_metadata(cover) if cover else None
+    if cover_meta:
+        return cover_meta["thumb_url"]
     members = collection_members(entry["id"])
     if members:
-        return members[0]["url"]
+        return members[0]["thumb_url"]
     for series in series_in_collection(entry["id"]):
         for filename in series.get("images") or []:
             meta = _approved_metadata(filename)
             if meta:
-                return meta["url"]
+                return meta["thumb_url"]
     return ""
 
 

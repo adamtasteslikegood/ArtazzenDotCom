@@ -42,6 +42,7 @@ main.py                  # Entrypoint + compat shim (uvicorn main:app)
 app/
   config.py              # Paths, env, runtime AI config (single source of truth)
   sidecars.py            # Schema, path safety, sidecar/metadata I/O
+  media.py               # Image URLs, cache headers, WebP derivatives, CDN purge
   ai_metadata.py         # OpenAI prompt/request/populate pipeline
   curation.py            # Collections + series registries, migration, dedup
   watcher.py             # Pending-file detection and background poll
@@ -63,7 +64,7 @@ scripts/                 # Migration, branch status, codegen utilities
 tests/test_main.py       # Pytest suite
 ```
 
-Module layering (no cycles): `config -> sidecars -> ai_metadata -> curation -> watcher -> seo -> security/routes -> factory -> main`.
+Module layering (no cycles): `config -> sidecars -> media -> ai_metadata -> curation -> watcher -> seo -> security/routes -> factory -> main`.
 
 ## Route Map
 
@@ -107,10 +108,10 @@ Enable automatic suggestions via environment variables:
 
 ```bash
 export MY_OPENAI_API_KEY=sk-...
-export OPENAI_IMAGE_METADATA_MODEL=gpt-5.6-luna   # optional override (this is the default)
+export OPENAI_IMAGE_METADATA_MODEL=gpt-6-luna   # startup fallback
 ```
 
-Runtime settings persist in `ai_config.json` and are editable from the admin UI under **AI Metadata Settings**. The app triggers AI generation when new assets arrive or when you request suggestions during review. Per-field regeneration and preview mode are available from the review detail page.
+Runtime settings persist in `ai_config.json` and are editable from the admin UI under **AI Metadata Settings**. When that file contains a model, it takes precedence over `OPENAI_IMAGE_METADATA_MODEL`; use the admin reset action to reload and persist the environment defaults. The app triggers AI generation when new assets arrive or when you request suggestions during review. Per-field regeneration and preview mode are available from the review detail page.
 
 ## Environment Variables
 
@@ -124,9 +125,15 @@ See `.env.example` for the full list. Key variables:
 | `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                         |
 | `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin access)   |
 | `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                        |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-5.6-luna`         | Model for AI descriptions                             |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Startup model fallback; persisted AI config wins      |
 | `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                              |
+| `AI_MAX_RETRIES`              | `5`                    | Automatic AI retries per image after a failed attempt |
+| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum seconds between automatic AI retries          |
 | `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                  |
+| `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; enables purge on unapprove/delete  |
+| `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone id, required with the token           |
+
+Images are served from `/images`, approved artwork only. Gallery grids load 480 px WebP thumbnails and the detail page a 1600 px WebP; its enlarged view uses a 2560 px WebP (built for sources wider than 1600 px) and fetches the original only when the visitor asks for full size. All are generated into `IMAGES_DIR/.derived/` and never upscaled. Image and stylesheet URLs carry a version segment and are cached for a year; unversioned URLs are cached for an hour. Pending and hidden images are visible only to the admin through `/admin/image/{name}`.
 
 ## Testing
 

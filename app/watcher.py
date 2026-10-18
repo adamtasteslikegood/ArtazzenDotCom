@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 
-from app import ai_metadata, config, sidecars
+from app import ai_metadata, config, media, sidecars
 
 logger = logging.getLogger(__name__)
 
@@ -59,19 +59,29 @@ def _apply_scan_result(state, seq: int, pending: list[dict[str, Any]]) -> None:
 
 def _scan_pending_files() -> list[dict[str, Any]]:
     pending: list[dict[str, Any]] = []
+    listing_succeeded = True
     try:
         disk_listing = os.listdir(config.IMAGES_DIR)
     except OSError as exc:
         logger.error("Unable to scan images directory %s: %s", config.IMAGES_DIR, exc)
         disk_listing = []
+        listing_succeeded = False
 
     existing_files = [
         name
         for name in disk_listing
         if (config.IMAGES_DIR / name).is_file() and sidecars._allowed_image(name)
     ]
+    existing_paths = [config.IMAGES_DIR / name for name in existing_files]
+    if listing_succeeded:
+        ai_metadata._prune_auto_retries(existing_paths)
 
+    derivatives_built = 0
     for filename in existing_files:
+        # Backfill derivatives for images that predate them, a few per scan
+        # so a large library does not stall the review queue.
+        if derivatives_built < config.DERIVATIVE_BACKFILL_PER_SCAN:
+            derivatives_built += media.ensure_derivatives(config.IMAGES_DIR / filename)
         # One bad entry (unreadable file, rejected name) must not take down
         # the whole background scan.
         try:
@@ -79,7 +89,8 @@ def _scan_pending_files() -> list[dict[str, Any]]:
             metadata = sidecars._load_metadata(image_path)
             sidecars._ensure_sidecar(image_path, metadata)
             metadata = sidecars._load_metadata(image_path)
-            metadata = ai_metadata._populate_missing_metadata(image_path, metadata)
+            if ai_metadata._auto_retry_due(image_path, metadata):
+                metadata = ai_metadata._populate_missing_metadata(image_path, metadata)
         except FileNotFoundError:
             raise  # handled by the watcher loop's retry
         except Exception as exc:
@@ -89,7 +100,8 @@ def _scan_pending_files() -> list[dict[str, Any]]:
             pending.append(
                 {
                     "name": filename,
-                    "url": f"{config.IMAGES_URL_PREFIX}/{filename}",
+                    "url": media.admin_url(filename),
+                    "thumb_url": media.admin_url(filename, config.THUMB_WIDTH),
                     "metadata": metadata,
                     "detected_at": metadata.get("detected_at"),
                     "sidecar_exists": image_path.with_suffix(".json").exists(),

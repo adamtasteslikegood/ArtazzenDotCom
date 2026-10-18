@@ -3,7 +3,7 @@ anyio==4.15.1
 ast-serialize==0.11.2
 attrs==26.1.0
 bandit==1.9.4
-black==26.5.1
+black==26.10.1
 certifi==2026.7.22
 click==8.5.0
 coverage==7.16.1
@@ -11,11 +11,11 @@ dnspython==2.8.0
 email-validator==2.3.0
 fastapi==0.142.2
 fastapi-cli==0.0.32
-fastapi-cloud-cli==0.25.0
+fastapi-cloud-cli==0.26.0
 greenlet==3.5.6
 h11==0.16.0
 httpcore==1.0.9
-httptools==0.8.0
+httptools==0.9.0
 httpx==0.28.1
 idna==3.20
 iniconfig==2.3.0
@@ -33,10 +33,10 @@ orjson==3.12.0
 packaging==26.3
 pathspec==1.1.1
 pillow==12.3.0
-platformdirs==4.12.2
+platformdirs==4.12.4
 playwright==1.63.0
 pluggy==1.6.0
-pydantic==2.13.5
+pydantic==2.14.0
 pydantic-extra-types==2.11.1
 pydantic-settings==2.15.0
 pyee==13.0.1
@@ -50,9 +50,9 @@ pytokens==0.4.1
 pyyaml==6.0.3
 referencing==0.37.0
 rich==15.0.0
-rich-toolkit==0.20.5
+rich-toolkit==0.20.6
 rignore==0.8.1
-rpds-py==2026.6.3
+rpds-py==2026.9.1
 ruff==0.16.9
 sentry-sdk==2.70.0
 shellingham==1.5.4
@@ -63,7 +63,7 @@ typer==0.27.2
 types-pillow==10.2.0.20240822
 typing-extensions==4.16.0
 typing-inspection==0.4.4
-ujson==5.13.0
+ujson==6.0.0
 urllib3==2.8.0
 uvicorn==0.54.0
 uvloop==0.23.0

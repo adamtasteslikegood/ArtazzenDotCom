@@ -19,3 +19,7 @@ logs/
 .claude/worktrees
 .coverage
 coverage.xml
+/docs/railway_logs/
+
+# Local copies of environment image volumes (artwork + sidecars) for testing
+test_data/

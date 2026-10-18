@@ -16,7 +16,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "Static"
 IMAGES_DIR = Path(os.getenv("IMAGES_DIR", STATIC_DIR / "images"))
 _USING_VOLUME = IMAGES_DIR != STATIC_DIR / "images"
-IMAGES_URL_PREFIX = "/images" if _USING_VOLUME else "/static/images"
+# Images are always served from /images (approved-only, see app/media.py),
+# whether or not IMAGES_DIR is a mounted volume.
+IMAGES_URL_PREFIX = "/images"
+# Pre-generated WebP derivative widths: gallery grids, the detail page, and
+# the detail page's enlarged view (built only for sources wider than the
+# display size).
+THUMB_WIDTH = 480
+DISPLAY_WIDTH = 1600
+LARGE_WIDTH = 2560
+DERIVATIVE_WIDTHS = (THUMB_WIDTH, DISPLAY_WIDTH, LARGE_WIDTH)
+WEBP_QUALITY = 80
+# Derivatives built for existing images per watcher scan (5 s apart).
+DERIVATIVE_BACKFILL_PER_SCAN = 5
+# Cloudflare cache purge for images that stop being public; both optional.
+CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+CLOUDFLARE_ZONE_ID = os.getenv("CLOUDFLARE_ZONE_ID", "").strip()
 IMPORT_ROOT = Path(os.getenv("IMPORT_ROOT", BASE_DIR / "imports"))
 GALLERY_TITLE = os.getenv("GALLERY_TITLE", "Artazzen Gallery")
 SITE_URL = os.getenv("SITE_URL", "https://artazzen.com").rstrip("/")
@@ -49,7 +64,29 @@ UPLOAD_CHUNK_SIZE = 64 * 1024  # 64 KB streaming chunks
 OPENAI_API_KEY_ENV_PRIMARY = "MY_OPENAI_API_KEY"
 OPENAI_API_KEY_ENV_LEGACY = "My_OpenAI_APIKey"
 OPENAI_MODEL_ENV = "OPENAI_IMAGE_METADATA_MODEL"
-OPENAI_DEFAULT_MODEL = "gpt-5.6-luna"
+OPENAI_DEFAULT_MODEL = "gpt-6-luna"
+# Reasoning model families: no 'temperature' parameter, and they spend output
+# tokens on reasoning before emitting text.
+REASONING_MODEL_PREFIXES = ("gpt-5", "gpt-6")
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
+DEFAULT_REASONING_EFFORT = "low"
+# Efforts a model rejects with HTTP 400.
+UNSUPPORTED_REASONING_EFFORTS: dict[str, frozenset[str]] = {
+    "gpt-6-astra": frozenset({"none"}),
+    "gpt-6.1-sol": frozenset({"none", "minimal"}),
+}
+
+
+def _coerce_reasoning_effort(value: Any, model: str) -> str:
+    """Return a reasoning effort the given model accepts."""
+    effort = str(value or "").strip().lower()
+    if effort not in REASONING_EFFORTS:
+        return DEFAULT_REASONING_EFFORT
+    if effort in UNSUPPORTED_REASONING_EFFORTS.get(model, frozenset()):
+        return DEFAULT_REASONING_EFFORT
+    return effort
+
+
 try:
     OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
 except ValueError:
@@ -108,14 +145,18 @@ def _get_ai_config() -> dict[str, Any]:
         max_output_tokens = 600
     # Reasoning models spend output tokens on reasoning before emitting text;
     # too small a budget yields incomplete (empty-text) responses.
-    if model.startswith("gpt-5") and max_output_tokens < 1200:
+    if model.startswith(REASONING_MODEL_PREFIXES) and max_output_tokens < 1200:
         max_output_tokens = 1200
     return {
         "enabled": enabled,
         "model": model,
         "temperature": temperature,
+        "reasoning_effort": _coerce_reasoning_effort(
+            cfg.get("reasoning_effort"), model
+        ),
         "max_output_tokens": max_output_tokens,
         "default_artist": str(cfg.get("default_artist", "")),
+        "artist_in_prompt": _coerce_bool(cfg.get("artist_in_prompt", False)),
         "default_copyright": str(cfg.get("default_copyright", "")),
     }
 
@@ -152,6 +193,16 @@ def _parse_int_env(value: str | None, default: int) -> int:
         return default
 
 
+# Automatic (watcher) OpenAI retries for an image whose attempt left fields
+# empty: at most AI_MAX_RETRIES more tries, AI_RETRY_DELAY_SECONDS apart.
+# Without a limit one failing image is re-uploaded on every poll.
+AI_MAX_RETRIES = max(0, _parse_int_env(os.getenv("AI_MAX_RETRIES"), 5))
+AI_RETRY_DELAY_SECONDS = max(
+    float(POLL_INTERVAL_SECONDS),
+    _parse_float_env(os.getenv("AI_RETRY_DELAY_SECONDS"), 60.0),
+)
+
+
 def _default_ai_config_from_env() -> dict[str, Any]:
     return {
         "enabled": _parse_bool_env(os.getenv("AI_METADATA_ENABLED"), True),
@@ -159,10 +210,12 @@ def _default_ai_config_from_env() -> dict[str, Any]:
         "temperature": _parse_float_env(
             os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE"), 0.6
         ),
+        "reasoning_effort": DEFAULT_REASONING_EFFORT,
         "max_output_tokens": _parse_int_env(
             os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600
         ),
         "default_artist": os.getenv("DEFAULT_ARTIST", ""),
+        "artist_in_prompt": False,
         "default_copyright": os.getenv("DEFAULT_COPYRIGHT", ""),
     }
 
@@ -186,8 +239,13 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
             pass
         if isinstance(cfg.get("default_artist"), str):
             out["default_artist"] = cfg["default_artist"].strip()
+        if "artist_in_prompt" in cfg:
+            out["artist_in_prompt"] = _coerce_bool(cfg.get("artist_in_prompt"))
         if isinstance(cfg.get("default_copyright"), str):
             out["default_copyright"] = cfg["default_copyright"].strip()
+        out["reasoning_effort"] = _coerce_reasoning_effort(
+            cfg.get("reasoning_effort", out["reasoning_effort"]), out["model"]
+        )
     return out
 
 
