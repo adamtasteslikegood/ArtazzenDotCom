@@ -42,7 +42,7 @@ pydantic-settings==2.15.0
 pyee==13.0.1
 pygments==2.21.0
 pytest==9.1.1
-pytest-asyncio==1.4.0
+pytest-asyncio==1.4.1
 pytest-cov==7.1.0
 python-dotenv==1.2.4
 python-multipart==0.0.32
