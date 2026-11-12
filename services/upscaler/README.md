@@ -67,8 +67,10 @@ took 35 s of predict time (about $0.008) and 69 s end to end, giving a
 6144×8192 master; a 2048×2732 export took 56 s (about $0.0125) and 102 s,
 giving 8192×10928. Both are about 10 s per input megapixel. The 8 MP input
 limit is not measured; it sits above that 5.6 MP export. That model
-enlarges an input under 300 px tall before upscaling, so Prepare refuses
-those. It writes its output in the input's format, so only PNG copies are sent
+doubles an input under 300 px tall before upscaling. Low-resolution sources
+are the main use, so the service accepts them: the output comes back twice the
+requested size and is scaled down to it with Lanczos before cropping and
+saving. The estimate counts the doubled pixels. It writes its output in the input's format, so only PNG copies are sent
 as they are.
 
 While the Replicate account holds under $5 of credit, it allows a burst of one prediction request

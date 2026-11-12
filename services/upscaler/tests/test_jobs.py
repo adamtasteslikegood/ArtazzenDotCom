@@ -588,12 +588,32 @@ def test_xinntao_job_sends_tiled_input_and_keeps_the_scale(
     assert "img" in sent and "image" not in sent
 
 
-def test_xinntao_refuses_inputs_it_would_enlarge(
+def test_xinntao_small_input_is_scaled_back_to_the_requested_size(
+    settings, storage, fake_gallery, fake_replicate
+):
+    # Low-resolution art is the main use. The model doubles an input under
+    # 300 px tall, so its 8x output is scaled back down to the 4x master.
+    with _xinntao_client(settings, storage, fake_gallery, fake_replicate) as c:
+        job_id = prepare(c, upload(c, png(gradient(160, 120))))
+        staged = get_job(storage, job_id)
+        c.post(f"/jobs/{job_id}/confirm")
+        job = wait_for(c, job_id)
+    assert staged["prefit"] == 2 and not staged["blockers"]
+    assert job["state"] == "done", job.get("error")
+    assert master_image(storage, job).size == (640, 480)
+
+
+def test_small_seamless_input_still_wraps_after_scaling_back(
     settings, storage, fake_gallery, fake_replicate
 ):
     with _xinntao_client(settings, storage, fake_gallery, fake_replicate) as c:
-        job = get_job(storage, prepare(c, upload(c, png(gradient(400, 200)))))
-    assert any("200 px tall" in b for b in job["blockers"])
+        job_id = prepare(c, upload(c, png(periodic(200, 150))), "seamless", 2)
+        c.post(f"/jobs/{job_id}/confirm")
+        job = wait_for(c, job_id)
+    assert job["state"] == "done", job.get("error")
+    master = master_image(storage, job)
+    assert master.size == (400, 300)
+    assert job["prefit"] == 2  # 150 + 64 px of wrap pad is under 300
 
 
 def test_estimate_ignores_jobs_from_another_model(storage, settings):

@@ -32,7 +32,7 @@ _THROTTLE_MAX_WAIT = 30.0
 # xinntao/realesrgan's name for the RealESRGAN_x4plus weights.
 XINNTAO_VERSION = "General - RealESRGANplus"
 # xinntao/realesrgan doubles an input shorter than this before upscaling,
-# so its output would no longer be the requested scale.
+# so its output is twice the requested scale (jobs.py scales it back).
 XINNTAO_MIN_HEIGHT = 300
 
 

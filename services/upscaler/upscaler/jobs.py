@@ -183,6 +183,8 @@ def seconds_per_mp(storage: Storage, settings: Settings) -> tuple[float, str]:
     rates = []
     for job in list_jobs(storage):
         mp = (job.get("input") or {}).get("megapixels")
+        if mp:
+            mp *= job.get("prefit", 1) ** 2  # pixels the model actually ran on
         secs = job.get("predict_seconds") or job.get("run_seconds")
         if job.get("model", _LEGACY_MODEL) != settings.replicate_model:
             continue
@@ -345,16 +347,15 @@ def prepare(
         raise
 
     input_mp = input_size[0] * input_size[1] / 1_000_000
-    if (
-        settings.replicate_model == DEFAULT_MODEL
+    # xinntao/realesrgan doubles an input under 300 px tall before it
+    # upscales. Low-resolution art is the main use, so accept it: the output
+    # comes back twice the target and is scaled down to it with Lanczos.
+    prefit = (
+        2
+        if settings.replicate_model == DEFAULT_MODEL
         and 0 < input_size[1] < XINNTAO_MIN_HEIGHT
-    ):
-        blockers.append(
-            f"Replicate input would be {input_size[1]} px tall; "
-            f"{settings.replicate_model} enlarges anything under "
-            f"{XINNTAO_MIN_HEIGHT} px first, so the result would not be "
-            f"{scale}×. Use a larger image."
-        )
+        else 1
+    )
     if not settings.replicate_api_token:
         blockers.append("REPLICATE_API_TOKEN is not set on this service.")
     target = (base[0] * scale, base[1] * scale)
@@ -367,6 +368,7 @@ def prepare(
         "mode": mode,
         "scale": scale,
         "model": settings.replicate_model,
+        "prefit": prefit,
         "state": "staged",
         "created_at": now_iso(),
         "staging": {"source": source_name, "input": input_name},
@@ -403,7 +405,7 @@ def prepare(
                 round(target[1] / settings.print_dpi, 1),
             ],
         },
-        "estimate": estimate(storage, settings, input_mp),
+        "estimate": estimate(storage, settings, input_mp * prefit**2),
         "warnings": warnings,
         "blockers": blockers,
         "results": {},
@@ -444,8 +446,10 @@ def postprocess(
     scale = job["scale"]
     results: dict[str, str] = {}
     expected = (job["input"]["width"] * scale, job["input"]["height"] * scale)
+    prefit = job.get("prefit", 1)
+    returned = (expected[0] * prefit, expected[1] * prefit)
     output_limit = int(settings.max_output_megapixels * 1_000_000)
-    if expected[0] * expected[1] > output_limit:
+    if returned[0] * returned[1] > output_limit:
         raise ReplicateError(
             f"Expected output is {expected[0]}×{expected[1]}, above the "
             f"{settings.max_output_megapixels:g} MP output limit"
@@ -457,14 +461,15 @@ def postprocess(
         Image.MAX_IMAGE_PIXELS = output_limit
         try:
             with Image.open(output) as out:
-                if out.size != expected:
+                if out.size != returned:
                     raise ReplicateError(
                         f"Output is {out.size[0]}×{out.size[1]}, expected "
-                        f"{expected[0]}×{expected[1]}"
+                        f"{returned[0]}×{returned[1]}"
                     )
                 out.load()
+                full = out.resize(expected, Image.LANCZOS) if prefit > 1 else out
                 box = analysis.crop_box(job["mode"], tuple(job["base"]), scale)
-                master = out.crop(box) if box else out.copy()
+                master = full.crop(box) if box else full.copy()
         finally:
             Image.MAX_IMAGE_PIXELS = previous_limit
     if master.mode not in ("RGB", "RGBA", "L"):
