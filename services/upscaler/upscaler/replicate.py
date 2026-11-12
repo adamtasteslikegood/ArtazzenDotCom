@@ -19,7 +19,7 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
-from upscaler.config import Settings
+from upscaler.config import DEFAULT_MODEL, Settings
 
 API_BASE = "https://api.replicate.com/v1"
 TERMINAL = frozenset({"succeeded", "failed", "canceled"})
@@ -122,7 +122,7 @@ class ReplicateClient:
 
     def model_input(self, image_url: str, scale: int) -> dict[str, Any]:
         """The prediction input; xinntao's model names its inputs differently."""
-        if self.settings.replicate_model.startswith("xinntao/"):
+        if self.settings.replicate_model == DEFAULT_MODEL:
             return {
                 "img": image_url,
                 "version": XINNTAO_VERSION,

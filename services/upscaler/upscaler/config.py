@@ -78,6 +78,13 @@ class Settings:
     max_output_megapixels: float = 400.0
     print_dpi: int = 300
 
+    def __post_init__(self) -> None:
+        if self.replicate_model == DEFAULT_MODEL and self.replicate_tile <= 100:
+            raise ValueError(
+                "UPSCALER_REPLICATE_TILE must be greater than 100 for "
+                f"{DEFAULT_MODEL}; the model disables tiling at 100 or below"
+            )
+
     @property
     def max_upload_bytes(self) -> int:
         return int(self.max_upload_mb * 1024 * 1024)
@@ -106,7 +113,7 @@ class Settings:
             or DEFAULT_MODEL,
             replicate_version=os.getenv("REPLICATE_UPSCALE_VERSION", "").strip(),
             replicate_max_input_mp=_float("UPSCALER_REPLICATE_MAX_INPUT_MP", 8.0),
-            replicate_tile=int(_float("UPSCALER_REPLICATE_TILE", 400)),
+            replicate_tile=_int("UPSCALER_REPLICATE_TILE", 400),
             replicate_timeout_seconds=_float("REPLICATE_TIMEOUT_SECONDS", 1800.0),
             poll_seconds=_float("UPSCALER_POLL_SECONDS", 3.0),
             seconds_per_mp=_float("UPSCALER_SECONDS_PER_MP", 10.0),

@@ -536,6 +536,23 @@ def test_default_model_takes_a_phone_export_in_one_pass():
     assert settings.replicate_max_input_mp * 1_000_000 > 2048 * 2732
 
 
+def test_default_model_requires_a_tile_size_the_model_will_use():
+    from upscaler.config import Settings
+
+    with pytest.raises(ValueError, match="greater than 100"):
+        Settings(replicate_tile=100)
+
+
+def test_xinntao_adapter_is_limited_to_the_supported_model(settings):
+    client = ReplicateClient(replace(settings, replicate_model="xinntao/other"))
+    sent = client.model_input("https://bucket/input.png", 4)
+    assert sent == {
+        "image": "https://bucket/input.png",
+        "scale": 4,
+        "face_enhance": False,
+    }
+
+
 def _xinntao_client(settings, storage, fake_gallery, fake_replicate):
     from upscaler.config import DEFAULT_MODEL
     from upscaler.sources import GalleryClient

@@ -37,7 +37,7 @@ from typing import Any
 from PIL import Image, ImageOps
 
 from upscaler import analysis
-from upscaler.config import Settings
+from upscaler.config import DEFAULT_MODEL, Settings
 from upscaler.intake import get_import
 from upscaler.replicate import (
     TERMINAL,
@@ -346,7 +346,7 @@ def prepare(
 
     input_mp = input_size[0] * input_size[1] / 1_000_000
     if (
-        settings.replicate_model.startswith("xinntao/")
+        settings.replicate_model == DEFAULT_MODEL
         and 0 < input_size[1] < XINNTAO_MIN_HEIGHT
     ):
         blockers.append(
