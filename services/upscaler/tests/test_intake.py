@@ -97,3 +97,47 @@ def test_select_path_files_guards(settings):
     for bad in ("/etc/passwd", "../secret.png", "", "a\x00b", "missing"):
         with pytest.raises(IntakeError):
             select_path_files(bad, root)
+
+
+def _jpeg_bytes() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 24), (10, 120, 200)).save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def test_stored_extension_and_type_follow_detected_format(storage, settings):
+    record, _ = import_bytes(
+        storage, _jpeg_bytes(), "renamed.png", {"kind": "upload"}, settings
+    )
+    assert record["format"] == "JPEG"
+    assert record["object"].endswith("-renamed.jpg")
+    assert record["original_name"] == "renamed.png"
+    head = storage.client.head_object(
+        Bucket=storage.bucket, Key=storage.key(record["object"])
+    )
+    assert head["ContentType"] == "image/jpeg"
+
+
+def test_failed_write_removes_partial_import(storage, settings, monkeypatch):
+    real_put_json = storage.put_json
+
+    def failing_put_json(name, value):
+        if "/by-sha/" in name:
+            raise RuntimeError("bucket write failed")
+        real_put_json(name, value)
+
+    monkeypatch.setattr(storage, "put_json", failing_put_json)
+    with pytest.raises(RuntimeError):
+        import_bytes(storage, png_bytes(), "a.png", {"kind": "upload"}, settings)
+    assert storage.list_names("imports/") == []
+
+    monkeypatch.setattr(storage, "put_json", real_put_json)
+    _record, created = import_bytes(
+        storage, png_bytes(), "a.png", {"kind": "upload"}, settings
+    )
+    assert created and len(list_imports(storage)) == 1
+    assert len(storage.list_names("imports/")) == 3

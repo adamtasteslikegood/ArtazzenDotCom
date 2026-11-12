@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import re
 import secrets
 import warnings
@@ -33,6 +34,20 @@ _SAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._-]+")
 # Uvicorn's synchronous route handlers run in a thread pool. Keep the
 # de-duplication check and its writes atomic within this single-process service.
 _IMPORT_LOCK = Lock()
+logger = logging.getLogger(__name__)
+
+# Pillow's detected format decides the stored extension and MIME type, so a
+# JPEG renamed to .png is stored and served as a JPEG. MPO is how Pillow
+# reports many camera JPEGs.
+_FORMAT_EXT = {
+    "JPEG": ".jpg",
+    "MPO": ".jpg",
+    "PNG": ".png",
+    "GIF": ".gif",
+    "WEBP": ".webp",
+    "BMP": ".bmp",
+    "TIFF": ".tiff",
+}
 
 _MIME = {
     ".jpg": "image/jpeg",
@@ -95,7 +110,12 @@ def check_image(data: bytes, filename: str, settings: Settings) -> ImageInfo:
         raise IntakeError(f"{filename}: image is too large to open safely") from None
     except Exception:
         raise IntakeError(f"{filename}: not a readable image") from None
-    return ImageInfo(ext=ext, width=width, height=height, format=fmt)
+    stored_ext = _FORMAT_EXT.get(fmt)
+    if stored_ext is None:
+        raise IntakeError(
+            f"{filename}: image format {fmt or '(unknown)'} is not allowed"
+        )
+    return ImageInfo(ext=stored_ext, width=width, height=height, format=fmt)
 
 
 def _record_name(import_id: str) -> str:
@@ -126,7 +146,6 @@ def import_bytes(
 
         import_id = secrets.token_hex(6)
         object_name = f"imports/{import_id}-{safe_stem(filename)}{info.ext}"
-        storage.put_bytes(object_name, data, _MIME[info.ext])
         record = {
             "id": import_id,
             "object": object_name,
@@ -139,8 +158,23 @@ def import_bytes(
             "source": source,
             "imported_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
-        storage.put_json(_record_name(import_id), record)
-        storage.put_json(index_name, {"id": import_id})
+        # Three separate writes; the index goes last so a lookup never finds
+        # a half-written import. If a later write fails, remove the earlier
+        # ones so a retry starts clean instead of leaving an orphan.
+        written: list[str] = []
+        try:
+            storage.put_bytes(object_name, data, _MIME[info.ext])
+            written.append(object_name)
+            storage.put_json(_record_name(import_id), record)
+            written.append(_record_name(import_id))
+            storage.put_json(index_name, {"id": import_id})
+        except Exception:
+            for name in reversed(written):
+                try:
+                    storage.delete(name)
+                except Exception:
+                    logger.exception("Could not remove partial import %s", name)
+            raise
         return record, True
 
 
