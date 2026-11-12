@@ -382,9 +382,9 @@ def cancel_staged(storage: Storage, job: dict[str, Any]) -> dict[str, Any]:
 # --- post-processing -----------------------------------------------------------
 
 
-def _finished(storage: Storage, job_id: str) -> bool:
+def _state(storage: Storage, job_id: str) -> str:
     current = get_job(storage, job_id)
-    return not current or current.get("state") in FINAL
+    return current.get("state", "") if current else "cancelled"
 
 
 def postprocess(
@@ -426,7 +426,7 @@ def postprocess(
         with tempfile.TemporaryDirectory() as tmp:
             master_path = Path(tmp) / "master.png"
             master.save(master_path, **save_kwargs)
-            if _finished(storage, job["id"]):
+            if _state(storage, job["id"]) in FINAL:
                 raise JobFinished("Job ended during post-processing")
             name = f"results/{job['id']}/master.png"
             storage.upload_file(name, str(master_path), "image/png")
@@ -438,8 +438,11 @@ def postprocess(
                 )
                 results["proof"] = proof_name
             results["size"] = f"{master.size[0]}x{master.size[1]}"
-    if _finished(storage, job["id"]):
-        delete_prefix(storage, f"results/{job['id']}/")
+    state = _state(storage, job["id"])
+    if state in FINAL:
+        # Only a cancel removes results; never touch what a done job lists.
+        if state == "cancelled":
+            delete_prefix(storage, f"results/{job['id']}/")
         raise JobFinished("Job ended during post-processing")
     return results
 
@@ -497,18 +500,20 @@ class JobRunner:
                 raise JobError(str(exc)) from None
         if state not in ACTIVE:
             raise JobError(f"Job is already {state}")
-        cancel_url = (job.get("prediction") or {}).get("cancel_url")
-        if cancel_url:
-            try:
-                await self.replicate.cancel(cancel_url)
-            except ReplicateError as exc:
-                logger.warning("Cancel of %s failed: %s", job["id"], exc)
         try:
             job = await self._io(
                 set_state, self.storage, job, "cancelled", finished_at=now_iso()
             )
         except JobFinished as exc:
             raise JobError(str(exc)) from None
+        # Take the cancel URL from the record just written, not the copy the
+        # caller read: the prediction may have been saved in between.
+        cancel_url = (job.get("prediction") or {}).get("cancel_url")
+        if cancel_url:
+            try:
+                await self.replicate.cancel(cancel_url)
+            except ReplicateError as exc:
+                logger.warning("Cancel of %s failed: %s", job["id"], exc)
         task = self._tasks.get(job["id"])
         # An empty prediction means the create call is in flight. Aborting it
         # could leave a prediction Replicate already accepted with nobody to
@@ -661,5 +666,6 @@ class JobRunner:
                 predict_seconds=metrics.get("predict_time"),
             )
         except JobFinished:
-            await self._io(delete_prefix, self.storage, f"results/{job['id']}/")
+            if await self._io(_state, self.storage, job["id"]) == "cancelled":
+                await self._io(delete_prefix, self.storage, f"results/{job['id']}/")
             raise
