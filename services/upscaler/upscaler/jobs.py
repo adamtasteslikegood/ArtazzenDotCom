@@ -504,6 +504,15 @@ class JobRunner:
     async def _io(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
+    def _check_model(self, job: dict[str, Any]) -> None:
+        prepared_model = job.get("model", _LEGACY_MODEL)
+        if prepared_model != self.settings.replicate_model:
+            raise JobError(
+                f"Job was prepared for {prepared_model}, but the service now uses "
+                f"{self.settings.replicate_model}. Prepare a new job so its input "
+                "limits and estimate match the active model."
+            )
+
     def start(self, job_id: str) -> None:
         if job_id in self._tasks and not self._tasks[job_id].done():
             return
@@ -514,13 +523,7 @@ class JobRunner:
     async def confirm(self, job: dict[str, Any]) -> dict[str, Any]:
         if job["state"] != "staged":
             raise JobError(f"Job is {job['state']}, not waiting for confirmation")
-        prepared_model = job.get("model", _LEGACY_MODEL)
-        if prepared_model != self.settings.replicate_model:
-            raise JobError(
-                f"Job was prepared for {prepared_model}, but the service now uses "
-                f"{self.settings.replicate_model}. Prepare a new job so its input "
-                "limits and estimate match the active model."
-            )
+        self._check_model(job)
         if job.get("blockers"):
             raise JobError(job["blockers"][0])
         try:
@@ -637,6 +640,7 @@ class JobRunner:
         started = time.monotonic()
         prediction = job.get("prediction") or {}
         if not prediction.get("get_url"):
+            self._check_model(job)
             # Mark the job running before the create call. A restart from here
             # on finds "running" with no prediction and stops, instead of
             # treating it as queued and creating (and billing) a second one.

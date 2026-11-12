@@ -179,6 +179,18 @@ def test_confirm_rejects_a_job_prepared_for_another_model(
     assert get_job(storage, job_id)["state"] == "staged"
     assert fake_replicate.requests == []
 
+    # A deployment can also find an already-queued job. It must not silently
+    # send that job to a different model when the runner resumes it.
+    queued_id = prepare(client, upload(client, png(gradient())))
+    queued = get_job(storage, queued_id)
+    queued = save_job(storage, queued, model="nightmareai/real-esrgan")
+    set_state(storage, queued, "queued")
+    client.portal.call(client.app.state.runner.start, queued_id)
+    failed = wait_for(client, queued_id)
+    assert failed["state"] == "error"
+    assert "Prepare a new job" in failed["error"]
+    assert fake_replicate.requests == []
+
 
 def test_replicate_failure_is_recorded(client, storage, fake_replicate):
     fake_replicate.fail_with = "CUDA out of memory"
