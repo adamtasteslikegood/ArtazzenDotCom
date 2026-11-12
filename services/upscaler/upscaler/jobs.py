@@ -124,7 +124,12 @@ def save_job(storage: Storage, job: dict[str, Any], **changes: Any) -> dict[str,
         stored = storage.get_json(job_name(job["id"]))
         if stored and stored.get("state") in FINAL:
             raise JobFinished(f"Job is already {stored['state']}")
-        if stored and "state" in changes and stored.get("state") != job.get("state"):
+        if (
+            stored
+            and "state" in changes
+            and changes["state"] != "cancelled"
+            and stored.get("state") != job.get("state")
+        ):
             # A second confirm/cancel request may have read an older copy.
             # Never let that stale transition move a running job backwards.
             raise JobFinished(f"Job is already {stored.get('state', 'unknown')}")
@@ -510,6 +515,10 @@ class JobRunner:
         return job
 
     async def cancel(self, job: dict[str, Any]) -> dict[str, Any]:
+        # The caller's copy may be stale (a queued job may be running by
+        # now); decide from the stored state. A cancel may land on any
+        # non-final state, so save_job lets it through either way.
+        job = await self._fresh(job["id"]) or job
         state = job["state"]
         if state == "staged":
             try:

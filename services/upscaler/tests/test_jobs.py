@@ -442,3 +442,16 @@ def test_exif_rotated_jpeg_is_sent_upright(client, storage):
     job = wait_for(client, job_id)
     assert job["state"] == "done", job["error"]
     assert master_image(storage, job).size == (80, 160)
+
+
+def test_cancel_from_a_stale_copy_still_cancels(client, storage, fake_replicate):
+    fake_replicate.polls_before_done = 10_000
+    job_id = prepare(client, upload(client, png(gradient())))
+    stale = get_job(storage, job_id)
+    client.post(f"/jobs/{job_id}/confirm")
+    wait_for_prediction(client, job_id)
+    runner = client.app.state.runner
+    job = client.portal.call(runner.cancel, dict(stale, state="queued"))
+    assert job["state"] == "cancelled"
+    assert get_job(storage, job_id)["state"] == "cancelled"
+    assert any(str(r.url).endswith("/p1/cancel") for r in fake_replicate.requests)
