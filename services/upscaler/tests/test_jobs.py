@@ -2,14 +2,23 @@ import asyncio
 import io
 import time
 from dataclasses import replace
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 from upscaler.app import create_app
-from upscaler.jobs import JobFinished, get_job, job_name, list_jobs, save_job
-from upscaler.replicate import ReplicateClient
+from upscaler.jobs import (
+    JobFinished,
+    get_job,
+    job_name,
+    list_jobs,
+    postprocess,
+    save_job,
+    set_state,
+)
+from upscaler.replicate import ReplicateClient, ReplicateError
 
 from tests.patterns import gradient, periodic, png, srgb_icc
 
@@ -327,6 +336,68 @@ def test_a_stale_copy_cannot_undo_a_cancel(client, storage):
         save_job(storage, dict(stale, state="running"), logs="late poll")
     job = get_job(storage, job_id)
     assert job["state"] == "cancelled" and job["logs"] == ""
+
+
+def test_stale_transition_cannot_move_a_running_job_backwards(client, storage):
+    job_id = prepare(client, upload(client, png(gradient())))
+    stale = get_job(storage, job_id)
+    queued = set_state(storage, stale, "queued")
+    set_state(storage, queued, "running", prediction={})
+    with pytest.raises(JobFinished, match="already running"):
+        set_state(storage, stale, "queued")
+    assert get_job(storage, job_id)["state"] == "running"
+
+
+def test_poll_failure_cancels_the_active_prediction(client, storage, fake_replicate):
+    runner = client.app.state.runner
+
+    async def failed_poll(_url):
+        raise ReplicateError("poll connection failed")
+
+    runner.replicate.get = failed_poll
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/confirm")
+    job = wait_for(client, job_id)
+    assert job["state"] == "error"
+    assert "poll connection failed" in job["error"]
+    assert any(str(r.url).endswith("/cancel") for r in fake_replicate.requests)
+
+
+def test_wrong_output_dimensions_are_rejected_before_decode(
+    client, storage, settings, tmp_path, monkeypatch
+):
+    job_id = prepare(client, upload(client, png(gradient())))
+    job = get_job(storage, job_id)
+    output = tmp_path / "wrong.png"
+    Image.new("RGB", (1, 1)).save(output)
+
+    def unexpected_load(_self):
+        raise AssertionError("mismatched output pixels were decoded")
+
+    monkeypatch.setattr(Image.Image, "load", unexpected_load)
+    with pytest.raises(ReplicateError, match="Output is 1×1, expected"):
+        postprocess(storage, settings, job, output)
+
+
+def test_output_download_rejects_unexpected_hosts_and_redirects(settings, tmp_path):
+    requests = []
+
+    def redirect(request):
+        requests.append(request)
+        return httpx.Response(302, headers={"location": "https://127.0.0.1/private"})
+
+    client = ReplicateClient(settings, transport=httpx.MockTransport(redirect))
+
+    async def download(url: str):
+        await client.download(url, Path(tmp_path) / "output", 1024)
+
+    with pytest.raises(ReplicateError, match="Unexpected Replicate output URL"):
+        asyncio.run(download("https://example.com/output.png"))
+    assert requests == []
+
+    with pytest.raises(ReplicateError, match="Unexpected Replicate output URL"):
+        asyncio.run(download("https://replicate.delivery/output.png"))
+    assert len(requests) == 1
 
 
 def test_cancel_holds_while_logs_change(client, storage, fake_replicate):

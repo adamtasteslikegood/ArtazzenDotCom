@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -22,6 +23,7 @@ from upscaler.config import Settings
 API_BASE = "https://api.replicate.com/v1"
 TERMINAL = frozenset({"succeeded", "failed", "canceled"})
 _CHUNK = 1024 * 1024
+_MAX_REDIRECTS = 5
 
 
 class ReplicateError(RuntimeError):
@@ -109,31 +111,71 @@ class ReplicateClient:
     async def cancel(self, url: str) -> dict[str, Any]:
         return await self._call("POST", self._check_api_url(url))
 
+    @staticmethod
+    def _check_output_url(url: str) -> str:
+        """Allow only Replicate's documented output-file hosts.
+
+        The URL comes from a provider response, but it still controls a
+        server-side request. Restricting every hop prevents it from becoming
+        an SSRF path through redirects or an unexpected response payload.
+        """
+        try:
+            parsed = urlsplit(url)
+            host = (parsed.hostname or "").lower()
+            port = parsed.port
+        except ValueError:
+            raise ReplicateError("Unexpected Replicate output URL") from None
+        if (
+            parsed.scheme != "https"
+            or (
+                host != "replicate.delivery"
+                and not host.endswith(".replicate.delivery")
+            )
+            or parsed.username is not None
+            or parsed.password is not None
+            or port not in (None, 443)
+        ):
+            raise ReplicateError("Unexpected Replicate output URL")
+        return url
+
     async def download(self, url: str, dest: Path, max_bytes: int) -> int:
         """Stream an output file to ``dest`` without the API token."""
-        if not url.startswith("https://"):
-            raise ReplicateError("Replicate output is not an https URL")
+        current_url = self._check_output_url(url)
         written = 0
         try:
-            async with (
-                httpx.AsyncClient(
-                    timeout=httpx.Timeout(120.0, connect=10.0),
-                    transport=self._transport,
-                    follow_redirects=True,
-                ) as client,
-                client.stream("GET", url) as resp,
-            ):
-                if resp.status_code >= 400:
-                    raise ReplicateError(f"Output download returned {resp.status_code}")
-                with dest.open("wb") as handle:
-                    async for chunk in resp.aiter_bytes(_CHUNK):
-                        written += len(chunk)
-                        if written > max_bytes:
-                            raise ReplicateError("Output is larger than allowed")
-                        handle.write(chunk)
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(120.0, connect=10.0),
+                transport=self._transport,
+                follow_redirects=False,
+            ) as client:
+                for _ in range(_MAX_REDIRECTS + 1):
+                    async with client.stream("GET", current_url) as resp:
+                        if resp.is_redirect:
+                            location = resp.headers.get("location")
+                            if not location:
+                                raise ReplicateError(
+                                    "Output download redirect had no location"
+                                )
+                            current_url = self._check_output_url(
+                                urljoin(str(resp.url), location)
+                            )
+                            continue
+                        if resp.status_code >= 400:
+                            raise ReplicateError(
+                                f"Output download returned {resp.status_code}"
+                            )
+                        with dest.open("wb") as handle:
+                            async for chunk in resp.aiter_bytes(_CHUNK):
+                                written += len(chunk)
+                                if written > max_bytes:
+                                    raise ReplicateError(
+                                        "Output is larger than allowed"
+                                    )
+                                handle.write(chunk)
+                        return written
+                raise ReplicateError("Output download redirected too many times")
         except httpx.HTTPError as exc:
             raise ReplicateError(f"Output download failed: {exc}") from None
-        return written
 
 
 def output_url(prediction: dict[str, Any]) -> str:

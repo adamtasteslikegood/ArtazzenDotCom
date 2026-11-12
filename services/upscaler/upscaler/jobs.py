@@ -59,6 +59,9 @@ _LOG_LOCK = threading.Lock()
 # Every job-record write re-reads under this lock, so a write made from a
 # stale copy can never undo a final state (one process; see README).
 _JOB_LOCK = threading.Lock()
+# Pillow's decompression ceiling is process-global. Serialize temporary
+# changes while an output is opened, and restore the previous value promptly.
+_PILLOW_LOCK = threading.Lock()
 _EXIF_ORIENTATION = 0x0112
 
 
@@ -121,6 +124,10 @@ def save_job(storage: Storage, job: dict[str, Any], **changes: Any) -> dict[str,
         stored = storage.get_json(job_name(job["id"]))
         if stored and stored.get("state") in FINAL:
             raise JobFinished(f"Job is already {stored['state']}")
+        if stored and "state" in changes and stored.get("state") != job.get("state"):
+            # A second confirm/cancel request may have read an older copy.
+            # Never let that stale transition move a running job backwards.
+            raise JobFinished(f"Job is already {stored.get('state', 'unknown')}")
         record = dict(stored or job)
         record.update(changes)
         record["updated_at"] = now_iso()
@@ -375,8 +382,9 @@ def prepare(
 
 
 def cancel_staged(storage: Storage, job: dict[str, Any]) -> dict[str, Any]:
+    job = set_state(storage, job, "cancelled", finished_at=now_iso())
     delete_prefix(storage, f"staging/{job['id']}/")
-    return set_state(storage, job, "cancelled", finished_at=now_iso())
+    return job
 
 
 # --- post-processing -----------------------------------------------------------
@@ -396,48 +404,58 @@ def postprocess(
     the job before and after uploading and leaves no results for a job that
     was cancelled meanwhile.
     """
-    # A 4x master has 16x the input's pixels; Pillow's default decompression
-    # ceiling (~89 MP warning, ~179 MP error) is below that. Raise it to the
-    # configured output ceiling on purpose; intake keeps its own lower limit.
-    Image.MAX_IMAGE_PIXELS = int(settings.max_output_megapixels * 1_000_000)
     source = storage.get_bytes(job["staging"]["source"]) or b""
     with Image.open(io.BytesIO(source)) as src:
         icc = src.info.get("icc_profile")
     scale = job["scale"]
     results: dict[str, str] = {}
-    with Image.open(output) as out:
-        out.load()
-        expected = (job["input"]["width"] * scale, job["input"]["height"] * scale)
-        if out.size != expected:
-            raise ReplicateError(
-                f"Output is {out.size[0]}×{out.size[1]}, expected "
-                f"{expected[0]}×{expected[1]}"
+    expected = (job["input"]["width"] * scale, job["input"]["height"] * scale)
+    output_limit = int(settings.max_output_megapixels * 1_000_000)
+    if expected[0] * expected[1] > output_limit:
+        raise ReplicateError(
+            f"Expected output is {expected[0]}×{expected[1]}, above the "
+            f"{settings.max_output_megapixels:g} MP output limit"
+        )
+    # Compare the provider-controlled header before decoding pixels. This
+    # avoids loading an unexpectedly huge response merely to reject its size.
+    with _PILLOW_LOCK:
+        previous_limit = Image.MAX_IMAGE_PIXELS
+        Image.MAX_IMAGE_PIXELS = output_limit
+        try:
+            with Image.open(output) as out:
+                if out.size != expected:
+                    raise ReplicateError(
+                        f"Output is {out.size[0]}×{out.size[1]}, expected "
+                        f"{expected[0]}×{expected[1]}"
+                    )
+                out.load()
+                box = analysis.crop_box(job["mode"], tuple(job["base"]), scale)
+                master = out.crop(box) if box else out.copy()
+        finally:
+            Image.MAX_IMAGE_PIXELS = previous_limit
+    if master.mode not in ("RGB", "RGBA", "L"):
+        master = master.convert("RGB")
+    save_kwargs: dict[str, Any] = {
+        "format": "PNG",
+        "dpi": (settings.print_dpi, settings.print_dpi),
+    }
+    if icc:
+        save_kwargs["icc_profile"] = icc
+    with tempfile.TemporaryDirectory() as tmp:
+        master_path = Path(tmp) / "master.png"
+        master.save(master_path, **save_kwargs)
+        if _state(storage, job["id"]) in FINAL:
+            raise JobFinished("Job ended during post-processing")
+        name = f"results/{job['id']}/master.png"
+        storage.upload_file(name, str(master_path), "image/png")
+        results["master"] = name
+        if job["mode"] in ("wrap", "tile"):
+            proof_name = f"results/{job['id']}/proof.jpg"
+            storage.put_bytes(
+                proof_name, _jpeg(analysis.proof(master, 2)), "image/jpeg"
             )
-        box = analysis.crop_box(job["mode"], tuple(job["base"]), scale)
-        master = out.crop(box) if box else out
-        if master.mode not in ("RGB", "RGBA", "L"):
-            master = master.convert("RGB")
-        save_kwargs: dict[str, Any] = {
-            "format": "PNG",
-            "dpi": (settings.print_dpi, settings.print_dpi),
-        }
-        if icc:
-            save_kwargs["icc_profile"] = icc
-        with tempfile.TemporaryDirectory() as tmp:
-            master_path = Path(tmp) / "master.png"
-            master.save(master_path, **save_kwargs)
-            if _state(storage, job["id"]) in FINAL:
-                raise JobFinished("Job ended during post-processing")
-            name = f"results/{job['id']}/master.png"
-            storage.upload_file(name, str(master_path), "image/png")
-            results["master"] = name
-            if job["mode"] in ("wrap", "tile"):
-                proof_name = f"results/{job['id']}/proof.jpg"
-                storage.put_bytes(
-                    proof_name, _jpeg(analysis.proof(master, 2)), "image/jpeg"
-                )
-                results["proof"] = proof_name
-            results["size"] = f"{master.size[0]}x{master.size[1]}"
+            results["proof"] = proof_name
+        results["size"] = f"{master.size[0]}x{master.size[1]}"
     state = _state(storage, job["id"])
     if state in FINAL:
         # Only a cancel removes results; never touch what a done job lists.
@@ -568,6 +586,12 @@ class JobRunner:
             logger.exception("Job %s failed", job_id)
             job = await self._fresh(job_id)
             if job and job["state"] not in FINAL:
+                cancel_url = (job.get("prediction") or {}).get("cancel_url")
+                if cancel_url:
+                    try:
+                        await self.replicate.cancel(cancel_url)
+                    except ReplicateError as cancel_exc:
+                        logger.warning("Cancel of %s failed: %s", job_id, cancel_exc)
                 message = (
                     str(exc)
                     if isinstance(exc, (ReplicateError, JobError))
