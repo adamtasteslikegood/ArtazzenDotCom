@@ -24,7 +24,9 @@
     </div>
 
     <section id="gallery" role="tabpanel" aria-labelledby="tab-gallery" {% if tab != 'gallery' %}hidden{% endif %}>
-        {% if gallery_error %}
+        {% if not gallery_listed %}
+        <p><a href="/import">Load the gallery list</a> to import more.</p>
+        {% elif gallery_error %}
         <p class="err">{{ gallery_error }}</p>
         {% elif not images %}
         <p>The gallery has no pending or approved images.</p>

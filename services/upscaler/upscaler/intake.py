@@ -70,7 +70,9 @@ def check_image(data: bytes, filename: str, settings: Settings) -> ImageInfo:
         )
     try:
         with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            # Pillow warns above ~89 MP; the explicit ceiling below is the
+            # limit that applies. Pillow still refuses ~179 MP+ outright.
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)
             with Image.open(io.BytesIO(data)) as img:
                 width, height = img.size
                 fmt = img.format or ""
@@ -84,7 +86,7 @@ def check_image(data: bytes, filename: str, settings: Settings) -> ImageInfo:
                 img.verify()
     except IntakeError:
         raise
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+    except Image.DecompressionBombError:
         raise IntakeError(f"{filename}: image is too large to open safely") from None
     except Exception:
         raise IntakeError(f"{filename}: not a readable image") from None

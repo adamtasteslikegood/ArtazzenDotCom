@@ -32,7 +32,15 @@ class Storage:
             aws_secret_access_key=settings.secret_access_key or None,
             region_name=settings.region,
             # Railway buckets use virtual-hosted-style URLs.
-            config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "virtual"},
+                # boto3 >= 1.36 sends CRC checksums on every upload by
+                # default; some S3-compatible stores reject them. Only send
+                # them when an operation requires one.
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            ),
         )
         return cls(client, settings.bucket, settings.bucket_prefix)
 

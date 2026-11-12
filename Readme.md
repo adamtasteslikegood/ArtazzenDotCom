@@ -117,21 +117,22 @@ Runtime settings persist in `ai_config.json` and are editable from the admin UI 
 
 See `.env.example` for the full list. Key variables:
 
-| Variable                      | Default                | Description                                           |
-| ----------------------------- | ---------------------- | ----------------------------------------------------- |
-| `SITE_URL`                    | `https://artazzen.com` | Canonical site URL for SEO (sitemap, canonical tags)  |
-| `IMAGES_DIR`                  | `Static/images`        | Image storage path. Set to `/data/images` on Railway  |
-| `IMPORT_ROOT`                 | `imports`              | Allowed source directory for admin filesystem imports |
-| `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                         |
-| `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin access)   |
-| `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                        |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Startup model fallback; persisted AI config wins      |
-| `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                              |
-| `AI_MAX_RETRIES`              | `5`                    | Automatic AI retries per image after a failed attempt |
-| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum seconds between automatic AI retries          |
-| `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                  |
-| `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; enables purge on unapprove/delete  |
-| `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone id, required with the token           |
+| Variable                      | Default                | Description                                                                                                         |
+| ----------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `SITE_URL`                    | `https://artazzen.com` | Canonical site URL for SEO (sitemap, canonical tags)                                                                |
+| `UPSCALER_URL`                | (unset)                | Public URL of the separate upscaler service (`services/upscaler`); the admin shows an "Upscaler" link only when set |
+| `IMAGES_DIR`                  | `Static/images`        | Image storage path. Set to `/data/images` on Railway                                                                |
+| `IMPORT_ROOT`                 | `imports`              | Allowed source directory for admin filesystem imports                                                               |
+| `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                                                                                       |
+| `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin access)                                                                 |
+| `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                                                                                      |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Startup model fallback; persisted AI config wins                                                                    |
+| `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                                                                                            |
+| `AI_MAX_RETRIES`              | `5`                    | Automatic AI retries per image after a failed attempt                                                               |
+| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum seconds between automatic AI retries                                                                        |
+| `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                                                                                |
+| `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; enables purge on unapprove/delete                                                                |
+| `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone id, required with the token                                                                         |
 
 Images are served from `/images`, approved artwork only. Gallery grids load 480 px WebP thumbnails and the detail page a 1600 px WebP; its enlarged view uses a 2560 px WebP (built for sources wider than 1600 px) and fetches the original only when the visitor asks for full size. All are generated into `IMAGES_DIR/.derived/` and never upscaled. Image and stylesheet URLs carry a version segment and are cached for a year; unversioned URLs are cached for an hour. Pending and hidden images are visible only to the admin through `/admin/image/{name}`.
 

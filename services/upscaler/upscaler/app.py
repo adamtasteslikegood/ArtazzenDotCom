@@ -78,7 +78,12 @@ def create_app(
         gallery = _gallery(request)
         images: list[dict[str, Any]] = []
         gallery_error = ""
-        if gallery.configured:
+        # The gallery's new-files endpoint runs its pending scan, which can
+        # write sidecars and call OpenAI. List it only on a plain page load,
+        # not again after every import.
+        if results is not None:
+            pass
+        elif gallery.configured:
             try:
                 images = gallery.list_images()
             except GalleryError as exc:
@@ -90,6 +95,7 @@ def create_app(
             "import.html",
             {
                 "images": images,
+                "gallery_listed": results is None,
                 "gallery_error": gallery_error,
                 "results": results,
                 "tab": tab or "gallery",

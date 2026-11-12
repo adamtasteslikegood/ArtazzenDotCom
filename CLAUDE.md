@@ -204,22 +204,23 @@ Admin routes (`/admin/*`) are protected by HTTP Basic Auth.
 
 See `.env.example` for the full list. Key vars:
 
-| Variable                      | Default                | Description                                                            |
-| ----------------------------- | ---------------------- | ---------------------------------------------------------------------- |
-| `SITE_URL`                    | `https://artazzen.com` | Canonical site URL for SEO (sitemap, robots.txt, canonical tags)       |
-| `IMAGES_DIR`                  | `Static/images`        | Image storage path. Set to `/data/images` on Railway                   |
-| `IMPORT_ROOT`                 | `imports`              | Only server directory allowed as a source for admin filesystem imports |
-| `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                                          |
-| `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin)                           |
-| `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                                         |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Model for AI descriptions                                              |
-| `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                                               |
-| `AI_MAX_RETRIES`              | `5`                    | Automatic retries after a failed AI metadata attempt (watcher only)    |
-| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum wait between those automatic retries                           |
-| `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                                   |
-| `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; with the zone id, enables purge on unapprove/delete |
-| `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone of the site                                            |
-| `PORT`                        | _(uvicorn default)_    | Server port (set by Railway)                                           |
+| Variable                      | Default                | Description                                                                                                         |
+| ----------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `SITE_URL`                    | `https://artazzen.com` | Canonical site URL for SEO (sitemap, robots.txt, canonical tags)                                                    |
+| `UPSCALER_URL`                | (unset)                | Public URL of the separate upscaler service (`services/upscaler`); the admin shows an "Upscaler" link only when set |
+| `IMAGES_DIR`                  | `Static/images`        | Image storage path. Set to `/data/images` on Railway                                                                |
+| `IMPORT_ROOT`                 | `imports`              | Only server directory allowed as a source for admin filesystem imports                                              |
+| `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                                                                                       |
+| `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin)                                                                        |
+| `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                                                                                      |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Model for AI descriptions                                                                                           |
+| `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                                                                                            |
+| `AI_MAX_RETRIES`              | `5`                    | Automatic retries after a failed AI metadata attempt (watcher only)                                                 |
+| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum wait between those automatic retries                                                                        |
+| `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                                                                                |
+| `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; with the zone id, enables purge on unapprove/delete                                              |
+| `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone of the site                                                                                         |
+| `PORT`                        | _(uvicorn default)_    | Server port (set by Railway)                                                                                        |
 
 ## Core Principles
 

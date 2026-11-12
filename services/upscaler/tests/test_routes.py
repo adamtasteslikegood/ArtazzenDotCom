@@ -96,3 +96,27 @@ def test_library_lists_imports_and_file_redirects_to_presigned_url(client):
     assert resp.status_code == 307
     assert "X-Amz-Signature" in resp.headers["location"]
     assert client.get("/imports/000000000000/file").status_code == 404
+
+
+def test_import_post_does_not_relist_gallery(client, fake_gallery):
+    client.post("/import/gallery", data={"names": ["pending.png"]})
+    paths = [r.url.path for r in fake_gallery.requests]
+    assert "/admin/api/new-files" not in paths
+
+
+def test_megapixel_ceiling_not_pillow_warning_applies(settings):
+    from dataclasses import replace
+
+    from PIL import Image
+    from upscaler.intake import check_image
+
+    from tests.conftest import png_bytes
+
+    # Above Pillow's warning threshold but under our ceiling: accepted.
+    roomy = replace(settings, max_megapixels=1)
+    old = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = 2000
+    try:
+        assert check_image(png_bytes(size=(60, 50)), "a.png", roomy).width == 60
+    finally:
+        Image.MAX_IMAGE_PIXELS = old

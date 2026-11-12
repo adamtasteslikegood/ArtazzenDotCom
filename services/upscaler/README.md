@@ -50,6 +50,20 @@ show the "Upscaler" link in the admin.
 Railway settings: root directory `services/upscaler`, watch paths
 `services/upscaler/**`. The start command is in the `Procfile`.
 
+**To confirm when the Railway service is created** (not yet verified against
+Railway):
+
+- the variable names the `wrapped-stand` bucket exposes for references (the
+  table above assumes `BUCKET`, `ENDPOINT`, `ACCESS_KEY_ID`,
+  `SECRET_ACCESS_KEY`, `REGION`);
+- that `${{ArtazzenDotCom.PORT}}` resolves, i.e. `PORT` is a defined variable
+  on the gallery service, and that the gallery is reachable on the private
+  network while it binds `0.0.0.0` (private networking may need an IPv6
+  bind);
+- that uploads and presigned URLs work against the real bucket with
+  `region=auto` and virtual-hosted addressing. Tests use moto, which does not
+  prove this.
+
 ## Local run and tests
 
 ```bash
