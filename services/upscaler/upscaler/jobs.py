@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from upscaler import analysis
 from upscaler.config import Settings
@@ -56,10 +56,18 @@ FINAL = frozenset({"done", "error", "cancelled"})
 # Replicate accepts these as-is; anything else is converted to PNG first.
 _PASSTHROUGH = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
 _LOG_LOCK = threading.Lock()
+# Every job-record write re-reads under this lock, so a write made from a
+# stale copy can never undo a final state (one process; see README).
+_JOB_LOCK = threading.Lock()
+_EXIF_ORIENTATION = 0x0112
 
 
 class JobError(ValueError):
     """The request cannot be carried out; the message is user-facing."""
+
+
+class JobFinished(JobError):
+    """The job reached a final state elsewhere; the write was refused."""
 
 
 def now_iso() -> str:
@@ -103,16 +111,27 @@ def log_event(storage: Storage, job: dict[str, Any], event: str, **extra: Any) -
 
 
 def save_job(storage: Storage, job: dict[str, Any], **changes: Any) -> dict[str, Any]:
-    job.update(changes)
-    job["updated_at"] = now_iso()
-    storage.put_json(job_name(job["id"]), job)
-    return job
+    """Merge ``changes`` into the stored record and return the result.
+
+    The stored copy wins over ``job`` for every field not in ``changes``, and
+    a job already in a final state is never written again: a poll that read
+    the record before a cancel cannot flip it back to running.
+    """
+    with _JOB_LOCK:
+        stored = storage.get_json(job_name(job["id"]))
+        if stored and stored.get("state") in FINAL:
+            raise JobFinished(f"Job is already {stored['state']}")
+        record = dict(stored or job)
+        record.update(changes)
+        record["updated_at"] = now_iso()
+        storage.put_json(job_name(record["id"]), record)
+    return record
 
 
 def set_state(
     storage: Storage, job: dict[str, Any], state: str, **changes: Any
 ) -> dict[str, Any]:
-    save_job(storage, job, state=state, **changes)
+    job = save_job(storage, job, state=state, **changes)
     log_event(
         storage,
         job,
@@ -200,18 +219,37 @@ def prepare(
         source_name, data, mimetypes.guess_type(source_name)[0] or "image/png"
     )
 
+    warnings: list[str] = []
+    blockers: list[str] = []
+    tile_info = None
+    input_name = ""
+    base: tuple[int, int] = (0, 0)
+    input_size: tuple[int, int] = (0, 0)
+
+    def too_big(size: tuple[int, int]) -> bool:
+        # Checked from arithmetic before any pad, grid or PNG is built, so a
+        # large import is refused without holding a second copy in memory.
+        mp = size[0] * size[1] / 1_000_000
+        if mp <= settings.replicate_max_input_mp:
+            return False
+        blockers.append(
+            f"Replicate input would be {size[0]}×{size[1]} ({mp:.1f} MP), above "
+            f"the {settings.replicate_max_input_mp:g} MP limit set for this model."
+        )
+        return True
+
     try:
         with Image.open(io.BytesIO(data)) as img:
             img.load()
-            src = img
             fmt = img.format or ""
             dpi = img.info.get("dpi", (0, 0))[0]
             icc = bool(img.info.get("icc_profile"))
-            width, height = img.size
-            warnings: list[str] = []
-            blockers: list[str] = []
+            # The model may honour EXIF orientation and return a rotated
+            # result whose size no longer matches; send upright pixels.
+            rotated = img.getexif().get(_EXIF_ORIENTATION, 1) not in (0, 1)
+            src = ImageOps.exif_transpose(img) if rotated else img
+            width, height = src.size
             seams = analysis.seam_report(src)
-            tile_info = None
 
             if mode == "tile":
                 try:
@@ -230,6 +268,8 @@ def prepare(
                             f"The best tile's seam ratio is {tile.seam_ratio}; "
                             "check the proof before confirming."
                         )
+                    base = tile.tile.size
+                    input_size = (base[0] * 3, base[1] * 3)
                     storage.put_bytes(
                         f"{staging}/tile.png", _png(tile.tile), "image/png"
                     )
@@ -238,26 +278,33 @@ def prepare(
                         _jpeg(analysis.proof(tile.tile, 3)),
                         "image/jpeg",
                     )
-                    grid = analysis.repeat_grid(tile.tile, 3)
-                    input_name = f"{staging}/input.png"
-                    storage.put_bytes(input_name, _png(grid), "image/png")
-                    base = tile.tile.size
-                    input_size = grid.size
+                    if not too_big(input_size):
+                        grid = analysis.repeat_grid(tile.tile, 3)
+                        input_name = f"{staging}/input.png"
+                        storage.put_bytes(input_name, _png(grid), "image/png")
             elif mode == "wrap":
                 if seams.verdict != "seamless":
                     warnings.append(
                         f"The edges do not look seamless (verdict: {seams.verdict}); "
                         "“Seamless pattern” keeps a seam that is already there."
                     )
-                padded = analysis.wrap_pad(src)
-                input_name = f"{staging}/input.png"
-                storage.put_bytes(input_name, _png(padded), "image/png")
                 base = (width, height)
-                input_size = padded.size
+                pad = 2 * analysis.WRAP_PAD
+                input_size = (width + pad, height + pad)
+                if not too_big(input_size):
+                    padded = analysis.wrap_pad(src)
+                    input_name = f"{staging}/input.png"
+                    storage.put_bytes(input_name, _png(padded), "image/png")
             else:
                 base = (width, height)
                 input_size = (width, height)
-                if fmt in _PASSTHROUGH and src.mode in ("RGB", "RGBA", "L"):
+                if too_big(input_size):
+                    pass
+                elif (
+                    not rotated
+                    and fmt in _PASSTHROUGH
+                    and src.mode in ("RGB", "RGBA", "L")
+                ):
                     input_name = source_name
                 else:
                     input_name = f"{staging}/input.png"
@@ -267,16 +314,7 @@ def prepare(
         delete_prefix(storage, f"{staging}/")
         raise
 
-    if mode == "tile" and tile_info is None:
-        input_name, base, input_size = "", (0, 0), (0, 0)
-
     input_mp = input_size[0] * input_size[1] / 1_000_000
-    if input_size[0] and input_mp > settings.replicate_max_input_mp:
-        blockers.append(
-            f"Replicate input would be {input_size[0]}×{input_size[1]} "
-            f"({input_mp:.1f} MP), above the {settings.replicate_max_input_mp:g} MP "
-            "limit set for this model."
-        )
     if not settings.replicate_api_token:
         blockers.append("REPLICATE_API_TOKEN is not set on this service.")
     target = (base[0] * scale, base[1] * scale)
@@ -298,6 +336,7 @@ def prepare(
             "format": fmt,
             "dpi_tag": round(float(dpi)) if dpi else 0,
             "icc": icc,
+            "exif_rotated": rotated,
         },
         "seams": {
             "lr_ratio": seams.lr_ratio,
@@ -330,7 +369,7 @@ def prepare(
         "logs": "",
         "error": "",
     }
-    save_job(storage, job)
+    job = save_job(storage, job)
     log_event(storage, job, "staged", kind=kind, import_id=import_id)
     return job
 
@@ -343,10 +382,20 @@ def cancel_staged(storage: Storage, job: dict[str, Any]) -> dict[str, Any]:
 # --- post-processing -----------------------------------------------------------
 
 
+def _finished(storage: Storage, job_id: str) -> bool:
+    current = get_job(storage, job_id)
+    return not current or current.get("state") in FINAL
+
+
 def postprocess(
     storage: Storage, settings: Settings, job: dict[str, Any], output: Path
 ) -> dict[str, str]:
-    """Crop, tag DPI, copy ICC, upload results. Runs in a worker thread."""
+    """Crop, tag DPI, copy ICC, upload results. Runs in a worker thread.
+
+    Cancelling the asyncio task does not stop this thread, so it re-checks
+    the job before and after uploading and leaves no results for a job that
+    was cancelled meanwhile.
+    """
     # A 4x master has 16x the input's pixels; Pillow's default decompression
     # ceiling (~89 MP warning, ~179 MP error) is below that. Raise it to the
     # configured output ceiling on purpose; intake keeps its own lower limit.
@@ -377,6 +426,8 @@ def postprocess(
         with tempfile.TemporaryDirectory() as tmp:
             master_path = Path(tmp) / "master.png"
             master.save(master_path, **save_kwargs)
+            if _finished(storage, job["id"]):
+                raise JobFinished("Job ended during post-processing")
             name = f"results/{job['id']}/master.png"
             storage.upload_file(name, str(master_path), "image/png")
             results["master"] = name
@@ -387,6 +438,9 @@ def postprocess(
                 )
                 results["proof"] = proof_name
             results["size"] = f"{master.size[0]}x{master.size[1]}"
+    if _finished(storage, job["id"]):
+        delete_prefix(storage, f"results/{job['id']}/")
+        raise JobFinished("Job ended during post-processing")
     return results
 
 
@@ -425,16 +479,22 @@ class JobRunner:
             raise JobError(f"Job is {job['state']}, not waiting for confirmation")
         if job.get("blockers"):
             raise JobError(job["blockers"][0])
-        job = await self._io(
-            set_state, self.storage, job, "queued", queued_at=now_iso()
-        )
+        try:
+            job = await self._io(
+                set_state, self.storage, job, "queued", queued_at=now_iso()
+            )
+        except JobFinished as exc:
+            raise JobError(str(exc)) from None
         self.start(job["id"])
         return job
 
     async def cancel(self, job: dict[str, Any]) -> dict[str, Any]:
         state = job["state"]
         if state == "staged":
-            return await self._io(cancel_staged, self.storage, job)
+            try:
+                return await self._io(cancel_staged, self.storage, job)
+            except JobFinished as exc:
+                raise JobError(str(exc)) from None
         if state not in ACTIVE:
             raise JobError(f"Job is already {state}")
         cancel_url = (job.get("prediction") or {}).get("cancel_url")
@@ -443,11 +503,17 @@ class JobRunner:
                 await self.replicate.cancel(cancel_url)
             except ReplicateError as exc:
                 logger.warning("Cancel of %s failed: %s", job["id"], exc)
-        job = await self._io(
-            set_state, self.storage, job, "cancelled", finished_at=now_iso()
-        )
+        try:
+            job = await self._io(
+                set_state, self.storage, job, "cancelled", finished_at=now_iso()
+            )
+        except JobFinished as exc:
+            raise JobError(str(exc)) from None
         task = self._tasks.get(job["id"])
-        if task:
+        # An empty prediction means the create call is in flight. Aborting it
+        # could leave a prediction Replicate already accepted with nobody to
+        # stop it; the task cancels it itself once the call returns.
+        if task and job.get("prediction") != {}:
             task.cancel()
         await self._io(delete_prefix, self.storage, f"staging/{job['id']}/")
         return job
@@ -464,15 +530,17 @@ class JobRunner:
                 self.start(job["id"])
                 resumed.append(job["id"])
             elif state in ("running", "postprocessing"):
-                # Interrupted before the prediction id was saved: starting a
-                # new prediction could bill twice, so stop and say so.
+                # Interrupted while the prediction was being created: one may
+                # exist on Replicate without its id here. Starting another
+                # could bill twice, so stop and say so.
                 await self._io(
                     set_state,
                     self.storage,
                     job,
                     "error",
-                    error="Interrupted by a restart before Replicate confirmed the "
-                    "job. Prepare it again.",
+                    error="Interrupted by a restart while the job was being sent "
+                    "to Replicate. It may have run once there; check the "
+                    "Replicate dashboard before preparing it again.",
                     finished_at=now_iso(),
                 )
         return resumed
@@ -489,6 +557,8 @@ class JobRunner:
                 await self._execute(job)
         except asyncio.CancelledError:
             raise
+        except JobFinished:
+            return  # cancelled (or finished) elsewhere; nothing to record
         except Exception as exc:
             logger.exception("Job %s failed", job_id)
             job = await self._fresh(job_id)
@@ -511,6 +581,17 @@ class JobRunner:
         started = time.monotonic()
         prediction = job.get("prediction") or {}
         if not prediction.get("get_url"):
+            # Mark the job running before the create call. A restart from here
+            # on finds "running" with no prediction and stops, instead of
+            # treating it as queued and creating (and billing) a second one.
+            job = await self._io(
+                set_state,
+                self.storage,
+                job,
+                "running",
+                prediction={},
+                started_at=now_iso(),
+            )
             url = await self._io(
                 self.storage.presign_get, job["staging"]["input"], expires=3600
             )
@@ -522,14 +603,17 @@ class JobRunner:
             }
             if not prediction["get_url"]:
                 raise ReplicateError("Replicate did not return a prediction URL")
-            job = await self._io(
-                set_state,
-                self.storage,
-                job,
-                "running",
-                prediction=prediction,
-                started_at=now_iso(),
-            )
+            try:
+                job = await self._io(save_job, self.storage, job, prediction=prediction)
+            except JobFinished:
+                # Cancelled while the create call was in flight: the cancel
+                # had no prediction to stop, so stop it here.
+                if prediction["cancel_url"]:
+                    try:
+                        await self.replicate.cancel(prediction["cancel_url"])
+                    except ReplicateError as exc:
+                        logger.warning("Cancel of %s failed: %s", job["id"], exc)
+                raise
         deadline = started + self.settings.replicate_timeout_seconds
         while True:
             current = await self.replicate.get(prediction["get_url"])
@@ -564,17 +648,18 @@ class JobRunner:
                 postprocess, self.storage, self.settings, job, out_path
             )
         metrics = current.get("metrics") or {}
-        latest = await self._fresh(job["id"])
-        if not latest or latest["state"] in FINAL:
-            return
-        await self._io(
-            set_state,
-            self.storage,
-            latest,
-            "done",
-            results=results,
-            finished_at=now_iso(),
-            run_seconds=round(time.monotonic() - started, 1),
-            predict_seconds=metrics.get("predict_time"),
-        )
         await self._io(delete_prefix, self.storage, f"staging/{job['id']}/")
+        try:
+            await self._io(
+                set_state,
+                self.storage,
+                job,
+                "done",
+                results=results,
+                finished_at=now_iso(),
+                run_seconds=round(time.monotonic() - started, 1),
+                predict_seconds=metrics.get("predict_time"),
+            )
+        except JobFinished:
+            await self._io(delete_prefix, self.storage, f"results/{job['id']}/")
+            raise

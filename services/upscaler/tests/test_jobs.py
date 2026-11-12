@@ -1,12 +1,14 @@
+import asyncio
 import io
 import time
 from dataclasses import replace
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 from upscaler.app import create_app
-from upscaler.jobs import get_job, job_name, list_jobs
+from upscaler.jobs import JobFinished, get_job, job_name, list_jobs, save_job
 from upscaler.replicate import ReplicateClient
 
 from tests.patterns import gradient, periodic, png, srgb_icc
@@ -37,6 +39,17 @@ def wait_for(client, job_id, states=("done", "error", "cancelled"), timeout=15):
             return job
         time.sleep(0.02)
     raise AssertionError(f"job stuck in {job['state']}")
+
+
+def wait_for_prediction(client, job_id, timeout=15):
+    """Wait until the job is running with a saved Replicate prediction."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["state"] == "running" and (job.get("prediction") or {}).get("get_url"):
+            return job
+        time.sleep(0.02)
+    raise AssertionError(f"no prediction saved; job is {job['state']}")
 
 
 def master_image(storage, job) -> Image.Image:
@@ -157,7 +170,7 @@ def test_cancel_running_job_cancels_prediction(client, storage, fake_replicate):
     fake_replicate.polls_before_done = 10_000
     job_id = prepare(client, upload(client, png(gradient())))
     client.post(f"/jobs/{job_id}/confirm")
-    wait_for(client, job_id, states=("running",))
+    wait_for_prediction(client, job_id)
     client.post(f"/jobs/{job_id}/cancel")
     job = wait_for(client, job_id)
     assert job["state"] == "cancelled"
@@ -185,7 +198,7 @@ def test_startup_resumes_running_job_and_stops_unknown_ones(
     fake_replicate.polls_before_done = 10_000
     job_id = prepare(client, upload(client, png(gradient())))
     client.post(f"/jobs/{job_id}/confirm")
-    wait_for(client, job_id, states=("running",))
+    wait_for_prediction(client, job_id)
     # A second job that died before its prediction id was saved.
     orphan = dict(get_job(storage, job_id), id="0123456789ab", prediction={})
     storage.put_json(job_name(orphan["id"]), orphan)
@@ -229,3 +242,132 @@ def test_logs_written_per_event(client, storage):
     lines = storage.get_bytes(names[0]).decode().strip().splitlines()
     assert [line.count(job_id) for line in lines] == [1, 1]
     assert list_jobs(storage)[0]["id"] == job_id
+
+
+def _hold_create(client):
+    """Make the runner's next Replicate create wait until released."""
+    runner = client.app.state.runner
+    gate = asyncio.Event()
+    original = runner.replicate.create
+
+    async def held(url, scale):
+        await gate.wait()
+        return await original(url, scale)
+
+    runner.replicate.create = held
+    return gate
+
+
+def _wait_state(storage, job_id, state, prediction=None, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = get_job(storage, job_id)
+        if job["state"] == state and (
+            prediction is None or job.get("prediction") == prediction
+        ):
+            return job
+        time.sleep(0.01)
+    raise AssertionError(f"job never reached {state}")
+
+
+def test_restart_during_create_stops_instead_of_billing_twice(
+    client, settings, storage, fake_replicate
+):
+    job_id = prepare(client, upload(client, png(gradient())))
+    _hold_create(client)
+    client.post(f"/jobs/{job_id}/confirm")
+    # Marked running before the create call returned.
+    _wait_state(storage, job_id, "running", prediction={})
+    tasks = list(client.app.state.runner._tasks.values())
+    client.portal.call(lambda: [t.cancel() for t in tasks])
+    deadline = time.monotonic() + 5
+    while not all(t.done() for t in tasks) and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    replicate = ReplicateClient(settings, transport=httpx.MockTransport(fake_replicate))
+    app = create_app(settings=settings, storage=storage, replicate=replicate)
+    with TestClient(app) as c:
+        from tests.conftest import auth_header
+
+        c.headers.update(auth_header())
+        job = wait_for(c, job_id)
+    assert job["state"] == "error"
+    assert "Replicate dashboard" in job["error"]
+    assert fake_replicate.created == 0  # no second create after the restart
+
+
+def test_cancel_during_create_cancels_the_new_prediction(
+    client, storage, fake_replicate
+):
+    fake_replicate.polls_before_done = 10_000
+    job_id = prepare(client, upload(client, png(gradient())))
+    gate = _hold_create(client)
+    client.post(f"/jobs/{job_id}/confirm")
+    _wait_state(storage, job_id, "running", prediction={})
+    client.post(f"/jobs/{job_id}/cancel")
+    assert get_job(storage, job_id)["state"] == "cancelled"
+    client.portal.call(gate.set)
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if any(str(r.url).endswith("/p1/cancel") for r in fake_replicate.requests):
+            break
+        time.sleep(0.01)
+    else:
+        raise AssertionError("the prediction created after the cancel kept running")
+    job = get_job(storage, job_id)
+    assert job["state"] == "cancelled"
+    assert not job.get("prediction")
+
+
+def test_a_stale_copy_cannot_undo_a_cancel(client, storage):
+    job_id = prepare(client, upload(client, png(gradient())))
+    stale = get_job(storage, job_id)
+    client.post(f"/jobs/{job_id}/cancel")
+    with pytest.raises(JobFinished):
+        save_job(storage, dict(stale, state="running"), logs="late poll")
+    job = get_job(storage, job_id)
+    assert job["state"] == "cancelled" and job["logs"] == ""
+
+
+def test_cancel_holds_while_logs_change(client, storage, fake_replicate):
+    fake_replicate.polls_before_done = 10_000
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/confirm")
+    wait_for_prediction(client, job_id)
+    client.post(f"/jobs/{job_id}/cancel")
+    polls = len(fake_replicate.requests)
+    time.sleep(0.2)
+    assert get_job(storage, job_id)["state"] == "cancelled"
+    assert len(fake_replicate.requests) <= polls + 2  # polling stopped
+
+
+def test_oversized_input_is_refused_before_it_is_built(settings, storage):
+    tight = replace(settings, replicate_max_input_mp=0.01)
+    app = create_app(settings=tight, storage=storage)
+    with TestClient(app) as c:
+        from tests.conftest import auth_header
+
+        c.headers.update(auth_header())
+        job_id = prepare(c, upload(c, png(gradient())), kind="seamless")
+    job = get_job(storage, job_id)
+    assert any("above the 0.01 MP limit" in b for b in job["blockers"])
+    assert job["input"]["width"] == 200 + 64
+    assert job["staging"]["input"] == ""
+    assert storage.list_names(f"staging/{job_id}/input") == []
+
+
+def test_exif_rotated_jpeg_is_sent_upright(client, storage):
+    img = gradient(40, 20)
+    exif = img.getexif()
+    exif[0x0112] = 6  # rotate 90° clockwise on display
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", exif=exif.tobytes(), quality=95)
+    job_id = prepare(client, upload(client, buf.getvalue(), name="photo.jpg"))
+    staged = get_job(storage, job_id)
+    assert staged["source"]["exif_rotated"] is True
+    assert (staged["source"]["width"], staged["source"]["height"]) == (20, 40)
+    assert staged["staging"]["input"].endswith("input.png")
+    client.post(f"/jobs/{job_id}/confirm")
+    job = wait_for(client, job_id)
+    assert job["state"] == "done", job["error"]
+    assert master_image(storage, job).size == (80, 160)

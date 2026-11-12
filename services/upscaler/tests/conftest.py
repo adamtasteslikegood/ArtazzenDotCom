@@ -158,7 +158,7 @@ class FakeReplicate:
                 out["status"] = "canceled"
             elif pred["polls"] <= self.polls_before_done:
                 out["status"] = "processing"
-                out["logs"] = "Running upscale..."
+                out["logs"] = f"Running upscale... poll {pred['polls']}"
             elif self.fail_with:
                 out["status"] = "failed"
                 out["error"] = self.fail_with

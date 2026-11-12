@@ -52,8 +52,12 @@ jobs (Replicate's `predict_time` where it reports one).
 
 On start-up the service re-attaches to jobs that were running when it stopped
 (it polls the saved prediction instead of starting a new one) and restarts
-queued ones. A job interrupted before Replicate returned a prediction id is
-marked as an error rather than retried, so it is never billed twice.
+queued ones. A job is marked running before its prediction is created, so one
+interrupted mid-create is marked as an error rather than retried: it may have
+run once on Replicate, but a restart never creates a second prediction for it.
+A cancel during the create call lets the call finish, then cancels the new
+prediction. Job records are re-read under a lock on every write and never
+leave a final state, so a late poll cannot undo a cancel.
 
 Every import is checked for an allowed extension, size, megapixels and that
 Pillow can read it. Identical bytes are stored once (sha256).
