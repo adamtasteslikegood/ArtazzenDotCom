@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 from PIL import Image
 from upscaler.app import create_app
-from upscaler.config import DEFAULT_MODEL, Settings
+from upscaler.config import Settings
 from upscaler.replicate import ReplicateClient
 from upscaler.sources import GalleryClient
 from upscaler.storage import Storage
@@ -44,6 +44,9 @@ def settings(tmp_path: Path) -> Settings:
         max_upload_mb=1,
         max_megapixels=1,
         replicate_api_token="r8_test",
+        # A neutral model, so the small test images are not caught by
+        # xinntao/realesrgan's 300 px minimum; its own tests set it.
+        replicate_model="test/real-esrgan",
         poll_seconds=0,
     )
 
@@ -130,7 +133,7 @@ class FakeReplicate:
             return httpx.Response(200, content=self.predictions[pid]["png"])
         if request.headers.get("authorization") != "Bearer r8_test":
             return httpx.Response(401, json={"detail": "bad token"})
-        if url == f"{self.API}/models/{DEFAULT_MODEL}":
+        if url.startswith(f"{self.API}/models/"):
             return httpx.Response(
                 200, json={"is_official": False, "latest_version": {"id": "v123"}}
             )
@@ -174,11 +177,15 @@ class FakeReplicate:
         return httpx.Response(404)
 
     def _upscale(self, inp) -> bytes:
-        key = urlparse(inp["image"]).path.lstrip("/")
+        # xinntao/realesrgan (sent "tile") names its input "img" and doubles
+        # an input under 300 px tall before the upscale.
+        key = urlparse(inp.get("img") or inp["image"]).path.lstrip("/")
         if key.startswith(BUCKET + "/"):
             key = key[len(BUCKET) + 1 :]
         data = self.storage.client.get_object(Bucket=BUCKET, Key=key)["Body"].read()
         img = Image.open(io.BytesIO(data)).convert("RGB")
+        if "tile" in inp and img.height < 300:
+            img = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
         s = inp["scale"]
         out = img.resize((img.width * s, img.height * s), Image.NEAREST)
         buf = io.BytesIO()

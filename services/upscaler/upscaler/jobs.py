@@ -39,7 +39,13 @@ from PIL import Image, ImageOps
 from upscaler import analysis
 from upscaler.config import Settings
 from upscaler.intake import get_import
-from upscaler.replicate import TERMINAL, ReplicateClient, ReplicateError, output_url
+from upscaler.replicate import (
+    TERMINAL,
+    XINNTAO_MIN_HEIGHT,
+    ReplicateClient,
+    ReplicateError,
+    output_url,
+)
 from upscaler.storage import Storage
 
 logger = logging.getLogger(__name__)
@@ -55,8 +61,10 @@ KINDS = {
 SCALES = (4, 2)
 ACTIVE = frozenset({"queued", "running", "postprocessing"})
 FINAL = frozenset({"done", "error", "cancelled"})
-# Replicate accepts these as-is; anything else is converted to PNG first.
-_PASSTHROUGH = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
+# Sent as-is; anything else is converted to PNG first. PNG only, because
+# xinntao/realesrgan writes its output in the input's format and a JPEG
+# master would be recompressed.
+_PASSTHROUGH = {"PNG": "image/png"}
 _LOG_LOCK = threading.Lock()
 # Every job-record write re-reads under this lock, so a write made from a
 # stale copy can never undo a final state (one process; see README).
@@ -337,6 +345,16 @@ def prepare(
         raise
 
     input_mp = input_size[0] * input_size[1] / 1_000_000
+    if (
+        settings.replicate_model.startswith("xinntao/")
+        and 0 < input_size[1] < XINNTAO_MIN_HEIGHT
+    ):
+        blockers.append(
+            f"Replicate input would be {input_size[1]} px tall; "
+            f"{settings.replicate_model} enlarges anything under "
+            f"{XINNTAO_MIN_HEIGHT} px first, so the result would not be "
+            f"{scale}×. Use a larger image."
+        )
     if not settings.replicate_api_token:
         blockers.append("REPLICATE_API_TOKEN is not set on this service.")
     target = (base[0] * scale, base[1] * scale)

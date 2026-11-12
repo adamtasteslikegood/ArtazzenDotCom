@@ -29,6 +29,11 @@ _MAX_REDIRECTS = 5
 # (6/min). A 429 means nothing was created, so waiting and resending is safe.
 _THROTTLE_RETRIES = 6
 _THROTTLE_MAX_WAIT = 30.0
+# xinntao/realesrgan's name for the RealESRGAN_x4plus weights.
+XINNTAO_VERSION = "General - RealESRGANplus"
+# xinntao/realesrgan doubles an input shorter than this before upscaling,
+# so its output would no longer be the requested scale.
+XINNTAO_MIN_HEIGHT = 300
 
 
 def _retry_after(resp: httpx.Response) -> float:
@@ -115,12 +120,21 @@ class ReplicateClient:
                 self._target = (f"{API_BASE}/predictions", {"version": version})
         return self._target
 
+    def model_input(self, image_url: str, scale: int) -> dict[str, Any]:
+        """The prediction input; xinntao's model names its inputs differently."""
+        if self.settings.replicate_model.startswith("xinntao/"):
+            return {
+                "img": image_url,
+                "version": XINNTAO_VERSION,
+                "scale": scale,
+                "face_enhance": False,
+                "tile": self.settings.replicate_tile,
+            }
+        return {"image": image_url, "scale": scale, "face_enhance": False}
+
     async def create(self, image_url: str, scale: int) -> dict[str, Any]:
         url, extra = await self._prediction_target()
-        body = {
-            **extra,
-            "input": {"image": image_url, "scale": scale, "face_enhance": False},
-        }
+        body = {**extra, "input": self.model_input(image_url, scale)}
         return await self._call("POST", url, json=body)
 
     async def get(self, url: str) -> dict[str, Any]:

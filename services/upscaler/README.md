@@ -37,7 +37,7 @@ Job types:
 
 | Type                    | What is sent                                      | Master                                       |
 | ----------------------- | ------------------------------------------------- | -------------------------------------------- |
-| Print master            | the copy as-is (PNG if not JPEG/PNG/WebP)         | the upscale                                  |
+| Print master            | the copy as-is if PNG, else converted to PNG      | the upscale                                  |
 | Seamless pattern        | the copy wrap-padded by 32 px                     | padding cropped off, so the edges still wrap |
 | Pattern → seamless tile | a 3×3 grid of the repeat found by the seam search | the centre tile                              |
 
@@ -51,14 +51,23 @@ is `UPSCALER_SECONDS_PER_MP` until a job finishes, then the median of finished
 jobs on the configured model (Replicate's `predict_time` where it reports one).
 Each job records the model it ran on.
 
-The default model is `lucataco/real-esrgan`: the same RealESRGAN_x4plus
-weights, on an A100 80GB. It was `nightmareai/real-esrgan` (T4) until
-2026-11-12. On the live service that model took 11 s of predict time for a
-1280×960 print master (about $0.0025) and 30 s end to end, but refused inputs
-above 2,096,704 pixels, so a 1536×2048 phone export did not fit. The A100
-model's input ceiling is not measured yet; the 6 MP default is a guess. While
-the Replicate
-account holds under $5 of credit, it allows a burst of one prediction request
+The default model is `xinntao/realesrgan` (the Real-ESRGAN authors' model, on
+a T4), run with the RealESRGAN_x4plus weights and `tile` 400, so Replicate
+upscales the image in tiles. Untiled Real-ESRGAN fails above about 2.1 MP of
+input on any GPU, measured on 2026-11-12:
+
+- `nightmareai/real-esrgan` (T4) refused more than 2,096,704 pixels.
+- `lucataco/real-esrgan` (A100) crashed at 3.1 MP.
+
+The limit is 2³¹ ÷ (64 feature channels × 16), so it comes from 32-bit
+indexing, not from GPU memory. On the live service the T4 model took 11 s of
+predict time for a 1280×960 print master (about $0.0025) and 30 s end to end.
+The 8 MP input limit is a guess above a 5.6 MP iPad export. That model
+enlarges an input under 300 px tall before upscaling, so Prepare refuses
+those. It writes its output in the input's format, so only PNG copies are sent
+as they are.
+
+While the Replicate account holds under $5 of credit, it allows a burst of one prediction request
 (6 a minute); the client waits out a 429 and resends, up to six times.
 
 On start-up the service re-attaches to jobs that were running when it stopped
@@ -100,9 +109,9 @@ logs/<YYYY-MM-DD>.jsonl       one line per job event
 | `UPSCALER_IMPORT_ROOT`                                               | Root for server-path imports (default `services/upscaler/imports`).                                                    |
 | `UPSCALER_MAX_UPLOAD_MB`, `UPSCALER_MAX_MEGAPIXELS`                  | Intake limits (defaults 50 and 100).                                                                                   |
 | `REPLICATE_API_TOKEN`                                                | Replicate API token. Set on this service only.                                                                         |
-| `REPLICATE_UPSCALE_MODEL`, `REPLICATE_UPSCALE_VERSION`               | Model (default `lucataco/real-esrgan`, latest version) and an optional pinned version id.                              |
-| `UPSCALER_REPLICATE_MAX_INPUT_MP`                                    | Largest input sent to Replicate (default 6). Not measured on the A100 model; the T4 model stopped at 2,096,704 pixels. |
-| `UPSCALER_SECONDS_PER_MP`, `UPSCALER_PRICE_PER_SECOND`               | Estimate until jobs finish (defaults 4 s and $0.0014/s, the A100 80GB rate). The rate is a guess.                      |
+| `REPLICATE_UPSCALE_MODEL`, `REPLICATE_UPSCALE_VERSION`               | Model (default `xinntao/realesrgan`, latest version) and an optional pinned version id.                                |
+| `UPSCALER_REPLICATE_MAX_INPUT_MP`, `UPSCALER_REPLICATE_TILE`         | Largest input sent to Replicate (default 8, a guess) and the tile size passed to `xinntao/realesrgan` (default 400).   |
+| `UPSCALER_SECONDS_PER_MP`, `UPSCALER_PRICE_PER_SECOND`               | Estimate until jobs finish (defaults 10 s and $0.000225/s, the T4 rate).                                               |
 | `UPSCALER_MAX_CONCURRENT_JOBS`                                       | Jobs on Replicate at once (default 1).                                                                                 |
 | `UPSCALER_MAX_OUTPUT_MEGAPIXELS`                                     | Largest output post-processing decodes (default 400).                                                                  |
 | `REPLICATE_TIMEOUT_SECONDS`, `UPSCALER_POLL_SECONDS`                 | Give up after (default 1800 s); poll interval (default 3 s).                                                           |

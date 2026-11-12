@@ -530,9 +530,53 @@ def test_default_model_takes_a_phone_export_in_one_pass():
     from upscaler.config import Settings
 
     settings = Settings()
-    assert settings.replicate_model == "lucataco/real-esrgan"
-    # A 1536×2048 phone export is 3.1 MP; the old T4 model stopped at 2.1 MP.
-    assert settings.replicate_max_input_mp * 1_000_000 > 1536 * 2048
+    assert settings.replicate_model == "xinntao/realesrgan"
+    assert settings.replicate_tile > 0  # untiled Real-ESRGAN stops at 2.1 MP
+    # A 2048×2732 iPad export is 5.6 MP.
+    assert settings.replicate_max_input_mp * 1_000_000 > 2048 * 2732
+
+
+def _xinntao_client(settings, storage, fake_gallery, fake_replicate):
+    from upscaler.config import DEFAULT_MODEL
+    from upscaler.sources import GalleryClient
+
+    from tests.conftest import auth_header
+
+    real = replace(settings, replicate_model=DEFAULT_MODEL)
+    app = create_app(
+        settings=real,
+        storage=storage,
+        gallery=GalleryClient(real, transport=httpx.MockTransport(fake_gallery)),
+        replicate=ReplicateClient(real, transport=httpx.MockTransport(fake_replicate)),
+    )
+    client = TestClient(app)
+    client.headers.update(auth_header())
+    return client
+
+
+def test_xinntao_job_sends_tiled_input_and_keeps_the_scale(
+    settings, storage, fake_gallery, fake_replicate
+):
+    with _xinntao_client(settings, storage, fake_gallery, fake_replicate) as c:
+        job_id = prepare(c, upload(c, png(gradient(400, 300))), "print", 2)
+        c.post(f"/jobs/{job_id}/confirm")
+        job = wait_for(c, job_id)
+    assert job["state"] == "done", job.get("error")
+    assert job["model"] == "xinntao/realesrgan"
+    assert master_image(storage, job).size == (800, 600)
+    sent = next(iter(fake_replicate.predictions.values()))["input"]
+    assert sent["version"] == "General - RealESRGANplus"
+    assert sent["tile"] == 400
+    assert sent["face_enhance"] is False
+    assert "img" in sent and "image" not in sent
+
+
+def test_xinntao_refuses_inputs_it_would_enlarge(
+    settings, storage, fake_gallery, fake_replicate
+):
+    with _xinntao_client(settings, storage, fake_gallery, fake_replicate) as c:
+        job = get_job(storage, prepare(c, upload(c, png(gradient(400, 200)))))
+    assert any("200 px tall" in b for b in job["blockers"])
 
 
 def test_estimate_ignores_jobs_from_another_model(storage, settings):

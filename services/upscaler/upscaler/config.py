@@ -32,7 +32,7 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
-DEFAULT_MODEL = "lucataco/real-esrgan"
+DEFAULT_MODEL = "xinntao/realesrgan"
 
 
 @dataclass(frozen=True)
@@ -54,21 +54,24 @@ class Settings:
     import_root: Path = SERVICE_DIR / "imports"
     max_upload_mb: float = 50.0
     max_megapixels: float = 100.0
-    # Replicate. lucataco/real-esrgan runs the same RealESRGAN_x4plus weights
-    # as nightmareai/real-esrgan, with the same inputs (image, scale,
-    # face_enhance), on an A100 80GB instead of a T4 16GB. The T4 version
-    # refused more than 2,096,704 pixels (measured 2026-11-12), so a phone
-    # export (1536×2048, 3.1 MP) could not go in one pass. The A100 ceiling
-    # is not measured yet; 6 MP is a guess well inside 5x the GPU memory.
-    # Price: A100 80GB is $0.0014/s on replicate.com/pricing.
+    # Replicate. Untiled Real-ESRGAN fails above about 2.1 MP of input on any
+    # GPU: nightmareai/real-esrgan (T4) refuses more than 2,096,704 pixels and
+    # lucataco/real-esrgan (A100) crashed at 3.1 MP (both measured
+    # 2026-11-12). 2,097,152 is 2**31 / (64 feature channels * 16), so the
+    # cause is 32-bit indexing at 4x resolution, not memory.
+    # xinntao/realesrgan (the authors' model, T4) takes a ``tile`` input and
+    # upscales in tiles on Replicate, so phone and tablet exports go in one
+    # prediction. The 8 MP input limit is a guess above a 5.6 MP iPad export.
+    # Price: T4 is $0.000225/s on replicate.com/pricing.
     replicate_api_token: str = field(default="", repr=False)
     replicate_model: str = DEFAULT_MODEL
     replicate_version: str = ""
-    replicate_max_input_mp: float = 6.0
+    replicate_max_input_mp: float = 8.0
+    replicate_tile: int = 400
     replicate_timeout_seconds: float = 1800.0
     poll_seconds: float = 3.0
-    seconds_per_mp: float = 4.0
-    price_per_second: float = 0.0014
+    seconds_per_mp: float = 10.0
+    price_per_second: float = 0.000225
     max_concurrent_jobs: int = 1
     # Pillow refuses to decode beyond this; post-processing raises it on
     # purpose because a 4x master is 16x the input's pixels.
@@ -102,11 +105,12 @@ class Settings:
             replicate_model=os.getenv("REPLICATE_UPSCALE_MODEL", "").strip()
             or DEFAULT_MODEL,
             replicate_version=os.getenv("REPLICATE_UPSCALE_VERSION", "").strip(),
-            replicate_max_input_mp=_float("UPSCALER_REPLICATE_MAX_INPUT_MP", 6.0),
+            replicate_max_input_mp=_float("UPSCALER_REPLICATE_MAX_INPUT_MP", 8.0),
+            replicate_tile=int(_float("UPSCALER_REPLICATE_TILE", 400)),
             replicate_timeout_seconds=_float("REPLICATE_TIMEOUT_SECONDS", 1800.0),
             poll_seconds=_float("UPSCALER_POLL_SECONDS", 3.0),
-            seconds_per_mp=_float("UPSCALER_SECONDS_PER_MP", 4.0),
-            price_per_second=_float("UPSCALER_PRICE_PER_SECOND", 0.0014),
+            seconds_per_mp=_float("UPSCALER_SECONDS_PER_MP", 10.0),
+            price_per_second=_float("UPSCALER_PRICE_PER_SECOND", 0.000225),
             max_concurrent_jobs=max(1, _int("UPSCALER_MAX_CONCURRENT_JOBS", 1)),
             max_output_megapixels=_float("UPSCALER_MAX_OUTPUT_MEGAPIXELS", 400.0),
             print_dpi=_int("UPSCALER_PRINT_DPI", 300),
