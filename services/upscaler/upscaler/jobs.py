@@ -45,6 +45,8 @@ from upscaler.storage import Storage
 logger = logging.getLogger(__name__)
 
 JOB_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+# Jobs recorded before the model was stored on each job ran on this one.
+_LEGACY_MODEL = "nightmareai/real-esrgan"
 KINDS = {
     "print": {"label": "Print master", "mode": "plain"},
     "seamless": {"label": "Seamless pattern (keep the wrap)", "mode": "wrap"},
@@ -165,11 +167,17 @@ def delete_prefix(storage: Storage, prefix: str) -> None:
 
 
 def seconds_per_mp(storage: Storage, settings: Settings) -> tuple[float, str]:
-    """Median of finished jobs' seconds per input megapixel, else the setting."""
+    """Median of finished jobs' seconds per input megapixel, else the setting.
+
+    Only jobs run on the configured model count: a T4 job's rate says
+    nothing about an A100.
+    """
     rates = []
     for job in list_jobs(storage):
         mp = (job.get("input") or {}).get("megapixels")
         secs = job.get("predict_seconds") or job.get("run_seconds")
+        if job.get("model", _LEGACY_MODEL) != settings.replicate_model:
+            continue
         if job.get("state") == "done" and mp and secs:
             rates.append(secs / mp)
     if rates:
@@ -246,9 +254,9 @@ def prepare(
             return False
         blockers.append(
             f"Replicate input would be {size[0]}×{size[1]} ({mp:.2f} MP), above "
-            f"the {settings.replicate_max_input_mp:.2f} MP the model fits in GPU "
-            "memory. Resize the image (about 1448×1448 px, or the same pixel "
-            "count) and import it again."
+            f"the {settings.replicate_max_input_mp:g} MP limit set for "
+            f"{settings.replicate_model}. Resize the image to fewer pixels and "
+            "import it again."
         )
         return True
 
@@ -340,6 +348,7 @@ def prepare(
         "kind": kind,
         "mode": mode,
         "scale": scale,
+        "model": settings.replicate_model,
         "state": "staged",
         "created_at": now_iso(),
         "staging": {"source": source_name, "input": input_name},

@@ -32,6 +32,9 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+DEFAULT_MODEL = "lucataco/real-esrgan"
+
+
 @dataclass(frozen=True)
 class Settings:
     admin_username: str = "admin"
@@ -51,18 +54,21 @@ class Settings:
     import_root: Path = SERVICE_DIR / "imports"
     max_upload_mb: float = 50.0
     max_megapixels: float = 100.0
-    # Replicate. The model's input names (image, scale, face_enhance) come
-    # from PR #130's working code. The input ceiling is the model's own
-    # GPU limit, measured on 2026-11-12: 2,096,704 pixels (about 1448×1448).
-    # Timing and price are starting estimates; each is an env var.
+    # Replicate. lucataco/real-esrgan runs the same RealESRGAN_x4plus weights
+    # as nightmareai/real-esrgan, with the same inputs (image, scale,
+    # face_enhance), on an A100 80GB instead of a T4 16GB. The T4 version
+    # refused more than 2,096,704 pixels (measured 2026-11-12), so a phone
+    # export (1536×2048, 3.1 MP) could not go in one pass. The A100 ceiling
+    # is not measured yet; 6 MP is a guess well inside 5x the GPU memory.
+    # Price: A100 80GB is $0.0014/s on replicate.com/pricing.
     replicate_api_token: str = field(default="", repr=False)
-    replicate_model: str = "nightmareai/real-esrgan"
+    replicate_model: str = DEFAULT_MODEL
     replicate_version: str = ""
-    replicate_max_input_mp: float = 2.096704
+    replicate_max_input_mp: float = 6.0
     replicate_timeout_seconds: float = 1800.0
     poll_seconds: float = 3.0
-    seconds_per_mp: float = 10.0
-    price_per_second: float = 0.000225
+    seconds_per_mp: float = 4.0
+    price_per_second: float = 0.0014
     max_concurrent_jobs: int = 1
     # Pillow refuses to decode beyond this; post-processing raises it on
     # purpose because a 4x master is 16x the input's pixels.
@@ -94,13 +100,13 @@ class Settings:
             max_megapixels=_float("UPSCALER_MAX_MEGAPIXELS", 100.0),
             replicate_api_token=os.getenv("REPLICATE_API_TOKEN", "").strip(),
             replicate_model=os.getenv("REPLICATE_UPSCALE_MODEL", "").strip()
-            or "nightmareai/real-esrgan",
+            or DEFAULT_MODEL,
             replicate_version=os.getenv("REPLICATE_UPSCALE_VERSION", "").strip(),
-            replicate_max_input_mp=_float("UPSCALER_REPLICATE_MAX_INPUT_MP", 2.096704),
+            replicate_max_input_mp=_float("UPSCALER_REPLICATE_MAX_INPUT_MP", 6.0),
             replicate_timeout_seconds=_float("REPLICATE_TIMEOUT_SECONDS", 1800.0),
             poll_seconds=_float("UPSCALER_POLL_SECONDS", 3.0),
-            seconds_per_mp=_float("UPSCALER_SECONDS_PER_MP", 10.0),
-            price_per_second=_float("UPSCALER_PRICE_PER_SECOND", 0.000225),
+            seconds_per_mp=_float("UPSCALER_SECONDS_PER_MP", 4.0),
+            price_per_second=_float("UPSCALER_PRICE_PER_SECOND", 0.0014),
             max_concurrent_jobs=max(1, _int("UPSCALER_MAX_CONCURRENT_JOBS", 1)),
             max_output_megapixels=_float("UPSCALER_MAX_OUTPUT_MEGAPIXELS", 400.0),
             print_dpi=_int("UPSCALER_PRINT_DPI", 300),

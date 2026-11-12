@@ -198,7 +198,7 @@ def test_blockers_for_missing_token_and_oversized_input(
         c.headers.update(auth_header())
         job = get_job(storage, prepare(c, upload(c, png(gradient()))))
     assert any("REPLICATE_API_TOKEN" in b for b in job["blockers"])
-    assert any("above the 0.01 MP the model fits" in b for b in job["blockers"])
+    assert any("above the 0.01 MP limit set for" in b for b in job["blockers"])
 
 
 def test_startup_resumes_running_job_and_stops_unknown_ones(
@@ -421,7 +421,7 @@ def test_oversized_input_is_refused_before_it_is_built(settings, storage):
         c.headers.update(auth_header())
         job_id = prepare(c, upload(c, png(gradient())), kind="seamless")
     job = get_job(storage, job_id)
-    assert any("above the 0.01 MP the model fits" in b for b in job["blockers"])
+    assert any("above the 0.01 MP limit set for" in b for b in job["blockers"])
     assert job["input"]["width"] == 200 + 64
     assert job["staging"]["input"] == ""
     assert storage.list_names(f"staging/{job_id}/input") == []
@@ -500,8 +500,33 @@ def test_throttling_that_never_clears_fails_the_job(settings):
     assert all(w <= 30 for w in waits)
 
 
-def test_default_input_limit_is_the_measured_gpu_limit():
+def test_default_model_takes_a_phone_export_in_one_pass():
     from upscaler.config import Settings
 
-    limit = Settings().replicate_max_input_mp * 1_000_000
-    assert round(limit) == 2_096_704  # the model rejected 3,000,000 here
+    settings = Settings()
+    assert settings.replicate_model == "lucataco/real-esrgan"
+    # A 1536×2048 phone export is 3.1 MP; the old T4 model stopped at 2.1 MP.
+    assert settings.replicate_max_input_mp * 1_000_000 > 1536 * 2048
+
+
+def test_estimate_ignores_jobs_from_another_model(storage, settings):
+    from upscaler.jobs import job_name, seconds_per_mp
+
+    old = {
+        "id": "0000000000a1",
+        "state": "done",
+        "input": {"megapixels": 1.0},
+        "predict_seconds": 11.0,
+    }  # no model field: ran on the T4 model
+    new = {
+        "id": "0000000000b2",
+        "state": "done",
+        "input": {"megapixels": 2.0},
+        "predict_seconds": 6.0,
+        "model": settings.replicate_model,
+    }
+    for job in (old, new):
+        storage.put_json(job_name(job["id"]), job)
+    rate, basis = seconds_per_mp(storage, settings)
+    assert rate == 3.0
+    assert basis == "median of 1 finished job(s)"

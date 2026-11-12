@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 from PIL import Image
 from upscaler.app import create_app
-from upscaler.config import Settings
+from upscaler.config import DEFAULT_MODEL, Settings
 from upscaler.replicate import ReplicateClient
 from upscaler.sources import GalleryClient
 from upscaler.storage import Storage
@@ -130,7 +130,7 @@ class FakeReplicate:
             return httpx.Response(200, content=self.predictions[pid]["png"])
         if request.headers.get("authorization") != "Bearer r8_test":
             return httpx.Response(401, json={"detail": "bad token"})
-        if url == f"{self.API}/models/nightmareai/real-esrgan":
+        if url == f"{self.API}/models/{DEFAULT_MODEL}":
             return httpx.Response(
                 200, json={"is_official": False, "latest_version": {"id": "v123"}}
             )
