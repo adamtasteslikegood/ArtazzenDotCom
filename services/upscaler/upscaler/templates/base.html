@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{% block title %}Upscaler{% endblock %} · Artazzen</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='upscaler.css') }}">
+</head>
+<body>
+    <header class="top">
+        <h1>Print-master upscaler</h1>
+        <nav>
+            <a href="/import" {% if active == 'import' %}aria-current="page"{% endif %}>Import</a>
+            <a href="/library" {% if active == 'library' %}aria-current="page"{% endif %}>Library</a>
+            {% if gallery_admin_url %}<a href="{{ gallery_admin_url }}">Back to gallery admin</a>{% endif %}
+        </nav>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

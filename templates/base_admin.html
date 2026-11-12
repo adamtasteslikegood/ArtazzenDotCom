@@ -10,6 +10,7 @@
     {% block admin_nav %}
     <a href="{{ url_for('read_root') }}" class="button secondary">View Public Gallery</a>
     {% endblock %}
+    {% if upscaler_url %}<a href="{{ upscaler_url }}" class="button secondary">Upscaler</a>{% endif %}
 </nav>
 {% endblock %}
 
