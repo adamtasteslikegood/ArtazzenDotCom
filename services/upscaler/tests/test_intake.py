@@ -126,9 +126,11 @@ def test_failed_write_removes_partial_import(storage, settings, monkeypatch):
     real_put_json = storage.put_json
 
     def failing_put_json(name, value):
-        if "/by-sha/" in name:
-            raise RuntimeError("bucket write failed")
         real_put_json(name, value)
+        if "/by-sha/" in name:
+            # Simulate a connection failure after the bucket accepted the
+            # write but before the client received its response.
+            raise RuntimeError("bucket response was lost")
 
     monkeypatch.setattr(storage, "put_json", failing_put_json)
     with pytest.raises(RuntimeError):

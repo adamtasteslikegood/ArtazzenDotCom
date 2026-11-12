@@ -161,15 +161,17 @@ def import_bytes(
         # Three separate writes; the index goes last so a lookup never finds
         # a half-written import. If a later write fails, remove the earlier
         # ones so a retry starts clean instead of leaving an orphan.
-        written: list[str] = []
         try:
             storage.put_bytes(object_name, data, _MIME[info.ext])
-            written.append(object_name)
             storage.put_json(_record_name(import_id), record)
-            written.append(_record_name(import_id))
             storage.put_json(index_name, {"id": import_id})
         except Exception:
-            for name in reversed(written):
+            # A connection can fail after the bucket accepted a write but
+            # before the client received its response. Delete every known key,
+            # not only calls that returned successfully; deleting a missing S3
+            # key is harmless. Remove the index first so no lookup can discover
+            # a record while its cleanup is in progress.
+            for name in (index_name, _record_name(import_id), object_name):
                 try:
                     storage.delete(name)
                 except Exception:
