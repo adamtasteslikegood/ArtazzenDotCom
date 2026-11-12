@@ -40,6 +40,20 @@ def test_import_page_lists_gallery_pending_and_approved(client):
     assert page.headers["x-frame-options"] == "DENY"
 
 
+def test_import_tabs_have_server_rendered_fallback(client):
+    page = client.get("/import?tab=upload")
+    assert 'href="/import?tab=upload"' in page.text
+
+    def opening_tag(element_id: str) -> str:
+        element = page.text.index(f'id="{element_id}"')
+        start = page.text.rfind("<section", 0, element)
+        end = page.text.index(">", element)
+        return page.text[start : end + 1]
+
+    assert "hidden" in opening_tag("gallery")
+    assert "hidden" not in opening_tag("upload")
+
+
 def test_gallery_thumb_proxy_asks_for_thumbnail_width(client, fake_gallery):
     resp = client.get("/gallery/thumb/pending.png")
     assert resp.status_code == 200
@@ -91,7 +105,9 @@ def test_library_lists_imports_and_file_redirects_to_presigned_url(client):
     )
     imports = client.get("/api/imports").json()["imports"]
     assert len(imports) == 1
-    assert "a.png" in client.get("/library").text
+    library = client.get("/library").text
+    assert "a.png" in library
+    assert f'href="/imports/{imports[0]["id"]}/file"' in library
     resp = client.get(f"/imports/{imports[0]['id']}/file", follow_redirects=False)
     assert resp.status_code == 307
     assert "X-Amz-Signature" in resp.headers["location"]

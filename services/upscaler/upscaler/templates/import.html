@@ -19,7 +19,7 @@
 <div class="importer">
     <div class="tabs" role="tablist">
         {% for key, label in [('gallery', 'From gallery'), ('upload', 'Upload'), ('path', 'Server path')] %}
-        <a role="tab" href="#{{ key }}" id="tab-{{ key }}" aria-controls="{{ key }}" aria-selected="{{ 'true' if tab == key else 'false' }}">{{ label }}</a>
+        <a role="tab" href="/import?tab={{ key }}" id="tab-{{ key }}" aria-controls="{{ key }}" aria-selected="{{ 'true' if tab == key else 'false' }}">{{ label }}</a>
         {% endfor %}
     </div>
 
@@ -65,8 +65,8 @@
 </div>
 
 <script>
-    // Tabs: one importer, three sources. Works without JS via the active tab
-    // the server renders.
+    // Tabs: one importer, three sources. Without JS, each link asks the server
+    // to render the selected panel.
     (function () {
         const tabs = document.querySelectorAll('[role="tab"]');
         function show(key) {

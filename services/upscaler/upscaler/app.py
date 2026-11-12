@@ -81,15 +81,17 @@ def create_app(
         # The gallery's new-files endpoint runs its pending scan, which can
         # write sidecars and call OpenAI. List it only on a plain page load,
         # not again after every import.
-        if results is not None:
-            pass
-        elif gallery.configured:
-            try:
-                images = gallery.list_images()
-            except GalleryError as exc:
-                gallery_error = str(exc)
-        else:
-            gallery_error = "GALLERY_URL is not set, so the gallery cannot be listed."
+        if results is None:
+            if gallery.configured:
+                try:
+                    images = gallery.list_images()
+                except GalleryError as exc:
+                    gallery_error = str(exc)
+            else:
+                gallery_error = (
+                    "GALLERY_URL is not set, so the gallery cannot be listed."
+                )
+        active_tab = tab if tab in {"gallery", "upload", "path"} else "gallery"
         return templates.TemplateResponse(
             request,
             "import.html",
@@ -98,7 +100,7 @@ def create_app(
                 "gallery_listed": results is None,
                 "gallery_error": gallery_error,
                 "results": results,
-                "tab": tab or "gallery",
+                "tab": active_tab,
                 "max_upload_mb": settings.max_upload_mb,
                 "import_root": settings.import_root,
             },
@@ -115,8 +117,8 @@ def create_app(
     @app.get(
         "/import", response_class=HTMLResponse, dependencies=[Depends(verify_admin)]
     )
-    def import_page(request: Request) -> HTMLResponse:
-        return _render_import(request)
+    def import_page(request: Request, tab: str = "gallery") -> HTMLResponse:
+        return _render_import(request, tab=tab)
 
     @app.get("/gallery/thumb/{name}", dependencies=[Depends(verify_admin)])
     def gallery_thumb(name: str, request: Request) -> Response:

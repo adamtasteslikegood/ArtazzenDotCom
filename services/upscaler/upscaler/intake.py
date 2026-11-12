@@ -19,6 +19,7 @@ import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
+from threading import Lock
 from typing import Any
 
 from PIL import Image
@@ -28,6 +29,10 @@ from upscaler.storage import Storage
 
 IMPORT_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 _SAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+# Uvicorn's synchronous route handlers run in a thread pool. Keep the
+# de-duplication check and its writes atomic within this single-process service.
+_IMPORT_LOCK = Lock()
 
 _MIME = {
     ".jpg": "image/jpeg",
@@ -112,30 +117,31 @@ def import_bytes(
     info = check_image(data, filename, settings)
     sha = hashlib.sha256(data).hexdigest()
     index_name = f"imports/by-sha/{sha}.json"
-    existing = storage.get_json(index_name)
-    if existing:
-        record = storage.get_json(_record_name(existing.get("id", "")))
-        if record:
-            return record, False
+    with _IMPORT_LOCK:
+        existing = storage.get_json(index_name)
+        if existing:
+            record = storage.get_json(_record_name(existing.get("id", "")))
+            if record:
+                return record, False
 
-    import_id = secrets.token_hex(6)
-    object_name = f"imports/{import_id}-{safe_stem(filename)}{info.ext}"
-    storage.put_bytes(object_name, data, _MIME[info.ext])
-    record = {
-        "id": import_id,
-        "object": object_name,
-        "original_name": PurePosixPath(filename.replace("\\", "/")).name,
-        "bytes": len(data),
-        "sha256": sha,
-        "width": info.width,
-        "height": info.height,
-        "format": info.format,
-        "source": source,
-        "imported_at": datetime.now(UTC).isoformat(timespec="seconds"),
-    }
-    storage.put_json(_record_name(import_id), record)
-    storage.put_json(index_name, {"id": import_id})
-    return record, True
+        import_id = secrets.token_hex(6)
+        object_name = f"imports/{import_id}-{safe_stem(filename)}{info.ext}"
+        storage.put_bytes(object_name, data, _MIME[info.ext])
+        record = {
+            "id": import_id,
+            "object": object_name,
+            "original_name": PurePosixPath(filename.replace("\\", "/")).name,
+            "bytes": len(data),
+            "sha256": sha,
+            "width": info.width,
+            "height": info.height,
+            "format": info.format,
+            "source": source,
+            "imported_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        }
+        storage.put_json(_record_name(import_id), record)
+        storage.put_json(index_name, {"id": import_id})
+        return record, True
 
 
 def list_imports(storage: Storage) -> list[dict[str, Any]]:

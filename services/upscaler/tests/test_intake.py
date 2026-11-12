@@ -1,3 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 import pytest
 from upscaler.intake import (
     IntakeError,
@@ -60,6 +63,22 @@ def test_import_stores_copy_record_and_dedupes(storage, settings):
     assert [r["id"] for r in list_imports(storage)] == [record["id"]]
     assert get_import(storage, record["id"]) == record
     assert get_import(storage, "../etc") is None
+
+
+def test_concurrent_imports_are_deduplicated(storage, settings):
+    data = png_bytes()
+    ready = Barrier(2)
+
+    def run_import():
+        ready.wait()
+        return import_bytes(storage, data, "same.png", {"kind": "upload"}, settings)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: run_import(), range(2)))
+
+    assert sum(created for _, created in results) == 1
+    assert len({record["id"] for record, _ in results}) == 1
+    assert len(list_imports(storage)) == 1
 
 
 def test_select_path_files_guards(settings):
