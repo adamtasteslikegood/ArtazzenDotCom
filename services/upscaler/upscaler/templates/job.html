@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% set active = 'jobs' %}
+{% set live = job.state in ('queued', 'running', 'postprocessing') %}
+{% block title %}Job {{ job.id }}{% endblock %}
+{% block head %}{% if live %}<noscript><meta http-equiv="refresh" content="5"></noscript>{% endif %}{% endblock %}
+{% block content %}
+<h2>{{ kinds[job.kind].label if job.kind in kinds else job.kind }}: {{ job.original_name }}</h2>
+{% if error %}<p class="err" role="alert">{{ error }}</p>{% endif %}
+
+<section class="facts">
+    <h3>Prepared copy</h3>
+    <dl>
+        <dt>Source</dt><dd>{{ job.source.width }}×{{ job.source.height }} ({{ job.source.megapixels }} MP), {{ job.source.format }}</dd>
+        <dt>DPI tag</dt><dd>{{ job.source.dpi_tag or 'none' }}</dd>
+        <dt>ICC profile</dt><dd>{{ 'yes, kept in the master' if job.source.icc else 'none' }}</dd>
+        <dt>Seams</dt><dd>{{ job.seams.verdict }} (left/right {{ job.seams.lr_ratio }}, top/bottom {{ job.seams.tb_ratio }}; under 2 wraps cleanly)</dd>
+        {% if job.tile %}<dt>Extracted tile</dt><dd>{{ job.tile.box[2] }}×{{ job.tile.box[3] }} at ({{ job.tile.box[0] }}, {{ job.tile.box[1] }}), seam ratio {{ job.tile.seam_ratio }}{% if job.tile.good %} (good){% endif %}</dd>{% endif %}
+        <dt>Sent to Replicate</dt><dd>{% if job.input.width %}{{ job.input.width }}×{{ job.input.height }} ({{ job.input.megapixels }} MP){% else %}nothing{% endif %}</dd>
+        <dt>Master</dt><dd>{% if job.target.width %}{{ job.target.width }}×{{ job.target.height }} at {{ job.target.dpi }} DPI, prints {{ job.target.print_inches[0] }}″×{{ job.target.print_inches[1] }}″{% else %}–{% endif %}</dd>
+        <dt>Estimate</dt><dd>about {{ job.estimate.seconds }} s, about ${{ '%.3f' | format(job.estimate.cost_usd) }} ({{ job.estimate.basis }})</dd>
+    </dl>
+    {% if job.tile and job.state == 'staged' %}
+    <p><a href="/jobs/{{ job.id }}/files/tile-proof"><img class="proof" src="/jobs/{{ job.id }}/files/tile-proof" alt="3×3 tiling proof of the extracted tile"></a></p>
+    {% endif %}
+    {% for w in job.warnings %}<p class="warn">⚠ {{ w }}</p>{% endfor %}
+    {% for b in job.blockers %}<p class="err">✕ {{ b }}</p>{% endfor %}
+</section>
+
+{% if job.state == 'staged' %}
+<div class="actions">
+    {% if not job.blockers %}
+    <form method="post" action="/jobs/{{ job.id }}/confirm"><button type="submit">Start upscale</button></form>
+    {% endif %}
+    <form method="post" action="/jobs/{{ job.id }}/cancel"><button type="submit" class="secondary">Cancel and delete the copy</button></form>
+</div>
+{% else %}
+<section class="progress" data-job="{{ job.id }}" data-estimate="{{ job.estimate.seconds }}" data-started="{{ job.started_at or job.queued_at or '' }}">
+    <h3>Progress</h3>
+    <p>State: <strong class="state {{ job.state }}" id="state">{{ job.state }}</strong> <span id="elapsed"></span></p>
+    <progress id="bar" max="100" {% if job.state == 'done' %}value="100"{% endif %}></progress>
+    <p class="err" id="error" {% if not job.error %}hidden{% endif %}>{{ job.error }}</p>
+    <div id="downloads" {% if job.state != 'done' %}hidden{% endif %}>
+        <p><a id="master" href="/jobs/{{ job.id }}/files/master">Download the master (PNG)</a> <span id="size">{{ job.results.size or '' }}</span></p>
+        <p id="proof-wrap" {% if not job.results.proof %}hidden{% endif %}><img class="proof" src="{% if job.results.proof %}/jobs/{{ job.id }}/files/proof{% endif %}" id="proof" alt="2×2 tiling proof of the master"></p>
+    </div>
+    <details><summary>Replicate log</summary><pre id="logs">{{ job.logs }}</pre></details>
+    {% if live %}
+    <form method="post" action="/jobs/{{ job.id }}/cancel"><button type="submit" class="secondary">Cancel</button></form>
+    {% endif %}
+</section>
+{% if live %}
+<script>
+    (function () {
+        const root = document.querySelector('.progress');
+        const id = root.dataset.job;
+        const estimate = Number(root.dataset.estimate) || 0;
+        const $ = (sel) => document.getElementById(sel);
+        function render(job) {
+            $('state').textContent = job.state;
+            $('state').className = 'state ' + job.state;
+            $('logs').textContent = job.logs || '';
+            const start = Date.parse(job.started_at || job.queued_at || '');
+            if (!isNaN(start) && job.state !== 'done') {
+                const secs = Math.max(0, Math.round((Date.now() - start) / 1000));
+                $('elapsed').textContent = secs + ' s of about ' + estimate + ' s';
+                if (estimate) $('bar').value = Math.min(95, (secs / estimate) * 100);
+            }
+            if (job.error) { $('error').hidden = false; $('error').textContent = job.error; }
+            if (job.state === 'done') {
+                $('bar').value = 100;
+                $('elapsed').textContent = '';
+                $('downloads').hidden = false;
+                $('size').textContent = (job.results && job.results.size) || '';
+                if (job.results && job.results.proof) {
+                    $('proof').src = '/jobs/' + id + '/files/proof';
+                    $('proof-wrap').hidden = false;
+                }
+            }
+            return ['done', 'error', 'cancelled'].indexOf(job.state) === -1;
+        }
+        function poll() {
+            fetch('/api/jobs/' + id, { credentials: 'same-origin' })
+                .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+                .then((job) => { if (render(job)) setTimeout(poll, 3000); else location.reload(); })
+                .catch(() => setTimeout(poll, 6000));
+        }
+        poll();
+    })();
+</script>
+{% endif %}
+{% endif %}
+{% endblock %}

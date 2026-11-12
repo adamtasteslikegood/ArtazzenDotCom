@@ -1,16 +1,20 @@
-"""Upscaler service: import copies into the bucket and browse the library.
+"""Upscaler service: import copies, then prepare, confirm and run jobs.
 
 Run: ``uvicorn upscaler.app:create_app --factory`` from ``services/upscaler``.
 
-Importing never processes anything. Jobs (prepare, confirm, run) arrive in a
-later change and only ever act on an explicit copy in the bucket.
+Importing never processes anything. A job starts only after Prepare (which
+copies the import to ``staging/`` and analyses the copy) and an explicit
+Confirm.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -21,6 +25,9 @@ from starlette import status
 from upscaler.auth import SecurityHeadersMiddleware, verify_admin
 from upscaler.config import Settings
 from upscaler.intake import IntakeError, get_import, import_bytes, list_imports
+from upscaler.jobs import KINDS, SCALES, JobError, JobRunner, get_job, list_jobs
+from upscaler.jobs import prepare as prepare_job
+from upscaler.replicate import ReplicateClient
 from upscaler.sources import (
     GalleryClient,
     GalleryError,
@@ -40,12 +47,29 @@ def create_app(
     settings: Settings | None = None,
     storage: Storage | None = None,
     gallery: GalleryClient | None = None,
+    replicate: ReplicateClient | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
-    app = FastAPI(title="Artazzen Upscaler", docs_url=None, redoc_url=None)
+    storage = storage or Storage.from_settings(settings)
+    runner = JobRunner(storage, settings, replicate or ReplicateClient(settings))
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        try:
+            resumed = await runner.resume()
+            if resumed:
+                logger.info("Resumed jobs: %s", ", ".join(resumed))
+        except Exception:
+            logger.exception("Could not resume jobs")
+        yield
+
+    app = FastAPI(
+        title="Artazzen Upscaler", docs_url=None, redoc_url=None, lifespan=lifespan
+    )
     app.state.settings = settings
-    app.state.storage = storage or Storage.from_settings(settings)
+    app.state.storage = storage
     app.state.gallery = gallery or GalleryClient(settings)
+    app.state.runner = runner
     app.add_middleware(SecurityHeadersMiddleware)
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -231,9 +255,16 @@ def create_app(
     @app.get(
         "/library", response_class=HTMLResponse, dependencies=[Depends(verify_admin)]
     )
-    def library(request: Request) -> HTMLResponse:
+    def library(request: Request, error: str = "") -> HTMLResponse:
         return templates.TemplateResponse(
-            request, "library.html", {"imports": list_imports(_storage(request))}
+            request,
+            "library.html",
+            {
+                "imports": list_imports(_storage(request)),
+                "kinds": KINDS,
+                "scales": SCALES,
+                "error": error[:300],
+            },
         )
 
     @app.get("/api/imports", dependencies=[Depends(verify_admin)])
@@ -249,6 +280,99 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
         return RedirectResponse(
             storage.presign_get(record["object"], expires=600),
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    # --- jobs ---------------------------------------------------------------
+
+    def _job_or_404(storage: Storage, job_id: str) -> dict[str, Any]:
+        job = get_job(storage, job_id)
+        if not job:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return job
+
+    def _see(url: str) -> RedirectResponse:
+        return RedirectResponse(url, status_code=status.HTTP_303_SEE_OTHER)
+
+    @app.post("/jobs/prepare", dependencies=[Depends(verify_admin)])
+    def prepare(
+        request: Request,
+        import_id: str = Form(...),
+        kind: str = Form(...),
+        scale: int = Form(4),
+    ) -> RedirectResponse:
+        try:
+            job = prepare_job(_storage(request), settings, import_id, kind, scale)
+        except JobError as exc:
+            return _see(f"/library?error={quote(str(exc))}")
+        return _see(f"/jobs/{job['id']}")
+
+    @app.get("/jobs", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
+    def jobs_page(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request, "jobs.html", {"jobs": list_jobs(_storage(request)), "kinds": KINDS}
+        )
+
+    @app.get(
+        "/jobs/{job_id}",
+        response_class=HTMLResponse,
+        dependencies=[Depends(verify_admin)],
+    )
+    def job_page(job_id: str, request: Request, error: str = "") -> HTMLResponse:
+        job = _job_or_404(_storage(request), job_id)
+        return templates.TemplateResponse(
+            request,
+            "job.html",
+            {"job": job, "kinds": KINDS, "error": error[:300]},
+        )
+
+    @app.post("/jobs/{job_id}/confirm", dependencies=[Depends(verify_admin)])
+    async def confirm(job_id: str, request: Request) -> RedirectResponse:
+        storage = _storage(request)
+        job = await asyncio.to_thread(_job_or_404, storage, job_id)
+        try:
+            await runner.confirm(job)
+        except JobError as exc:
+            return _see(f"/jobs/{job_id}?error={quote(str(exc))}")
+        return _see(f"/jobs/{job_id}")
+
+    @app.post("/jobs/{job_id}/cancel", dependencies=[Depends(verify_admin)])
+    async def cancel(job_id: str, request: Request) -> RedirectResponse:
+        storage = _storage(request)
+        job = await asyncio.to_thread(_job_or_404, storage, job_id)
+        was_staged = job["state"] == "staged"
+        try:
+            await runner.cancel(job)
+        except JobError as exc:
+            return _see(f"/jobs/{job_id}?error={quote(str(exc))}")
+        return _see("/library" if was_staged else f"/jobs/{job_id}")
+
+    @app.get("/api/jobs/{job_id}", dependencies=[Depends(verify_admin)])
+    def api_job(job_id: str, request: Request) -> JSONResponse:
+        return JSONResponse(_job_or_404(_storage(request), job_id))
+
+    # Files a job page may link to: results, and the tile proof while staged.
+    _JOB_FILES = {
+        "master": ("results", "master"),
+        "proof": ("results", "proof"),
+        "tile-proof": ("staging", "proof.jpg"),
+    }
+
+    @app.get("/jobs/{job_id}/files/{name}", dependencies=[Depends(verify_admin)])
+    def job_file(job_id: str, name: str, request: Request) -> RedirectResponse:
+        storage = _storage(request)
+        job = _job_or_404(storage, job_id)
+        if name not in _JOB_FILES:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        where, key = _JOB_FILES[name]
+        if where == "results":
+            object_name = (job.get("results") or {}).get(key)
+        else:
+            object_name = f"staging/{job_id}/{key}" if job.get("tile") else None
+        if not object_name:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        return RedirectResponse(
+            storage.presign_get(object_name, expires=600),
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
         )
 

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% set active = 'jobs' %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+{% if not jobs %}
+<p>No jobs yet. Prepare one from the <a href="/library">Library</a>.</p>
+{% else %}
+<table class="library">
+    <thead>
+        <tr><th>Job</th><th>Image</th><th>Type</th><th>State</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+        {% for job in jobs %}
+        <tr>
+            <td><a href="/jobs/{{ job.id }}">{{ job.id }}</a></td>
+            <td>{{ job.original_name }}</td>
+            <td>{{ kinds[job.kind].label if job.kind in kinds else job.kind }}, {{ job.scale }}×</td>
+            <td><span class="state {{ job.state }}">{{ job.state }}</span></td>
+            <td><time datetime="{{ job.created_at }}">{{ job.created_at[:16] | replace('T', ' ') }}</time></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -79,6 +79,15 @@ class Storage:
                 names.append(obj["Key"][len(self.prefix) :])
         return names
 
+    def upload_file(self, name: str, path: str, content_type: str) -> None:
+        """Multipart upload from disk, for masters too large to hold twice."""
+        self.client.upload_file(
+            path, self.bucket, self.key(name), ExtraArgs={"ContentType": content_type}
+        )
+
+    def download_file(self, name: str, path: str) -> None:
+        self.client.download_file(self.bucket, self.key(name), path)
+
     def delete(self, name: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=self.key(name))
 
