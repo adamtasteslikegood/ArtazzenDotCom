@@ -514,6 +514,13 @@ class JobRunner:
     async def confirm(self, job: dict[str, Any]) -> dict[str, Any]:
         if job["state"] != "staged":
             raise JobError(f"Job is {job['state']}, not waiting for confirmation")
+        prepared_model = job.get("model", _LEGACY_MODEL)
+        if prepared_model != self.settings.replicate_model:
+            raise JobError(
+                f"Job was prepared for {prepared_model}, but the service now uses "
+                f"{self.settings.replicate_model}. Prepare a new job so its input "
+                "limits and estimate match the active model."
+            )
         if job.get("blockers"):
             raise JobError(job["blockers"][0])
         try:

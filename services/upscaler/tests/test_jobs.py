@@ -166,6 +166,20 @@ def test_tile_job_on_a_composition_is_blocked(client, storage, fake_replicate):
     assert fake_replicate.requests == []
 
 
+def test_confirm_rejects_a_job_prepared_for_another_model(
+    client, storage, fake_replicate
+):
+    job_id = prepare(client, upload(client, png(gradient())))
+    job = get_job(storage, job_id)
+    save_job(storage, job, model="nightmareai/real-esrgan")
+
+    resp = client.post(f"/jobs/{job_id}/confirm", follow_redirects=False)
+
+    assert "Prepare%20a%20new%20job" in resp.headers["location"]
+    assert get_job(storage, job_id)["state"] == "staged"
+    assert fake_replicate.requests == []
+
+
 def test_replicate_failure_is_recorded(client, storage, fake_replicate):
     fake_replicate.fail_with = "CUDA out of memory"
     job_id = prepare(client, upload(client, png(gradient())))
