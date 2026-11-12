@@ -52,12 +52,13 @@ class Settings:
     max_upload_mb: float = 50.0
     max_megapixels: float = 100.0
     # Replicate. The model's input names (image, scale, face_enhance) come
-    # from PR #130's working code. The input ceiling, timing and price are
-    # assumptions until checked against the model page; each is an env var.
+    # from PR #130's working code. The input ceiling is the model's own
+    # GPU limit, measured on 2026-11-12: 2,096,704 pixels (about 1448×1448).
+    # Timing and price are starting estimates; each is an env var.
     replicate_api_token: str = field(default="", repr=False)
     replicate_model: str = "nightmareai/real-esrgan"
     replicate_version: str = ""
-    replicate_max_input_mp: float = 4.0
+    replicate_max_input_mp: float = 2.096704
     replicate_timeout_seconds: float = 1800.0
     poll_seconds: float = 3.0
     seconds_per_mp: float = 10.0
@@ -95,7 +96,7 @@ class Settings:
             replicate_model=os.getenv("REPLICATE_UPSCALE_MODEL", "").strip()
             or "nightmareai/real-esrgan",
             replicate_version=os.getenv("REPLICATE_UPSCALE_VERSION", "").strip(),
-            replicate_max_input_mp=_float("UPSCALER_REPLICATE_MAX_INPUT_MP", 4.0),
+            replicate_max_input_mp=_float("UPSCALER_REPLICATE_MAX_INPUT_MP", 2.096704),
             replicate_timeout_seconds=_float("REPLICATE_TIMEOUT_SECONDS", 1800.0),
             poll_seconds=_float("UPSCALER_POLL_SECONDS", 3.0),
             seconds_per_mp=_float("UPSCALER_SECONDS_PER_MP", 10.0),

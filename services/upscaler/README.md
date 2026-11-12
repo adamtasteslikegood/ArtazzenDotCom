@@ -50,6 +50,12 @@ Estimates: seconds per input megapixel × `UPSCALER_PRICE_PER_SECOND`. The rate
 is `UPSCALER_SECONDS_PER_MP` until a job finishes, then the median of finished
 jobs (Replicate's `predict_time` where it reports one).
 
+Measured on the live service (2026-11-12, `nightmareai/real-esrgan`): a
+1280×960 print master took 11 s of predict time (about $0.0025) and 30 s end
+to end. The model refuses inputs above 2,096,704 pixels. While the Replicate
+account holds under $5 of credit, it allows a burst of one prediction request
+(6 a minute); the client waits out a 429 and resends, up to six times.
+
 On start-up the service re-attaches to jobs that were running when it stopped
 (it polls the saved prediction instead of starting a new one) and restarts
 queued ones. A job is marked running before its prediction is created, so one
@@ -90,7 +96,7 @@ logs/<YYYY-MM-DD>.jsonl       one line per job event
 | `UPSCALER_MAX_UPLOAD_MB`, `UPSCALER_MAX_MEGAPIXELS`                  | Intake limits (defaults 50 and 100).                                                                                   |
 | `REPLICATE_API_TOKEN`                                                | Replicate API token. Set on this service only.                                                                         |
 | `REPLICATE_UPSCALE_MODEL`, `REPLICATE_UPSCALE_VERSION`               | Model (default `nightmareai/real-esrgan`, latest version) and an optional pinned version id.                           |
-| `UPSCALER_REPLICATE_MAX_INPUT_MP`                                    | Largest input sent to Replicate (default 4). Assumed from the model's "1440p recommended" note; check it.              |
+| `UPSCALER_REPLICATE_MAX_INPUT_MP`                                    | Largest input sent to Replicate (default 2.096704). The model rejects more than 2,096,704 pixels (measured).           |
 | `UPSCALER_SECONDS_PER_MP`, `UPSCALER_PRICE_PER_SECOND`               | Estimate until jobs finish (defaults 10 s and $0.000225/s). Assumed; check the model's pricing.                        |
 | `UPSCALER_MAX_CONCURRENT_JOBS`                                       | Jobs on Replicate at once (default 1).                                                                                 |
 | `UPSCALER_MAX_OUTPUT_MEGAPIXELS`                                     | Largest output post-processing decodes (default 400).                                                                  |

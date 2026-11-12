@@ -198,7 +198,7 @@ def test_blockers_for_missing_token_and_oversized_input(
         c.headers.update(auth_header())
         job = get_job(storage, prepare(c, upload(c, png(gradient()))))
     assert any("REPLICATE_API_TOKEN" in b for b in job["blockers"])
-    assert any("above the 0.01 MP limit" in b for b in job["blockers"])
+    assert any("above the 0.01 MP the model fits" in b for b in job["blockers"])
 
 
 def test_startup_resumes_running_job_and_stops_unknown_ones(
@@ -421,7 +421,7 @@ def test_oversized_input_is_refused_before_it_is_built(settings, storage):
         c.headers.update(auth_header())
         job_id = prepare(c, upload(c, png(gradient())), kind="seamless")
     job = get_job(storage, job_id)
-    assert any("above the 0.01 MP limit" in b for b in job["blockers"])
+    assert any("above the 0.01 MP the model fits" in b for b in job["blockers"])
     assert job["input"]["width"] == 200 + 64
     assert job["staging"]["input"] == ""
     assert storage.list_names(f"staging/{job_id}/input") == []
@@ -455,3 +455,53 @@ def test_cancel_from_a_stale_copy_still_cancels(client, storage, fake_replicate)
     assert job["state"] == "cancelled"
     assert get_job(storage, job_id)["state"] == "cancelled"
     assert any(str(r.url).endswith("/p1/cancel") for r in fake_replicate.requests)
+
+
+def _throttled_client(settings, responses):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return responses.pop(0) if responses else httpx.Response(429)
+
+    client = ReplicateClient(settings, transport=httpx.MockTransport(handler))
+    waits = []
+
+    async def no_sleep(seconds):
+        waits.append(seconds)
+
+    client._sleep = no_sleep
+    return client, calls, waits
+
+
+def test_throttled_create_waits_and_resends(settings):
+    # Low-credit accounts get a burst of one; a 429 created nothing.
+    responses = [
+        httpx.Response(429, headers={"retry-after": "2"}),
+        httpx.Response(429, json={"detail": "throttled"}),
+        httpx.Response(201, json={"id": "p1", "status": "starting"}),
+    ]
+    client, calls, waits = _throttled_client(
+        replace(settings, replicate_version="v1"), responses
+    )
+    prediction = asyncio.run(client.create("https://bucket/x.png", 4))
+    assert prediction["id"] == "p1"
+    assert len(calls) == 3
+    assert waits == [2.0, 10.0]
+
+
+def test_throttling_that_never_clears_fails_the_job(settings):
+    client, calls, waits = _throttled_client(
+        replace(settings, replicate_version="v1"), []
+    )
+    with pytest.raises(ReplicateError, match="Replicate returned 429"):
+        asyncio.run(client.create("https://bucket/x.png", 4))
+    assert len(calls) == 7
+    assert all(w <= 30 for w in waits)
+
+
+def test_default_input_limit_is_the_measured_gpu_limit():
+    from upscaler.config import Settings
+
+    limit = Settings().replicate_max_input_mp * 1_000_000
+    assert round(limit) == 2_096_704  # the model rejected 3,000,000 here

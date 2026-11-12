@@ -12,6 +12,7 @@ are downloaded without it.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -24,6 +25,18 @@ API_BASE = "https://api.replicate.com/v1"
 TERMINAL = frozenset({"succeeded", "failed", "canceled"})
 _CHUNK = 1024 * 1024
 _MAX_REDIRECTS = 5
+# Replicate throttles accounts with little credit to a burst of one request
+# (6/min). A 429 means nothing was created, so waiting and resending is safe.
+_THROTTLE_RETRIES = 6
+_THROTTLE_MAX_WAIT = 30.0
+
+
+def _retry_after(resp: httpx.Response) -> float:
+    try:
+        wait = float(resp.headers.get("retry-after", ""))
+    except ValueError:
+        wait = 10.0
+    return min(max(wait, 1.0), _THROTTLE_MAX_WAIT)
 
 
 class ReplicateError(RuntimeError):
@@ -37,6 +50,7 @@ class ReplicateClient:
         self.settings = settings
         self._transport = transport
         self._target: tuple[str, dict[str, str]] | None = None
+        self._sleep = asyncio.sleep  # replaced in tests
 
     @property
     def configured(self) -> bool:
@@ -62,7 +76,11 @@ class ReplicateClient:
     async def _call(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         try:
             async with self._api() as client:
-                resp = await client.request(method, url, **kwargs)
+                for attempt in range(_THROTTLE_RETRIES + 1):
+                    resp = await client.request(method, url, **kwargs)
+                    if resp.status_code != 429 or attempt == _THROTTLE_RETRIES:
+                        break
+                    await self._sleep(_retry_after(resp))
         except httpx.HTTPError as exc:
             raise ReplicateError(f"Replicate request failed: {exc}") from None
         if resp.status_code >= 400:

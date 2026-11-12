@@ -245,8 +245,10 @@ def prepare(
         if mp <= settings.replicate_max_input_mp:
             return False
         blockers.append(
-            f"Replicate input would be {size[0]}×{size[1]} ({mp:.1f} MP), above "
-            f"the {settings.replicate_max_input_mp:g} MP limit set for this model."
+            f"Replicate input would be {size[0]}×{size[1]} ({mp:.2f} MP), above "
+            f"the {settings.replicate_max_input_mp:.2f} MP the model fits in GPU "
+            "memory. Resize the image (about 1448×1448 px, or the same pixel "
+            "count) and import it again."
         )
         return True
 
