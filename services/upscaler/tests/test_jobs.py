@@ -405,6 +405,23 @@ def test_wrong_output_dimensions_are_rejected_before_decode(
         postprocess(storage, settings, job, output)
 
 
+def test_prefit_output_limit_reports_the_provider_size(settings, storage, tmp_path):
+    tight = replace(settings, max_output_megapixels=1)
+    storage.put_bytes("source.png", png(gradient(2, 2)), "image/png")
+    job = {
+        "staging": {"source": "source.png"},
+        "input": {"width": 160, "height": 120},
+        "scale": 4,
+        "prefit": 2,
+    }
+
+    with pytest.raises(
+        ReplicateError,
+        match=r"Provider output is 1280×960 before the prefit correction.*1 MP",
+    ):
+        postprocess(storage, tight, job, tmp_path / "not-decoded.png")
+
+
 def test_output_download_rejects_unexpected_hosts_and_redirects(settings, tmp_path):
     requests = []
 

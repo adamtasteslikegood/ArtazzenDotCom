@@ -451,7 +451,8 @@ def postprocess(
     output_limit = int(settings.max_output_megapixels * 1_000_000)
     if returned[0] * returned[1] > output_limit:
         raise ReplicateError(
-            f"Expected output is {expected[0]}×{expected[1]}, above the "
+            f"Provider output is {returned[0]}×{returned[1]} before the "
+            "prefit correction, above the "
             f"{settings.max_output_megapixels:g} MP output limit"
         )
     # Compare the provider-controlled header before decoding pixels. This
