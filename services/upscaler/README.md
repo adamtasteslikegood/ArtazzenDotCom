@@ -62,7 +62,11 @@ input on any GPU, measured on 2026-11-12:
 The limit is 2³¹ ÷ (64 feature channels × 16), so it comes from 32-bit
 indexing, not from GPU memory. On the live service the T4 model took 11 s of
 predict time for a 1280×960 print master (about $0.0025) and 30 s end to end.
-The 8 MP input limit is a guess above a 5.6 MP iPad export. That model
+With tiling, measured on the live service: a 1536×2048 phone export at 4×
+took 35 s of predict time (about $0.008) and 69 s end to end, giving a
+6144×8192 master; a 2048×2732 export took 56 s (about $0.0125) and 102 s,
+giving 8192×10928. Both are about 10 s per input megapixel. The 8 MP input
+limit is not measured; it sits above that 5.6 MP export. That model
 enlarges an input under 300 px tall before upscaling, so Prepare refuses
 those. It writes its output in the input's format, so only PNG copies are sent
 as they are.
