@@ -52,5 +52,22 @@ button { justify-self: start; font: inherit; padding: .55rem 1.1rem; border: 0; 
   .library thead { display: none; }
   .library tr { display: grid; grid-template-columns: 4.5rem 1fr; }
   .library td { border: 0; padding: .1rem .4rem; }
-  .library td:first-child { grid-row: span 5; }
+  .library td:first-child { grid-row: span 6; }
 }
+:root { --warn: #8a5a00; }
+@media (prefers-color-scheme: dark) { :root { --warn: #f0c060; } }
+.warn { color: var(--warn); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+form.prepare { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+select { font: inherit; padding: .35rem; border: 1px solid var(--line); border-radius: .3rem; background: var(--bg); color: inherit; max-width: 100%; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+.facts dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.proof { max-width: min(100%, 36rem); border: 1px solid var(--line); border-radius: .25rem; }
+progress { width: 100%; height: .8rem; }
+.state.done { color: var(--ok); }
+.state.error, .state.cancelled { color: var(--err); }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; max-height: 20rem; overflow: auto; }
+@media (max-width: 40rem) { .facts dl { grid-template-columns: 1fr; } .facts dd { margin-bottom: .4rem; } }

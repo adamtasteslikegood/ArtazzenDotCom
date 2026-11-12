@@ -6,6 +6,7 @@
     <meta name="robots" content="noindex, nofollow">
     <title>{% block title %}Upscaler{% endblock %} · Artazzen</title>
     <link rel="stylesheet" href="{{ url_for('static', path='upscaler.css') }}">
+    {% block head %}{% endblock %}
 </head>
 <body>
     <header class="top">
@@ -13,6 +14,7 @@
         <nav>
             <a href="/import" {% if active == 'import' %}aria-current="page"{% endif %}>Import</a>
             <a href="/library" {% if active == 'library' %}aria-current="page"{% endif %}>Library</a>
+            <a href="/jobs" {% if active == 'jobs' %}aria-current="page"{% endif %}>Jobs</a>
             {% if gallery_admin_url %}<a href="{{ gallery_admin_url }}">Back to gallery admin</a>{% endif %}
         </nav>
     </header>

@@ -1,6 +1,8 @@
 import base64
 import io
+import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 import boto3
 import httpx
@@ -10,6 +12,7 @@ from moto import mock_aws
 from PIL import Image
 from upscaler.app import create_app
 from upscaler.config import Settings
+from upscaler.replicate import ReplicateClient
 from upscaler.sources import GalleryClient
 from upscaler.storage import Storage
 
@@ -40,6 +43,11 @@ def settings(tmp_path: Path) -> Settings:
         import_root=root,
         max_upload_mb=1,
         max_megapixels=1,
+        replicate_api_token="r8_test",
+        # A neutral model, so the small test images are not caught by
+        # xinntao/realesrgan's 300 px minimum; its own tests set it.
+        replicate_model="test/real-esrgan",
+        poll_seconds=0,
     )
 
 
@@ -90,10 +98,113 @@ def fake_gallery() -> FakeGallery:
     return FakeGallery()
 
 
+class FakeReplicate:
+    """Replicate's API plus its output host.
+
+    The "upscale" fetches the presigned input from the mocked bucket and
+    resizes it by the requested scale, so crops and sizes are checked for real.
+    """
+
+    API = "https://api.replicate.com/v1"
+
+    def __init__(self, storage):
+        self.storage = storage
+        self.requests: list[httpx.Request] = []
+        self.predictions: dict[str, dict] = {}
+        self.polls_before_done = 1
+        self.fail_with = ""
+        self.created = 0
+
+    def _prediction(self, pid):
+        return {
+            "id": pid,
+            "status": "starting",
+            "urls": {
+                "get": f"{self.API}/predictions/{pid}",
+                "cancel": f"{self.API}/predictions/{pid}/cancel",
+            },
+        }
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        url = str(request.url)
+        if request.url.host == "replicate.delivery":
+            pid = request.url.path.split("/")[1]
+            return httpx.Response(200, content=self.predictions[pid]["png"])
+        if request.headers.get("authorization") != "Bearer r8_test":
+            return httpx.Response(401, json={"detail": "bad token"})
+        if url.startswith(f"{self.API}/models/"):
+            return httpx.Response(
+                200, json={"is_official": False, "latest_version": {"id": "v123"}}
+            )
+        if url == f"{self.API}/predictions" and request.method == "POST":
+            body = json.loads(request.content)
+            assert body["version"] == "v123"
+            self.created += 1
+            pid = f"p{self.created}"
+            self.predictions[pid] = {
+                "input": body["input"],
+                "polls": 0,
+                "status": "starting",
+            }
+            return httpx.Response(201, json=self._prediction(pid))
+        if url.endswith("/cancel"):
+            pid = url.split("/")[-2]
+            self.predictions[pid]["status"] = "canceled"
+            return httpx.Response(200, json={"status": "canceled"})
+        if url.startswith(f"{self.API}/predictions/"):
+            pid = url.rsplit("/", 1)[1]
+            pred = self.predictions[pid]
+            pred["polls"] += 1
+            out = self._prediction(pid)
+            if pred["status"] == "canceled":
+                out["status"] = "canceled"
+            elif pred["polls"] <= self.polls_before_done:
+                out["status"] = "processing"
+                out["logs"] = f"Running upscale... poll {pred['polls']}"
+            elif self.fail_with:
+                out["status"] = "failed"
+                out["error"] = self.fail_with
+            else:
+                pred["png"] = self._upscale(pred["input"])
+                out.update(
+                    status="succeeded",
+                    output=f"https://replicate.delivery/{pid}/out.png",
+                    metrics={"predict_time": 2.5},
+                    logs="done",
+                )
+            return httpx.Response(200, json=out)
+        return httpx.Response(404)
+
+    def _upscale(self, inp) -> bytes:
+        # xinntao/realesrgan (sent "tile") names its input "img" and doubles
+        # an input under 300 px tall before the upscale.
+        key = urlparse(inp.get("img") or inp["image"]).path.lstrip("/")
+        if key.startswith(BUCKET + "/"):
+            key = key[len(BUCKET) + 1 :]
+        data = self.storage.client.get_object(Bucket=BUCKET, Key=key)["Body"].read()
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        if "tile" in inp and img.height < 300:
+            img = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
+        s = inp["scale"]
+        out = img.resize((img.width * s, img.height * s), Image.NEAREST)
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return buf.getvalue()
+
+
 @pytest.fixture
-def client(settings, storage, fake_gallery):
+def fake_replicate(storage) -> FakeReplicate:
+    return FakeReplicate(storage)
+
+
+@pytest.fixture
+def client(settings, storage, fake_gallery, fake_replicate):
     gallery = GalleryClient(settings, transport=httpx.MockTransport(fake_gallery))
-    app = create_app(settings=settings, storage=storage, gallery=gallery)
+    replicate = ReplicateClient(settings, transport=httpx.MockTransport(fake_replicate))
+    app = create_app(
+        settings=settings, storage=storage, gallery=gallery, replicate=replicate
+    )
     with TestClient(app) as c:
         c.headers.update(auth_header())
         yield c
