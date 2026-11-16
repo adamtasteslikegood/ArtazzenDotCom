@@ -104,6 +104,9 @@ logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.globals["site_url"] = SITE_URL
+# Public URL of the separate upscaler service (services/upscaler). The admin
+# nav links to it only when set; the gallery itself never upscales.
+templates.env.globals["upscaler_url"] = os.getenv("UPSCALER_URL", "").strip()
 
 # RLock: writers that must make a read-merge-write cycle atomic (e.g. the
 # AI populate persist path) hold it across _write_sidecar, which acquires

@@ -3552,3 +3552,15 @@ def test_artwork_page_requires_approval(client, tmp_path, monkeypatch, image_sta
     response = client.get("/artwork/a.jpg")
     assert response.status_code == 404
     assert "Secret Title" not in response.text
+
+
+def test_admin_nav_links_upscaler_only_when_configured(authed_client, monkeypatch):
+    from app import config as gallery_config
+
+    globals_ = gallery_config.templates.env.globals
+    monkeypatch.setitem(globals_, "upscaler_url", "")
+    assert "Upscaler" not in authed_client.get("/admin").text
+
+    monkeypatch.setitem(globals_, "upscaler_url", "https://upscaler.example")
+    page = authed_client.get("/admin").text
+    assert 'href="https://upscaler.example"' in page

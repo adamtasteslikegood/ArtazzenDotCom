@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% set active = 'library' %}
+{% block title %}Library{% endblock %}
+{% block content %}
+{% if not imports %}
+<p>No imports yet. <a href="/import">Import an image</a> to start.</p>
+{% else %}
+<table class="library">
+    <thead>
+        <tr><th></th><th>Image</th><th>Pixels</th><th>Size</th><th>Source</th><th>Imported</th></tr>
+    </thead>
+    <tbody>
+        {% for rec in imports %}
+        <tr>
+            <td>{% if rec.format in ('JPEG', 'PNG', 'GIF', 'WEBP') %}<img src="/imports/{{ rec.id }}/file" alt="" loading="lazy" class="thumb">{% endif %}</td>
+            <td><a href="/imports/{{ rec.id }}/file">{{ rec.original_name }}</a></td>
+            <td>{{ rec.width }}×{{ rec.height }} ({{ '%.1f' | format(rec.width * rec.height / 1000000) }} MP)</td>
+            <td>{{ '%.1f' | format(rec.bytes / 1048576) }} MB</td>
+            <td>{{ rec.source.kind }}</td>
+            <td><time datetime="{{ rec.imported_at }}">{{ rec.imported_at[:16] | replace('T', ' ') }}</time></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}
