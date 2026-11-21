@@ -3603,6 +3603,8 @@ def test_https_url_rejects_other_schemes():
     assert config._https_url(" https://pay.example/x ", "X") == "https://pay.example/x"
     assert config._https_url("javascript:alert(1)", "X") == ""
     assert config._https_url("http://pay.example/x", "X") == ""
+    assert config._https_url("https://", "X") == ""
+    assert config._https_url("https:///missing-host", "X") == ""
     assert config._https_url("", "X") == ""
 
 
