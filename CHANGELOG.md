@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- "Join the Collective" page at `/join`, linked from the header and footer of
+  every public page and listed in the sitemap. It offers the early-access Fire
+  Opal lifetime membership through a hosted pay link (`FIRE_OPAL_PAYLINK_URL`)
+  and, optionally, sponsorship links on other platforms (`SUPPORT_LINKS`).
+  Without a pay link the page says membership opens soon. Only `https://`
+  URLs are accepted.
 - Enlarged view on the artwork page: clicking the image opens it full-window
   instead of opening the original in a new tab. "Full size" (or a click on the
   image) then loads the original and shows it at its real size; the original

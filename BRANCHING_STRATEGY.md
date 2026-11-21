@@ -120,6 +120,8 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 | `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                          |
 | `CLOUDFLARE_API_TOKEN`        | Cache Purge token                                            | unset (no purge)              |
 | `CLOUDFLARE_ZONE_ID`          | artazzen.com zone id                                         | unset                         |
+| `FIRE_OPAL_PAYLINK_URL`       | GoDaddy/PayPal pay link                                      | unset or same link            |
+| `SUPPORT_LINKS`               | sponsorship links                                            | unset or same links           |
 | `PORT`                        | set by Railway                                               | set by Railway                |
 
 ## Workflow Summary
