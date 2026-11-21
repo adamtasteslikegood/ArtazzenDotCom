@@ -5,6 +5,7 @@ import os
 import threading
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi.templating import Jinja2Templates
 
@@ -107,10 +108,17 @@ templates.env.globals["site_url"] = SITE_URL
 
 
 def _https_url(value: str, name: str) -> str:
-    """Return ``value`` if it is an https URL, else "" (logged)."""
+    """Return ``value`` if it is a valid https URL, else "" (logged)."""
     value = value.strip()
-    if value and not value.lower().startswith("https://"):
-        logger.warning("Ignoring %s: only https:// URLs are allowed", name)
+    if not value:
+        return ""
+    try:
+        parsed = urlsplit(value)
+        valid = parsed.scheme.lower() == "https" and bool(parsed.hostname)
+    except ValueError:
+        valid = False
+    if not valid:
+        logger.warning("Ignoring %s: only valid https:// URLs are allowed", name)
         return ""
     return value
 
