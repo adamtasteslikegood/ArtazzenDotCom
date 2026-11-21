@@ -1008,6 +1008,27 @@ footer {
     margin-bottom: 2rem;
 }
 
+.join-included-heading {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 1rem;
+}
+
+.join-included {
+    padding-left: 1.25rem;
+    margin: 0 0 2rem;
+    line-height: 1.7;
+}
+
+.join-terms {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+}
+
 .join-page .button {
     min-height: 44px;
 }
