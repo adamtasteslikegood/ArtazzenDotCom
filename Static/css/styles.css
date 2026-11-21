@@ -970,6 +970,56 @@ footer {
     border-bottom-color: currentColor;
 }
 
+/* --- Footer navigation (base template) --- */
+.footer-nav a {
+    color: inherit;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* --- Join the Collective (/join) --- */
+.join-page {
+    max-width: 720px;
+}
+
+.join-offer,
+.join-support {
+    padding: 3rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.join-eyebrow,
+.join-unavailable {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.join-offer h2,
+.join-support h2 {
+    font-family: var(--font-heading);
+    margin: 0.5rem 0 1rem;
+}
+
+.join-description {
+    margin-bottom: 2rem;
+}
+
+.join-page .button {
+    min-height: 44px;
+}
+
+.join-support-links {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
 /* --- Collections & series --- */
 .breadcrumb {
     font-family: var(--font-mono);

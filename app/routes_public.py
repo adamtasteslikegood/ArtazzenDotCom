@@ -44,6 +44,7 @@ async def sitemap_xml():
 
     add_url("/")
     add_url("/collections")
+    add_url("/join")
 
     registry_path = config.IMAGES_DIR / ".curation" / "collections.json"
     registry_mtime = [registry_path] if registry_path.is_file() else []
@@ -326,3 +327,29 @@ async def read_root(request: Request):
         )
     )
     return config.templates.TemplateResponse(request, "index.html", context)
+
+
+@router.get("/join", response_class=HTMLResponse)
+async def join(request: Request):
+    """Membership and support page ("Join the Collective")."""
+    context = {
+        "request": request,
+        "gallery_title": config.GALLERY_TITLE,
+        "fire_opal_url": config.FIRE_OPAL_PAYLINK_URL,
+        "support_links": config.SUPPORT_LINKS,
+    }
+    context.update(
+        seo.build_context(
+            request,
+            title=f"Join the Collective | {config.GALLERY_TITLE}",
+            description=(
+                "Join the Artazzen Collective: early-access Fire Opal lifetime "
+                "membership and other ways to support the artists."
+            ),
+            breadcrumbs=[
+                {"name": "Gallery", "path": "/"},
+                {"name": "Join the Collective", "path": "/join"},
+            ],
+        )
+    )
+    return config.templates.TemplateResponse(request, "join.html", context)

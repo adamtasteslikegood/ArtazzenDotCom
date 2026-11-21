@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block page_heading %}Join the Collective{% endblock %}
+
+{% block content %}
+    <main class="join-page">
+        <section class="join-offer" aria-labelledby="fire-opal-heading">
+            <p class="join-eyebrow">Early access</p>
+            <h2 id="fire-opal-heading">Fire Opal Lifetime Membership</h2>
+            {# PLACEHOLDER: replace with the final description from the Artazzen Collective. #}
+            <p class="join-description">[Description of the Fire Opal lifetime membership and what is included goes here.]</p>
+            {% if fire_opal_url %}
+            <a class="button" href="{{ fire_opal_url }}" rel="noopener noreferrer">Become a Fire Opal member</a>
+            {% else %}
+            <p class="join-unavailable">Membership opens soon.</p>
+            {% endif %}
+        </section>
+
+        {% if support_links %}
+        <section class="join-support" aria-labelledby="support-heading">
+            <h2 id="support-heading">Support the Collective</h2>
+            <ul class="join-support-links">
+                {% for link in support_links %}
+                <li><a class="button secondary" href="{{ link.url }}" rel="noopener noreferrer">{{ link.label }}</a></li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+    </main>
+{% endblock %}
