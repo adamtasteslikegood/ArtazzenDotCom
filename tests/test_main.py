@@ -3587,6 +3587,20 @@ def test_join_page_with_paylink_and_support_links(client: TestClient, monkeypatc
     assert "Buy Me a Coffee" in response.text
 
 
+def test_collection_cards_offer_a_larger_cover(tmp_path, monkeypatch):
+    _curation_fixture(tmp_path, monkeypatch)
+    with TestClient(app) as c:
+        page = c.get("/collections").text
+    srcset = re.search(r'srcset="([^"]+)"', page).group(1)
+    assert " 480w, " in srcset
+    assert srcset.endswith(" 1600w")
+    entry = {"id": "empty-collection"}
+    assert gallery_app.curation.collection_cover(entry) == {
+        "cover_url": "",
+        "cover_srcset": "",
+    }
+
+
 def test_join_feature_uses_configured_artwork(tmp_path, monkeypatch):
     image_root = _make_curation_root(tmp_path, monkeypatch)
     _add_image(image_root, "a.jpg", title="First Work")

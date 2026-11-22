@@ -41,7 +41,8 @@ All notable changes to this project will be documented in this file.
   - Descriptions in the gallery and collection grids are cut to two lines; the
     artwork page still shows the whole text.
   - Collection cards are two to a row, level with each other, with a wider
-    crop.
+    crop. Their covers load a larger image on wide screens, so they
+    stay sharp at the new size.
 
 ### Fixed
 

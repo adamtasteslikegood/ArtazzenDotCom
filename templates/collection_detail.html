@@ -42,6 +42,8 @@
                         <a href="{{ url_for('collection_detail', slug=child.id) }}" title="View collection: {{ child.title }}" aria-label="View collection: {{ child.title }}"{% if not child.cover_url %} class="img-loaded"{% endif %}>
                             {% if child.cover_url %}
                             <img src="{{ child.cover_url }}"
+                                 srcset="{{ child.cover_srcset }}"
+                                 sizes="(max-width: 600px) calc(100vw - 2rem), (max-width: 1200px) calc(50vw - 3rem), 536px"
                                  alt="{{ child.title }}"
                                  loading="lazy"
                                  onload="this.parentElement.classList.add('img-loaded');"
