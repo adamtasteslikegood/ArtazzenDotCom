@@ -7,7 +7,7 @@
         <section class="join-offer{% if feature %} has-feature{% endif %}" aria-labelledby="fire-opal-heading">
             {% if feature %}
             <figure class="join-feature">
-                <a href="{{ url_for('artwork_detail', image_filename=feature.name) }}"><img src="{{ feature.display_url }}" alt="{{ feature.title }}"></a>
+                <a href="/artwork/{{ feature.name | urlencode }}"><img src="{{ feature.display_url }}" alt="{{ feature.title }}"></a>
                 <figcaption>{{ feature.title }}, from the gallery</figcaption>
             </figure>
             {% endif %}
