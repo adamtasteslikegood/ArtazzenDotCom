@@ -4,7 +4,14 @@
 
 {% block content %}
     <main class="join-page">
-        <section class="join-offer" aria-labelledby="fire-opal-heading">
+        <section class="join-offer{% if feature %} has-feature{% endif %}" aria-labelledby="fire-opal-heading">
+            {% if feature %}
+            <figure class="join-feature">
+                <a href="/artwork/{{ feature.name }}"><img src="{{ feature.display_url }}" alt="{{ feature.title }}"></a>
+                <figcaption>{{ feature.title }}, from the gallery</figcaption>
+            </figure>
+            {% endif %}
+            <div class="join-offer-body">
             <p class="join-eyebrow">Early access</p>
             <h2 id="fire-opal-heading">Fire Opal Lifetime Membership</h2>
             {# DRAFT COPY for the Artazzen Collective to edit and approve before release.
@@ -18,12 +25,15 @@
                 <li>[Behind-the-scenes notes on how each work is made]</li>
                 <li>[Members-only updates]</li>
             </ul>
+            <div class="join-purchase">
             <p class="join-terms">One-time payment of [price]. Early-access pricing is available [for a limited time / to the first N members]. Checkout is handled securely by GoDaddy and PayPal.</p>
             {% if fire_opal_url %}
             <a class="button" href="{{ fire_opal_url }}" rel="noopener noreferrer">Become a Fire Opal member</a>
             {% else %}
             <p class="join-unavailable">Membership opens soon.</p>
             {% endif %}
+            </div>
+            </div>
         </section>
 
         {% if support_links %}

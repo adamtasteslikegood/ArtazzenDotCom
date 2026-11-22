@@ -337,6 +337,8 @@ async def join(request: Request):
         "gallery_title": config.GALLERY_TITLE,
         "fire_opal_url": config.FIRE_OPAL_PAYLINK_URL,
         "support_links": config.SUPPORT_LINKS,
+        # One approved artwork to show beside the offer (the gallery's first).
+        "feature": next(iter(media.list_artworks()), None),
     }
     context.update(
         seo.build_context(
