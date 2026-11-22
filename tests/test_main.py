@@ -3590,11 +3590,11 @@ def test_join_page_with_paylink_and_support_links(client: TestClient, monkeypatc
 def test_join_feature_uses_configured_artwork(tmp_path, monkeypatch):
     image_root = _make_curation_root(tmp_path, monkeypatch)
     _add_image(image_root, "a.jpg", title="First Work")
-    _add_image(image_root, "b.jpg", title="Chosen Work")
-    monkeypatch.setattr(gallery_app.config, "JOIN_FEATURE_IMAGE", "b.jpg")
+    _add_image(image_root, "b#featured.jpg", title="Chosen Work")
+    monkeypatch.setattr(gallery_app.config, "JOIN_FEATURE_IMAGE", "b#featured.jpg")
     with TestClient(app) as c:
         page = c.get("/join").text
-    assert 'href="/artwork/b.jpg"' in page
+    assert 'href="/artwork/b%23featured.jpg"' in page
     assert "Chosen Work, from the gallery" in page
     assert "/artwork/a.jpg" not in page
 
