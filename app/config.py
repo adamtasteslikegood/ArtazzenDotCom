@@ -143,6 +143,9 @@ FIRE_OPAL_PAYLINK_URL = _https_url(
 )
 # Sponsorship/donation links on other platforms (/join), optional.
 SUPPORT_LINKS = _parse_support_links(os.getenv("SUPPORT_LINKS", ""))
+# Artwork shown beside the offer on /join: the file name of an approved image
+# (a path is accepted; only its last part is used). Optional.
+JOIN_FEATURE_IMAGE = Path(os.getenv("JOIN_FEATURE_IMAGE", "").strip()).name
 
 # RLock: writers that must make a read-merge-write cycle atomic (e.g. the
 # AI populate persist path) hold it across _write_sidecar, which acquires

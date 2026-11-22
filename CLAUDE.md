@@ -222,6 +222,7 @@ See `.env.example` for the full list. Key vars:
 | `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone of the site                                            |
 | `FIRE_OPAL_PAYLINK_URL`       | _(none)_               | Hosted pay link for the Fire Opal membership on `/join` (https only)   |
 | `SUPPORT_LINKS`               | _(none)_               | `Label\|URL; Label\|URL` sponsorship links on `/join` (https only)     |
+| `JOIN_FEATURE_IMAGE`          | _(first artwork)_      | File name of the approved image shown beside the offer on `/join`      |
 | `PORT`                        | _(uvicorn default)_    | Server port (set by Railway)                                           |
 
 ## Core Principles

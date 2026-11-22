@@ -122,6 +122,7 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 | `CLOUDFLARE_ZONE_ID`          | artazzen.com zone id                                         | unset                         |
 | `FIRE_OPAL_PAYLINK_URL`       | GoDaddy/PayPal pay link                                      | unset or same link            |
 | `SUPPORT_LINKS`               | sponsorship links                                            | unset or same links           |
+| `JOIN_FEATURE_IMAGE`          | file name of an approved image                               | unset (first artwork)         |
 | `PORT`                        | set by Railway                                               | set by Railway                |
 
 ## Workflow Summary

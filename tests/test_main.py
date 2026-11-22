@@ -3587,6 +3587,38 @@ def test_join_page_with_paylink_and_support_links(client: TestClient, monkeypatc
     assert "Buy Me a Coffee" in response.text
 
 
+def test_join_feature_uses_configured_artwork(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", title="First Work")
+    _add_image(image_root, "b.jpg", title="Chosen Work")
+    monkeypatch.setattr(gallery_app.config, "JOIN_FEATURE_IMAGE", "b.jpg")
+    with TestClient(app) as c:
+        page = c.get("/join").text
+    assert 'href="/artwork/b.jpg"' in page
+    assert "Chosen Work, from the gallery" in page
+    assert "/artwork/a.jpg" not in page
+
+
+def test_join_feature_falls_back_to_first_approved(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", title="First Work")
+    _add_image(image_root, "hidden.jpg", title="Secret Work", status="pending")
+    for wanted in ("", "missing.jpg", "hidden.jpg"):
+        monkeypatch.setattr(gallery_app.config, "JOIN_FEATURE_IMAGE", wanted)
+        with TestClient(app) as c:
+            page = c.get("/join").text
+        assert 'href="/artwork/a.jpg"' in page
+        assert "Secret Work" not in page
+
+
+def test_join_page_without_artwork(tmp_path, monkeypatch):
+    _make_curation_root(tmp_path, monkeypatch)
+    with TestClient(app) as c:
+        response = c.get("/join")
+    assert response.status_code == 200
+    assert "join-feature" not in response.text
+
+
 def test_join_linked_from_public_nav_and_footer_not_admin(
     client: TestClient, authed_client: TestClient
 ):
