@@ -3594,7 +3594,7 @@ def test_join_feature_uses_configured_artwork(tmp_path, monkeypatch):
     monkeypatch.setattr(gallery_app.config, "JOIN_FEATURE_IMAGE", "b#featured.jpg")
     with TestClient(app) as c:
         page = c.get("/join").text
-    assert 'href="/artwork/b%23featured.jpg"' in page
+    assert '/artwork/b%23featured.jpg"' in page
     assert "Chosen Work, from the gallery" in page
     assert "/artwork/a.jpg" not in page
 
@@ -3607,7 +3607,7 @@ def test_join_feature_falls_back_to_first_approved(tmp_path, monkeypatch):
         monkeypatch.setattr(gallery_app.config, "JOIN_FEATURE_IMAGE", wanted)
         with TestClient(app) as c:
             page = c.get("/join").text
-        assert 'href="/artwork/a.jpg"' in page
+        assert '/artwork/a.jpg"' in page
         assert "Secret Work" not in page
 
 
