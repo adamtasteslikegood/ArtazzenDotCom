@@ -910,6 +910,12 @@ footer {
     margin-bottom: 1.5rem;
 }
 
+/* Collection and series links: the default link blue is unreadable on Carbon. */
+.artwork-meta-value a {
+    color: inherit;
+    text-underline-offset: 3px;
+}
+
 /* Dark mode toggle */
 .dark-mode-toggle {
     font-family: var(--font-mono);

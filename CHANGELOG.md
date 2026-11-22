@@ -11,7 +11,9 @@ All notable changes to this project will be documented in this file.
   Opal lifetime membership through a hosted pay link (`FIRE_OPAL_PAYLINK_URL`)
   and, optionally, sponsorship links on other platforms (`SUPPORT_LINKS`).
   Without a pay link the page says membership opens soon. Only `https://`
-  URLs are accepted.
+  URLs are accepted. An approved artwork is shown beside the offer:
+  `JOIN_FEATURE_IMAGE` names it, and the gallery's first artwork is used when
+  that is unset or is not an approved image.
 - Enlarged view on the artwork page: clicking the image opens it full-window
   instead of opening the original in a new tab. "Full size" (or a click on the
   image) then loads the original and shows it at its real size; the original
@@ -28,6 +30,12 @@ All notable changes to this project will be documented in this file.
 - The watcher builds the new sizes for existing images (five images per
   scan). An image whose sizes are rebuilt gets new thumbnail and detail URLs
   once.
+
+### Fixed
+
+- Collection and series links on the artwork page were the browser's default
+  blue, which was unreadable on the dark background. They now use the text
+  colour and stay underlined.
 
 ## [0.4.0] - 2026-10-11
 
