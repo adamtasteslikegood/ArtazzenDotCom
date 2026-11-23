@@ -62,11 +62,14 @@ class GalleryClient:
             with self._client() as client:
                 resp = client.get("/admin/api/new-files")
                 resp.raise_for_status()
-try:
-    body = resp.json()
-except ValueError:
-    raise GalleryError("Gallery returned invalid JSON") from None
+                try:
+                    body = resp.json()
+                except ValueError:
+                    raise GalleryError("Gallery returned invalid JSON") from None
+        except httpx.HTTPError as exc:
             raise GalleryError(f"Gallery request failed: {exc}") from None
+        if not isinstance(body, dict):
+            raise GalleryError("Gallery returned an invalid response")
         images: list[dict[str, Any]] = []
         for status_label, key in (("pending", "pending"), ("approved", "gallery")):
             for item in body.get(key) or []:

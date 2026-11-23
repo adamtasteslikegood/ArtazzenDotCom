@@ -1,7 +1,10 @@
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 from upscaler.app import create_app
 from upscaler.config import Settings
 from upscaler.intake import list_imports
+from upscaler.sources import GalleryClient
 
 from tests.conftest import auth_header, png_bytes
 
@@ -38,6 +41,34 @@ def test_import_page_lists_gallery_pending_and_approved(client):
     assert page.status_code == 200
     assert "pending.png" in page.text and "approved.png" in page.text
     assert page.headers["x-frame-options"] == "DENY"
+
+
+def test_import_page_reports_malformed_gallery_response(settings, storage):
+    def malformed_response(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>proxy error</html>")
+
+    gallery = GalleryClient(settings, transport=httpx.MockTransport(malformed_response))
+    app = create_app(settings=settings, storage=storage, gallery=gallery)
+    with TestClient(app) as test_client:
+        page = test_client.get("/import", headers=auth_header())
+
+    assert page.status_code == 200
+    assert "Gallery returned invalid JSON" in page.text
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("UPSCALER_MAX_UPLOAD_MB", "nan"),
+        ("UPSCALER_MAX_UPLOAD_MB", "0"),
+        ("UPSCALER_MAX_MEGAPIXELS", "inf"),
+        ("UPSCALER_MAX_MEGAPIXELS", "-1"),
+    ],
+)
+def test_settings_reject_non_positive_or_non_finite_limits(monkeypatch, name, value):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=rf"{name} must be a finite positive number"):
+        Settings.from_env()
 
 
 def test_import_tabs_have_server_rendered_fallback(client):

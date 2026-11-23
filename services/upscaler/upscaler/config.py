@@ -7,6 +7,7 @@ and ``GALLERY_URL`` from the gallery's private domain. Nothing is copied.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,9 +23,12 @@ ALLOWED_EXTENSIONS = frozenset(
 GALLERY_THUMB_WIDTH = 480
 
 
-def _float(name: str, default: float) -> float:
+def _positive_float(name: str, default: float) -> float:
     raw = os.getenv(name, "").strip()
-    return float(raw) if raw else default
+    value = float(raw) if raw else default
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a finite positive number")
+    return value
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,6 @@ class Settings:
             import_root=Path(
                 os.getenv("UPSCALER_IMPORT_ROOT", "") or SERVICE_DIR / "imports"
             ),
-            max_upload_mb=_float("UPSCALER_MAX_UPLOAD_MB", 50.0),
-            max_megapixels=_float("UPSCALER_MAX_MEGAPIXELS", 100.0),
+            max_upload_mb=_positive_float("UPSCALER_MAX_UPLOAD_MB", 50.0),
+            max_megapixels=_positive_float("UPSCALER_MAX_MEGAPIXELS", 100.0),
         )
