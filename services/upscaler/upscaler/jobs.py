@@ -685,6 +685,8 @@ class JobRunner:
         resumed = []
         for job in await self._io(list_jobs, self.storage):
             state = job.get("state")
+            if state in FINAL and job.get("provider_cancel_pending"):
+                self.start(job["id"])
             if state in FINAL and job.get("cleanup_pending"):
                 await self._io(retry_cleanup, self.storage, job)
             elif (
@@ -718,6 +720,11 @@ class JobRunner:
 
     async def _run(self, job_id: str) -> None:
         try:
+            job = await self._fresh(job_id)
+            if job and job["state"] in FINAL and job.get("provider_cancel_pending"):
+                # Not behind the semaphore: a running job must not delay it.
+                await self._cancel_leftover(job)
+                return
             async with self._semaphore():
                 job = await self._fresh(job_id)
                 if not job or job["state"] in FINAL:
@@ -728,7 +735,9 @@ class JobRunner:
         except JobFinished:
             job = await self._fresh(job_id)
             if job and job["state"] in FINAL and job.get("cleanup_pending"):
-                await self._io(retry_cleanup, self.storage, job)
+                job = await self._io(retry_cleanup, self.storage, job)
+            if job and job.get("provider_cancel_pending"):
+                self._retry_later(job_id)
             return  # cancelled (or finished) elsewhere; nothing to record
         except Exception as exc:
             logger.exception("Job %s failed", job_id)
@@ -786,6 +795,27 @@ class JobRunner:
                 if cleanup:
                     await self._io(retry_cleanup, self.storage, job)
 
+    async def _cancel_leftover(self, job: dict[str, Any]) -> None:
+        """Stop a prediction that was created after its job had ended."""
+        prediction = job.get("prediction") or {}
+        if prediction.get("cancel_url"):
+            try:
+                await self.replicate.cancel(prediction["cancel_url"])
+            except ReplicateError as exc:
+                logger.warning("Cancel of %s failed: %s", job["id"], exc)
+                # A prediction that has ended by itself needs no cancel, and
+                # Replicate may refuse one: stop there, not retry for ever.
+                try:
+                    current = await self.replicate.get(prediction.get("get_url", ""))
+                except ReplicateError:
+                    current = {}
+                if current.get("status") not in TERMINAL:
+                    self._retry_later(job["id"])
+                    return
+        await self._io(
+            save_final_metadata, self.storage, job, provider_cancel_pending=False
+        )
+
     async def _execute(self, job: dict[str, Any]) -> None:
         pending = job.get("cancel_pending")
         if pending:
@@ -838,6 +868,16 @@ class JobRunner:
                         await self.replicate.cancel(prediction["cancel_url"])
                     except ReplicateError as exc:
                         logger.warning("Cancel of %s failed: %s", job["id"], exc)
+                        # The job is final, so cancel_pending cannot carry
+                        # this. Record the prediction; _run and resume()
+                        # keep trying until Replicate accepts the cancel.
+                        await self._io(
+                            save_final_metadata,
+                            self.storage,
+                            job,
+                            prediction=prediction,
+                            provider_cancel_pending=True,
+                        )
                 raise
         deadline = started + self.settings.replicate_timeout_seconds
         while True:

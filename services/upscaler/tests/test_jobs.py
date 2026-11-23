@@ -16,6 +16,7 @@ from upscaler.jobs import (
     job_name,
     list_jobs,
     postprocess,
+    save_final_metadata,
     save_job,
     set_state,
 )
@@ -560,6 +561,93 @@ def test_cancel_during_create_cancels_the_new_prediction(
     job = get_job(storage, job_id)
     assert job["state"] == "cancelled"
     assert not job.get("prediction")
+
+
+def _wait_job(storage, job_id, check, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = get_job(storage, job_id)
+        if check(job):
+            return job
+        time.sleep(0.01)
+    raise AssertionError(f"job never got there: {job}")
+
+
+def test_failed_cancel_after_create_is_persisted_and_retried(
+    client, storage, fake_replicate
+):
+    fake_replicate.polls_before_done = 10_000
+    fake_replicate.cancel_status = 503
+    job_id = prepare(client, upload(client, png(gradient())))
+    gate = _hold_create(client)
+    client.post(f"/jobs/{job_id}/confirm")
+    _wait_state(storage, job_id, "running", prediction={})
+    client.post(f"/jobs/{job_id}/cancel")
+    client.portal.call(gate.set)
+
+    # The job is already cancelled, but the prediction made after the cancel
+    # is still running at the provider: that is recorded, not only logged.
+    job = _wait_job(storage, job_id, lambda j: j.get("provider_cancel_pending"))
+    assert job["state"] == "cancelled"
+    assert job["prediction"]["cancel_url"].endswith("/p1/cancel")
+    assert fake_replicate.predictions["p1"]["status"] != "canceled"
+
+    fake_replicate.cancel_status = 202
+    job = _wait_job(storage, job_id, lambda j: not j.get("provider_cancel_pending"))
+    assert job["state"] == "cancelled"
+    assert fake_replicate.predictions["p1"]["status"] == "canceled"
+    assert fake_replicate.created == 1
+
+
+def test_pending_provider_cancel_is_retried_on_startup(
+    client, settings, storage, fake_replicate
+):
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/cancel")
+    fake_replicate.predictions["p1"] = {"status": "processing", "polls": 0}
+    save_final_metadata(
+        storage,
+        get_job(storage, job_id),
+        prediction={"cancel_url": f"{fake_replicate.API}/predictions/p1/cancel"},
+        provider_cancel_pending=True,
+    )
+
+    replicate = ReplicateClient(settings, transport=httpx.MockTransport(fake_replicate))
+    app = create_app(settings=settings, storage=storage, replicate=replicate)
+    with TestClient(app):
+        job = _wait_job(storage, job_id, lambda j: not j.get("provider_cancel_pending"))
+    assert job["state"] == "cancelled"
+    assert fake_replicate.predictions["p1"]["status"] == "canceled"
+    assert fake_replicate.created == 0
+
+
+def test_pending_provider_cancel_ends_when_the_prediction_has_ended(
+    client, settings, storage, fake_replicate
+):
+    # The cancel keeps failing, but the prediction finished by itself.
+    fake_replicate.cancel_status = 503
+    fake_replicate.polls_before_done = 0
+    fake_replicate.fail_with = "out of memory"
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/cancel")
+    fake_replicate.predictions["p1"] = {"status": "processing", "polls": 0}
+    save_final_metadata(
+        storage,
+        get_job(storage, job_id),
+        prediction={
+            "get_url": f"{fake_replicate.API}/predictions/p1",
+            "cancel_url": f"{fake_replicate.API}/predictions/p1/cancel",
+        },
+        provider_cancel_pending=True,
+    )
+
+    replicate = ReplicateClient(settings, transport=httpx.MockTransport(fake_replicate))
+    app = create_app(settings=settings, storage=storage, replicate=replicate)
+    with TestClient(app):
+        job = _wait_job(storage, job_id, lambda j: not j.get("provider_cancel_pending"))
+    assert job["state"] == "cancelled"
+    cancels = [r for r in fake_replicate.requests if str(r.url).endswith("/cancel")]
+    assert len(cancels) == 1
 
 
 def test_a_stale_copy_cannot_undo_a_cancel(client, storage):
