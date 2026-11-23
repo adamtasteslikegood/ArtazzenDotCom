@@ -39,15 +39,18 @@ All notable changes to this project will be documented in this file.
   automatic retries.
 - Pull-request environments can fill their empty image volume on their own.
   `railway.json` starts them (and only them) through
-  `scripts/seed_images.py start`, which copies a storage-bucket folder named
-  by the `SEED_S3_*` variables into `IMAGES_DIR` and then runs the `Procfile`
-  command. Once the volume holds artwork its files are kept, production is
-  refused, and with no variables set the app starts as before.
-  `seed_images.py push` uploads a local folder to the bucket. Adds `boto3`.
+  `scripts/seed_images.py start`, which downloads one seed archive from the
+  read-only link in `SEED_ARCHIVE_URL`, unpacks it into `IMAGES_DIR` and then
+  runs the `Procfile` command. Once the volume holds artwork its files are
+  kept, production is refused, and with no link set the app starts as before.
+  Environments never hold storage-bucket keys: `seed_images.py push` packs
+  and uploads a local folder from a trusted machine and prints the link, and
+  `link` renews it (a link lasts at most 90 days).
 - `scripts/seed-env-images.sh` has `-h/--help`, options for the project,
   service and target directory (`--project`, `--service`, `--remote-dir`; an
-  option wins over its environment variable), and `--from-bucket` to make a
-  running environment copy the seed folder from the bucket.
+  option wins over its environment variable), and `--from-archive` to make a
+  running environment download and unpack its seed archive again. It refuses
+  an empty environment, project or service name.
 
 ### Changed
 

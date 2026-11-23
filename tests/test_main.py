@@ -1132,12 +1132,16 @@ def test_prompt_includes_tags_instruction_when_tags_requested():
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# What push and link read, on a trusted machine. Never set on an environment.
 SEED_ENV = {
     "SEED_S3_ENDPOINT": "https://s3.example",
     "SEED_S3_BUCKET": "seed-bucket",
     "SEED_S3_ACCESS_KEY_ID": "key",
     "SEED_S3_SECRET_ACCESS_KEY": "secret",
 }
+# What an environment reads: a link that can only read the archive.
+SEED_LINK = "https://seed-bucket.s3.example/seed/images.tar?X-Amz-Signature=sig"
+ARCHIVE_ENV = {"SEED_ARCHIVE_URL": SEED_LINK}
 
 
 def _seed_module():
@@ -1154,30 +1158,46 @@ def _seed_module():
     return module
 
 
+def _seed_archive(path, files, members=()):
+    """Write a tar file holding ``files`` (name -> bytes) and raw ``members``."""
+    import io
+    import tarfile
+
+    with tarfile.open(path, "w") as archive:
+        for name, data in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        for info in members:
+            archive.addfile(info)
+    return path
+
+
+def _pull_archive(seed, tmp_path, files, dest, members=()):
+    import tarfile
+
+    path = _seed_archive(tmp_path / "seed.tar", files, members)
+    with tarfile.open(path) as archive:
+        return seed.pull(archive, dest)
+
+
 class _FakeBucket:
-    """Stands in for the boto3 S3 client: just the calls the seeder makes."""
+    """Stands in for the boto3 S3 client: just the calls push and link make."""
 
-    def __init__(self, objects=None):
-        self.objects = dict(objects or {})
-        self.downloads = []
+    def __init__(self):
         self.uploads = {}
-
-    def get_paginator(self, name):
-        assert name == "list_objects_v2"
-        return self
-
-    def paginate(self, Bucket, Prefix):
-        keys = [key for key in self.objects if key.startswith(Prefix)]
-        # Two pages, so a seeder that reads only the first one fails.
-        yield {"Contents": [{"Key": key} for key in keys[:1]]}
-        yield {"Contents": [{"Key": key} for key in keys[1:]]}
-
-    def download_file(self, bucket, key, filename):
-        self.downloads.append(key)
-        Path(filename).write_bytes(self.objects[key])
+        self.presigned = []
+        self.heads = []
 
     def upload_file(self, filename, bucket, key):
         self.uploads[key] = Path(filename).read_bytes()
+
+    def head_object(self, Bucket, Key):
+        self.heads.append(Key)
+
+    def generate_presigned_url(self, operation, Params, ExpiresIn):
+        self.presigned.append((operation, Params["Bucket"], Params["Key"], ExpiresIn))
+        return SEED_LINK
 
 
 def test_seed_artwork_suffixes_match_the_app():
@@ -1197,43 +1217,71 @@ def test_seed_lockfiles_match_the_app():
     assert {path.as_posix() for path in _seed_module().LOCKFILES} == app_lockfiles
 
 
+def test_seed_runtime_needs_no_bucket_credentials_or_client():
+    # An environment gets a read-only link. Nothing it runs may need the
+    # bucket's keys, and the S3 client is not an application dependency.
+    requirements = (REPO_ROOT / "requirements.txt").read_text().lower()
+    assert "boto3" not in requirements
+    assert "botocore" not in requirements
+    example = (REPO_ROOT / ".env.example").read_text()
+    assert "SEED_ARCHIVE_URL" in example
+    assert "SEED_S3_" not in example
+
+
 def test_seed_source_reads_the_seed_variables():
     seed = _seed_module()
     assert seed.seed_source({}) is None
     source = seed.seed_source(SEED_ENV)
-    assert (source.bucket, source.region, source.prefix) == (
+    assert (source.bucket, source.region, source.key) == (
         "seed-bucket",
         "auto",
-        "seed/images/",
+        "seed/images.tar",
     )
-    custom = seed.seed_source({**SEED_ENV, "SEED_S3_PREFIX": "/sets/orbs"})
-    assert custom.prefix == "sets/orbs/"
+    custom = seed.seed_source({**SEED_ENV, "SEED_S3_KEY": "/sets/orbs.tar"})
+    assert custom.key == "sets/orbs.tar"
     partial = {**SEED_ENV, "SEED_S3_SECRET_ACCESS_KEY": ""}
     with pytest.raises(ValueError, match="SEED_S3_SECRET_ACCESS_KEY"):
         seed.seed_source(partial)
 
 
-def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path):
+def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path, monkeypatch):
+    import tarfile
+
     seed = _seed_module()
     dest = tmp_path / "images"
     dest.mkdir()
     (dest / "edited.jpg").write_bytes(b"artwork in the preview")
     (dest / "edited.json").write_text("edited in the preview")
-    bucket = _FakeBucket(
-        {
-            "seed/images/": b"",
-            "seed/images/a.jpg": b"image-a",
-            "seed/images/a.json": b"sidecar-a",
-            "seed/images/edited.json": b"from the bucket",
-            "seed/images/.curation/collections.json": b"registry",
-            "seed/images/lost+found/junk": b"junk",
-            "seed/images/../escape.txt": b"escape",
-            "seed/images/.": b"not a file path",
-            "other/b.jpg": b"not ours",
-        }
-    )
+    link = tarfile.TarInfo("passwd.json")
+    link.type = tarfile.SYMTYPE
+    link.linkname = "/etc/passwd"
+    folder = tarfile.TarInfo("folder")
+    folder.type = tarfile.DIRTYPE
+    unpacked = []
+    real_extract = seed._extract
 
-    copied, skipped = seed.pull(bucket, "seed-bucket", "seed/images/", dest)
+    def extract(archive, member, into):
+        unpacked.append(member.name)
+        real_extract(archive, member, into)
+
+    monkeypatch.setattr(seed, "_extract", extract)
+
+    copied, skipped = _pull_archive(
+        seed,
+        tmp_path,
+        {
+            "a.jpg": b"image-a",
+            "a.json": b"sidecar-a",
+            "edited.json": b"from the seed",
+            ".curation/collections.json": b"registry",
+            "lost+found/junk": b"junk",
+            "../escape.txt": b"escape",
+            "/absolute.txt": b"escape",
+            ".": b"",
+        },
+        dest,
+        members=(link, folder),
+    )
 
     assert (copied, skipped) == (3, 1)
     assert (dest / "a.jpg").read_bytes() == b"image-a"
@@ -1241,12 +1289,13 @@ def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path):
     assert (dest / "edited.json").read_text() == "edited in the preview"
     assert not (dest / "lost+found").exists()
     assert not (tmp_path / "escape.txt").exists()
-    assert not (dest / "b.jpg").exists()
+    assert not (dest / "absolute.txt").exists()
+    assert not (dest / "passwd.json").exists()
+    assert not (dest / "folder").exists()
     # Sidecars land before the images they describe, and no partial is left.
-    assert bucket.downloads.index("seed/images/a.json") < bucket.downloads.index(
-        "seed/images/a.jpg"
-    )
+    assert unpacked.index("a.json") < unpacked.index("a.jpg")
     assert not [p for p in dest.rglob(".seed-*")]
+    assert (dest / "a.jpg").stat().st_mode & 0o777 == 0o644
 
 
 def test_seed_pull_rejects_a_destination_symlink_escape(tmp_path):
@@ -1256,10 +1305,39 @@ def test_seed_pull_rejects_a_destination_symlink_escape(tmp_path):
     dest.mkdir()
     outside.mkdir()
     (dest / "link").symlink_to(outside, target_is_directory=True)
-    bucket = _FakeBucket({"seed/images/link/escaped.txt": b"escape"})
 
-    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (0, 0)
+    files = {"link/escaped.txt": b"escape"}
+    assert _pull_archive(seed, tmp_path, files, dest) == (0, 0)
     assert not (outside / "escaped.txt").exists()
+
+
+def test_seed_pull_skips_artwork_that_has_no_sidecar(tmp_path):
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    dest.mkdir()
+    (dest / "described.json").write_text("sidecar already on the volume")
+
+    copied, skipped = _pull_archive(
+        seed,
+        tmp_path,
+        {
+            "orphan.jpg": b"no sidecar anywhere",
+            "described.png": b"its sidecar is on the volume",
+            "paired.JPEG": b"image",
+            "paired.json": b"sidecar",
+            # Derivatives and trashed files never have sidecars.
+            ".derived/paired.480.webp": b"derivative",
+            ".trash/old.jpg": b"trashed",
+        },
+        dest,
+    )
+
+    assert (copied, skipped) == (5, 0)
+    assert not (dest / "orphan.jpg").exists()
+    assert (dest / "described.png").exists()
+    assert (dest / "paired.JPEG").exists()
+    assert (dest / ".derived" / "paired.480.webp").exists()
+    assert (dest / ".trash" / "old.jpg").exists()
 
 
 def test_seed_pull_replaces_app_made_registries_on_a_volume_without_artwork(
@@ -1274,104 +1352,175 @@ def test_seed_pull_replaces_app_made_registries_on_a_volume_without_artwork(
     (dest / "lost+found").mkdir()
     assert not seed.holds_artwork(dest)
     assert not seed.holds_artwork(tmp_path / "missing")
-    bucket = _FakeBucket(
-        {
-            "seed/images/.curation/collections.json": b"seeded registry",
-            "seed/images/a.json": b"sidecar-a",
-            "seed/images/a.jpg": b"image-a",
-        }
-    )
+    files = {
+        ".curation/collections.json": b"seeded registry",
+        "a.json": b"sidecar-a",
+        "a.jpg": b"image-a",
+    }
 
-    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (3, 0)
+    assert _pull_archive(seed, tmp_path, files, dest) == (3, 0)
     assert (dest / ".curation" / "collections.json").read_text() == "seeded registry"
     assert seed.holds_artwork(dest)
 
     # From now on the volume's own files win, registries included.
     (dest / ".curation" / "collections.json").write_text("curated in the preview")
-    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (0, 3)
+    assert _pull_archive(seed, tmp_path, files, dest) == (0, 3)
     assert (
         dest / ".curation" / "collections.json"
     ).read_text() == "curated in the preview"
 
 
-def test_seed_pull_on_a_running_app_keeps_what_appears_during_the_copy(tmp_path):
+def test_seed_pull_on_a_running_app_keeps_what_appears_during_the_copy(
+    tmp_path, monkeypatch
+):
     seed = _seed_module()
     dest = tmp_path / "images"
     (dest / ".curation").mkdir(parents=True)
     (dest / ".curation" / "collections.json").write_text("app-made")
     (dest / ".curation" / ".lock").write_text("held by the app")
     (dest / ".curation" / ".sidecars.lock").write_text("held by the app")
+    real_extract = seed._extract
 
-    class UploadDuringCopy(_FakeBucket):
-        def download_file(self, bucket, key, filename):
-            super().download_file(bucket, key, filename)
-            if key.endswith("a.json"):
-                # The admin uploads files while the seed is still copying.
-                (dest / "b.jpg").write_bytes(b"uploaded")
-            if key.endswith("c.jpg"):
-                (dest / "c.jpg").write_bytes(b"uploaded while downloading")
+    def extract(archive, member, into):
+        real_extract(archive, member, into)
+        if member.name == "a.json":
+            # The admin uploads files while the seed is still copying.
+            (dest / "b.jpg").write_bytes(b"uploaded")
+        if member.name == "c.jpg":
+            (dest / "c.jpg").write_bytes(b"uploaded while unpacking")
 
-    bucket = UploadDuringCopy(
-        {
-            "seed/images/.curation/collections.json": b"seeded registry",
-            "seed/images/.curation/.lock": b"",
-            "seed/images/.curation/.sidecars.lock": b"",
-            "seed/images/a.json": b"sidecar-a",
-            "seed/images/b.jpg": b"seed-b",
-            "seed/images/c.jpg": b"seed-c",
-        }
-    )
+    monkeypatch.setattr(seed, "_extract", extract)
 
-    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (2, 2)
+    files = {
+        ".curation/collections.json": b"seeded registry",
+        ".curation/.lock": b"",
+        ".curation/.sidecars.lock": b"",
+        "a.json": b"sidecar-a",
+        "b.json": b"sidecar-b",
+        "b.jpg": b"seed-b",
+        "c.json": b"sidecar-c",
+        "c.jpg": b"seed-c",
+    }
+    assert _pull_archive(seed, tmp_path, files, dest) == (4, 2)
     assert (dest / ".curation" / "collections.json").read_text() == "seeded registry"
     for lockfile in (".lock", ".sidecars.lock"):
         assert (dest / ".curation" / lockfile).read_text() == "held by the app"
     assert (dest / "b.jpg").read_bytes() == b"uploaded"
-    assert (dest / "c.jpg").read_bytes() == b"uploaded while downloading"
+    assert (dest / "c.jpg").read_bytes() == b"uploaded while unpacking"
     assert not list(dest.rglob(".seed-*"))
 
 
 def test_seed_pull_is_skipped_when_unconfigured_or_in_production(tmp_path):
     seed = _seed_module()
 
-    def no_client(source):
-        raise AssertionError("the bucket must not be contacted")
+    def no_fetch(url, into):
+        raise AssertionError("nothing must be downloaded")
 
-    assert "no SEED_S3_* variables" in seed.run_pull({}, client_factory=no_client)
+    assert "SEED_ARCHIVE_URL is not set" in seed.run_pull({}, fetch=no_fetch)
+    # The bucket's own keys are not a seed source for an environment.
+    assert "is not set" in seed.run_pull(SEED_ENV, fetch=no_fetch)
     for production in (
         {"RAILWAY_ENVIRONMENT_NAME": "production"},
         {"RAILWAY_ENVIRONMENT_NAME": "Prod"},
         {"RAILWAY_ENVIRONMENT_ID": seed.PRODUCTION_ENVIRONMENT_ID},
     ):
         message = seed.run_pull(
-            {**SEED_ENV, **production}, dest=tmp_path, client_factory=no_client
+            {**ARCHIVE_ENV, **production}, dest=tmp_path, fetch=no_fetch
         )
         assert "production" in message
     assert seed.production_reason({"RAILWAY_ENVIRONMENT_NAME": "Proj-pr-247"}) is None
     assert list(tmp_path.iterdir()) == []
 
 
-def test_seed_pull_reports_what_it_copied(tmp_path):
+def test_seed_pull_reports_what_it_copied(tmp_path, caplog):
+    import shutil
+
     seed = _seed_module()
-    bucket = _FakeBucket({"sets/orbs/a.json": b"{}", "sets/orbs/a.jpg": b"a"})
-    message = seed.run_pull(
-        {**SEED_ENV, "SEED_S3_PREFIX": "sets/orbs"},
-        dest=tmp_path / "images",
-        client_factory=lambda source: bucket,
-    )
+    stored = _seed_archive(tmp_path / "stored.tar", {"a.json": b"{}", "a.jpg": b"a"})
+    fetched = []
+
+    def fetch(url, into):
+        fetched.append(url)
+        shutil.copy(stored, into)
+
+    dest = tmp_path / "images"
+    message = seed.run_pull(ARCHIVE_ENV, dest=dest, fetch=fetch)
     assert "2 files copied, 0 already there" in message
-    empty = seed.run_pull(
-        SEED_ENV, dest=tmp_path / "images", client_factory=lambda source: bucket
+    assert fetched == [SEED_LINK]
+    assert SEED_LINK not in message
+    assert "0 files copied, 2 already there" in seed.run_pull(
+        ARCHIVE_ENV, dest=dest, fetch=fetch
     )
-    assert "found nothing" in empty
+
+    _seed_archive(stored, {})
+    assert "found nothing" in seed.run_pull(ARCHIVE_ENV, dest=dest, fetch=fetch)
+
+    # Bucket keys found on a Railway environment are called out, not used.
+    preview = {**ARCHIVE_ENV, **SEED_ENV, "RAILWAY_ENVIRONMENT_NAME": "Proj-pr-9"}
+    with caplog.at_level("WARNING", logger="seed_images"):
+        seed.run_pull(preview, dest=dest, fetch=fetch)
+    assert "remove them here" in caplog.text
 
 
-def test_seed_push_uploads_the_folder_under_the_prefix(tmp_path, capsys):
+def test_seed_fetch_accepts_only_https_links(tmp_path):
+    seed = _seed_module()
+
+    def no_opener(url, timeout):
+        raise AssertionError("nothing must be requested")
+
+    for bad in ("http://s3.example/seed.tar", "file:///etc/passwd", "https://", "x"):
+        with pytest.raises(ValueError, match="must be an https link"):
+            seed.fetch_archive(bad, tmp_path / "seed.tar", opener=no_opener)
+    assert not (tmp_path / "seed.tar").exists()
+
+
+def test_seed_fetch_downloads_and_never_repeats_the_link_in_errors(tmp_path):
+    import io
+    from urllib.error import HTTPError, URLError
+
+    seed = _seed_module()
+    into = tmp_path / "seed.tar"
+
+    seed.fetch_archive(
+        SEED_LINK, into, opener=lambda url, timeout: io.BytesIO(b"archive bytes")
+    )
+    assert into.read_bytes() == b"archive bytes"
+
+    def expired(url, timeout):
+        raise HTTPError(url, 403, "Forbidden", {}, None)
+
+    def unreachable(url, timeout):
+        raise URLError(f"cannot reach {url}")
+
+    def slow(url, timeout):
+        return io.BytesIO(b"never finishes in time")
+
+    cases = (
+        (expired, {}, "HTTP 403"),
+        (unreachable, {}, "download failed"),
+        (slow, {"deadline_seconds": -1}, "did not finish"),
+    )
+    for opener, options, expected in cases:
+        with pytest.raises(RuntimeError, match=expected) as raised:
+            seed.fetch_archive(SEED_LINK, into, opener=opener, **options)
+        message = str(raised.value)
+        assert "X-Amz-Signature" not in message
+        assert SEED_LINK not in message
+        assert raised.value.__cause__ is None
+    # An expired link says how to renew it.
+    with pytest.raises(RuntimeError, match="seed_images.py link"):
+        seed.fetch_archive(SEED_LINK, into, opener=expired)
+
+
+def test_seed_archive_holds_the_folder_without_locks_links_or_owner(tmp_path):
+    import tarfile
+
     seed = _seed_module()
     source = tmp_path / "set"
     (source / ".curation").mkdir(parents=True)
     (source / "lost+found").mkdir()
     (source / "a.jpg").write_bytes(b"image-a")
+    (source / "a.json").write_bytes(b"sidecar-a")
     (source / ".curation" / "series.json").write_bytes(b"series")
     (source / ".curation" / ".lock").write_bytes(b"")
     (source / ".curation" / ".sidecars.lock").write_bytes(b"")
@@ -1380,16 +1529,76 @@ def test_seed_push_uploads_the_folder_under_the_prefix(tmp_path, capsys):
     outside.write_bytes(b"not seed data")
     (source / "external.txt").symlink_to(outside)
 
-    bucket = _FakeBucket()
-    assert seed.push(bucket, "seed-bucket", "seed/images/", source) == 2
-    assert bucket.uploads == {
-        "seed/images/a.jpg": b"image-a",
-        "seed/images/.curation/series.json": b"series",
+    packed = tmp_path / "seed.tar"
+    assert seed.build_archive(source, packed) == 3
+    with tarfile.open(packed) as archive:
+        members = archive.getmembers()
+    assert {member.name for member in members} == {
+        "a.jpg",
+        "a.json",
+        ".curation/series.json",
     }
-    assert "seed/images/external.txt" not in bucket.uploads
+    # Nothing about the machine or the person who packed it.
+    assert {(m.uid, m.gid, m.uname, m.gname) for m in members} == {(0, 0, "", "")}
 
-    assert seed.push(None, "seed-bucket", "seed/images/", source, dry_run=True) == 2
-    assert "would upload a.jpg -> seed/images/a.jpg" in capsys.readouterr().out
+    # What push uploads is that archive, and pull restores the folder from it.
+    bucket = _FakeBucket()
+    assert seed.push(bucket, "seed-bucket", "seed/images.tar", source) == 3
+    assert list(bucket.uploads) == ["seed/images.tar"]
+    stored = tmp_path / "stored.tar"
+    stored.write_bytes(bucket.uploads["seed/images.tar"])
+    dest = tmp_path / "images"
+    with tarfile.open(stored) as archive:
+        assert seed.pull(archive, dest) == (3, 0)
+    assert (dest / "a.jpg").read_bytes() == b"image-a"
+    assert (dest / ".curation" / "series.json").read_bytes() == b"series"
+
+
+def test_seed_push_and_link_print_a_read_only_link(tmp_path, monkeypatch, capsys):
+    seed = _seed_module()
+    source = tmp_path / "set"
+    source.mkdir()
+    (source / "a.jpg").write_bytes(b"image-a")
+    (source / "a.json").write_bytes(b"sidecar-a")
+    bucket = _FakeBucket()
+    monkeypatch.setattr(seed, "make_client", lambda source: bucket)
+    for name in ("SEED_S3_REGION", "SEED_S3_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+    # A dry run needs no credentials and contacts nothing.
+    for name in SEED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    assert seed.main(["push", str(source), "--dry-run"]) == 0
+    assert "would pack a.jpg" in capsys.readouterr().out
+    assert seed.main(["push", str(source)]) == 1
+    assert "No SEED_S3_* variables" in capsys.readouterr().err
+    assert bucket.uploads == {}
+
+    for name, value in SEED_ENV.items():
+        monkeypatch.setenv(name, value)
+    # A link that cannot be made must not leave a new archive behind.
+    assert seed.main(["push", str(source), "--days", "91"]) == 1
+    assert "between 1 and 90" in capsys.readouterr().err
+    assert bucket.uploads == {}
+
+    assert seed.main(["push", str(source), "--days", "30"]) == 0
+    printed = capsys.readouterr()
+    # The link alone on stdout, so it can be piped; the rest on stderr.
+    assert printed.out == SEED_LINK + "\n"
+    assert "SEED_ARCHIVE_URL" in printed.err
+    assert list(bucket.uploads) == ["seed/images.tar"]
+    assert bucket.presigned[-1] == (
+        "get_object",
+        "seed-bucket",
+        "seed/images.tar",
+        30 * 24 * 60 * 60,
+    )
+
+    assert seed.main(["link"]) == 0
+    assert capsys.readouterr().out == SEED_LINK + "\n"
+    assert bucket.heads == ["seed/images.tar"]
+    assert bucket.presigned[-1][3] == 90 * 24 * 60 * 60
+    assert list(bucket.uploads) == ["seed/images.tar"]
 
 
 def test_seed_start_runs_the_procfile_command_even_when_seeding_fails(monkeypatch):
@@ -1402,8 +1611,8 @@ def test_seed_start_runs_the_procfile_command_even_when_seeding_fails(monkeypatc
     launched = []
     monkeypatch.setattr(seed.os, "execvp", lambda file, args: launched.append(args))
     preview = {"RAILWAY_ENVIRONMENT_NAME": "ArtazzenDotCom-pr-252"}
-    # A half-configured source makes the pull raise; the app must still start.
-    seed.start({**preview, "SEED_S3_ENDPOINT": "https://s3.example"})
+    # A link that is not https makes the pull raise; the app must still start.
+    seed.start({**preview, "SEED_ARCHIVE_URL": "http://s3.example/seed.tar"})
     seed.start(preview)
     seed.start({})
     assert launched == [["sh", "-c", f"exec {web_command}"]] * 3
@@ -1419,9 +1628,9 @@ def test_seed_start_pulls_only_in_pull_request_environments(monkeypatch):
         lambda environ: pulled.append(environ["RAILWAY_ENVIRONMENT_NAME"]) or "ok",
     )
     for name in ("staging-dev", "production", "pr-preview", "my-pr-12-copy", ""):
-        seed.start({**SEED_ENV, "RAILWAY_ENVIRONMENT_NAME": name})
+        seed.start({**ARCHIVE_ENV, "RAILWAY_ENVIRONMENT_NAME": name})
     assert pulled == []
-    seed.start({**SEED_ENV, "RAILWAY_ENVIRONMENT_NAME": "ArtazzenDotCom-pr-252"})
+    seed.start({**ARCHIVE_ENV, "RAILWAY_ENVIRONMENT_NAME": "ArtazzenDotCom-pr-252"})
     assert pulled == ["ArtazzenDotCom-pr-252"]
 
 
@@ -1462,9 +1671,15 @@ def test_seed_script_help_and_usage_errors(tmp_path):
         result, calls = _run_seed_script(tmp_path, flag)
         assert result.returncode == 0
         assert result.stdout.startswith("Usage:")
-        assert "--from-bucket" in result.stdout
+        assert "--from-archive" in result.stdout
         assert calls == []
-    for bad in ([], ["--nope", "pr-1"], ["pr-1", "a", "b"], ["--project"]):
+    for bad in (
+        [],
+        ["--nope", "pr-1"],
+        ["pr-1", "a", "b"],
+        ["--project"],
+        ["--from-archive", "pr-1", "a"],
+    ):
         result, calls = _run_seed_script(tmp_path, *bad)
         assert result.returncode == 2
         assert calls == []
@@ -1474,14 +1689,14 @@ def test_seed_script_rejects_values_railway_would_replace_with_a_default(tmp_pat
     # An empty project, service or environment makes railway choose one itself.
     for bad in (
         [""],
-        ["--from-bucket", ""],
+        ["--from-archive", ""],
         [" production"],
         ["pr-9 "],
         ["--", "-x"],
         ["--project=", "pr-9"],
         ["--service", "", "pr-9"],
-        ["--project", "--from-bucket", "pr-9"],
-        ["--from-bucket", "--prefix", "--project", "pr-9"],
+        ["--project", "--from-archive", "pr-9"],
+        ["--from-archive", "--remote-dir", "--project", "pr-9"],
     ):
         result, calls = _run_seed_script(tmp_path, *bad)
         assert result.returncode == 2, bad
@@ -1490,7 +1705,7 @@ def test_seed_script_rejects_values_railway_would_replace_with_a_default(tmp_pat
 
 def test_seed_script_refuses_production(tmp_path):
     for name in ("production", "Prod", "54b8b12f-df88-47f7-aef4-3cd356770e1a"):
-        for mode in ([], ["--from-bucket"]):
+        for mode in ([], ["--from-archive"]):
             result, calls = _run_seed_script(tmp_path, *mode, name)
             assert result.returncode == 1
             assert "Refusing" in result.stderr
@@ -1520,20 +1735,12 @@ def test_seed_script_options_win_over_environment_variables(tmp_path):
         assert "/data/flag" in call
 
 
-def test_seed_script_from_bucket_runs_the_pull_in_the_environment(tmp_path):
-    result, calls = _run_seed_script(
-        tmp_path, "--from-bucket", "--prefix", "sets/orbs", "pr-9"
-    )
+def test_seed_script_from_archive_runs_the_pull_in_the_environment(tmp_path):
+    result, calls = _run_seed_script(tmp_path, "--from-archive", "pr-9")
     assert result.returncode == 0, result.stderr
     assert len(calls) == 1
-    assert (
-        "python scripts/seed_images.py pull --dest '/data/images' --prefix 'sets/orbs'"
-        in calls[0]
-    )
-    result, calls = _run_seed_script(tmp_path, "--prefix", "x", "pr-9")
-    assert result.returncode == 2
-    result, calls = _run_seed_script(tmp_path, "--from-bucket", "--prefix", "a;b", "pr")
-    assert result.returncode == 1
+    assert "--environment=pr-9" in calls[0]
+    assert calls[0].endswith("python scripts/seed_images.py pull --dest '/data/images'")
 
 
 # ---------------------------------------------------------------------------

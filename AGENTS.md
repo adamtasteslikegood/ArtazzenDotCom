@@ -367,44 +367,45 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 | `FIRE_OPAL_PAYLINK_URL`       | GoDaddy/PayPal pay link                                      | unset or same link           |
 | `SUPPORT_LINKS`               | sponsorship links                                            | unset or same links          |
 | `JOIN_FEATURE_IMAGE`          | file name of an approved image                               | unset (first artwork)        |
-| `SEED_S3_*`                   | unset                                                        | inherited from `staging-dev` |
+| `SEED_ARCHIVE_URL`            | unset                                                        | inherited from `staging-dev` |
+| `SEED_S3_*`                   | unset                                                        | unset (never on Railway)     |
 | `PORT`                        | set by Railway                                               | set by Railway               |
 
 ### Seeding preview images
 
 A new preview's image volume is empty. Two ways to fill it:
 
-**Automatically, from a bucket folder.** `railway.json` gives pull-request
+**Automatically, from a seed archive.** `railway.json` gives pull-request
 environments (and only those) the start command
-`python scripts/seed_images.py start`. It copies a folder of a storage bucket
+`python scripts/seed_images.py start`. It downloads one archive, unpacks it
 into `IMAGES_DIR` and then runs the `Procfile`'s web command. It runs in the
 start command because Railway does not mount volumes during a pre-deploy
 command. Once the volume holds artwork, files already on it are never
 overwritten, so edits made in a preview survive its next deploy. Until then the
 seed replaces what is there: the app creates empty collection and series
 registries on its first start, and they would otherwise hide the seeded ones.
-Without the variables below it logs one line and starts the app; a failed copy
-logs a warning and starts the app.
+An artwork image is unpacked only if its sidecar is in the archive or already
+on the volume. Without the variable below it logs one line and starts the app;
+a failed download logs a warning and starts the app.
 
-A bucket has no file path or mount. It is reached over HTTPS by endpoint,
-bucket name and key prefix, with credentials. Set these on the `staging-dev`
-service, from the Credentials tab of that environment's bucket:
+The archive lives in the `staging-dev` environment's storage bucket. A bucket
+has no file path or mount: it is reached over HTTPS, with credentials. Previews
+do not get those credentials. They get a presigned link:
 
-| Variable                    | Value                                            |
-| --------------------------- | ------------------------------------------------ |
-| `SEED_S3_ENDPOINT`          | the bucket's endpoint                            |
-| `SEED_S3_BUCKET`            | the bucket's S3 name (not its display name)      |
-| `SEED_S3_ACCESS_KEY_ID`     | access key id                                    |
-| `SEED_S3_SECRET_ACCESS_KEY` | secret access key                                |
-| `SEED_S3_PREFIX`            | folder to copy; optional, default `seed/images/` |
+| Variable           | Set on                | Value                                |
+| ------------------ | --------------------- | ------------------------------------ |
+| `SEED_ARCHIVE_URL` | `staging-dev` service | the link printed by `push` or `link` |
 
-- Paste the values. A `${{Bucket.…}}` reference would resolve, in each preview,
-  to that preview's own empty bucket: every environment gets its own bucket
-  instance and credentials. This is also why the seeder ignores the service's
-  `AWS_*` variables.
-- Do not seal them. Sealed variables are not copied into PR environments.
-- The credentials can write to the bucket, and every preview holds them. Keep
-  nothing but seed data in that bucket.
+- The link can read that one archive and nothing else. It cannot write, delete
+  or list, so code running in a preview cannot change the seed. Anyone who has
+  the link can download the archive until it expires.
+- **The link expires after at most 90 days** (Railway's limit). After that a
+  preview logs `the seed link answered HTTP 403` and starts empty. Run
+  `python scripts/seed_images.py link` and update the variable.
+- Do not seal it. Sealed variables are not copied into PR environments.
+- Never set the bucket's keys (`SEED_S3_*`, below) on a Railway environment.
+  Railway has no read-only bucket keys, so those keys can overwrite the seed.
+  The seeder warns when it finds them in an environment.
 - The seeder refuses to run when `RAILWAY_ENVIRONMENT_NAME` starts with `prod`
   or the environment is the production one. `start` also copies nothing unless
   the name ends in `-pr-<number>`, which is how Railway names pull-request
@@ -414,18 +415,25 @@ service, from the Credentials tab of that environment's bucket:
   environment at a time and has no pull-request override. See `TODOS.md` for
   the two ways to keep automatic seeding after that date.
 
-Upload or refresh the seed folder from a machine that has the local seed set
-(`test_data/images`, never committed), with the same variables exported:
+Upload or refresh the archive from a machine that has the local seed set
+(`test_data/images`, never committed). This is the only place the bucket's
+keys are used. Export them in that shell, from the Credentials tab of the
+`staging-dev` bucket: `SEED_S3_ENDPOINT`, `SEED_S3_BUCKET` (the S3 name, not
+the display name), `SEED_S3_ACCESS_KEY_ID` and `SEED_S3_SECRET_ACCESS_KEY`.
+`push` and `link` need `boto3`, which the app does not install.
 
 ```bash
+pip install boto3
 python scripts/seed_images.py push test_data/images --dry-run
-python scripts/seed_images.py push test_data/images
+python scripts/seed_images.py push test_data/images   # prints the link
+python scripts/seed_images.py link                    # a new link, no upload
 ```
 
 **By hand, over `railway ssh`.** `scripts/seed-env-images.sh <environment>`
 sends a local folder to the environment's volume and overwrites same-named
-files. `scripts/seed-env-images.sh --from-bucket <environment>` makes a running
-environment repeat the bucket copy. Both refuse production; see `--help`.
+files. `scripts/seed-env-images.sh --from-archive <environment>` makes a
+running environment download and unpack its seed archive again. Both refuse
+production; see `--help`.
 
 ## Workflow Summary
 
@@ -689,7 +697,7 @@ Images are always served from `/images` (`media.PublicImageFiles`), with or with
 
 ### PR environment images
 
-A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which copies the bucket folder named by the `SEED_S3_*` variables into `IMAGES_DIR` (never overwriting once the volume holds artwork, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Setup and the variable list are in `BRANCHING_STRATEGY.md` under "Seeding preview images".
+A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which downloads the seed archive behind the read-only link in `SEED_ARCHIVE_URL` and unpacks it into `IMAGES_DIR` (never overwriting once the volume holds artwork, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Environments never hold the bucket's keys (`SEED_S3_*`): only `seed_images.py push` and `link` use them, on a trusted machine. Setup is in `BRANCHING_STRATEGY.md` under "Seeding preview images".
 
 ### Cloudflare cache purge
 
