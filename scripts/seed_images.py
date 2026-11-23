@@ -362,8 +362,29 @@ def fetch_archive(
         raise ValueError(f"{ARCHIVE_URL_VAR} must be an https link")
     give_up_at = time.monotonic() + deadline_seconds
     try:
-        with opener(url, timeout=15) as response, open(into, "wb") as out:
-            while chunk := response.read(1024 * 1024):
+        with (
+            opener(url, timeout=max(0.001, min(15.0, deadline_seconds))) as response,
+            open(into, "wb") as out,
+        ):
+            # HTTPResponse.read() may wait to fill the requested buffer, and
+            # a socket timeout is an inactivity timeout rather than a total
+            # transfer deadline. read1() returns after one raw read; before
+            # each one, cap the socket timeout to the time still available.
+            read = getattr(response, "read1", response.read)
+            while True:
+                remaining = give_up_at - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError
+                sock = getattr(
+                    getattr(getattr(response, "fp", None), "raw", None),
+                    "_sock",
+                    None,
+                )
+                if sock is not None:
+                    sock.settimeout(max(0.001, min(15.0, remaining)))
+                chunk = read(1024 * 1024)
+                if not chunk:
+                    break
                 if time.monotonic() > give_up_at:
                     raise TimeoutError
                 out.write(chunk)
@@ -468,9 +489,12 @@ def run_pull(
     reason = production_reason(environ)
     if reason:
         return f"Seed skipped: {reason}."
-    if environ.get("SEED_S3_SECRET_ACCESS_KEY") and environ.get(
-        "RAILWAY_ENVIRONMENT_NAME"
-    ):
+    bucket_settings = (
+        name
+        for name, value in environ.items()
+        if name.startswith("SEED_S3_") and str(value).strip()
+    )
+    if environ.get("RAILWAY_ENVIRONMENT_NAME") and any(bucket_settings):
         logger.warning(
             "SEED_S3_* credentials are set in this environment. Only push and "
             "link use them, on a trusted machine: remove them here."

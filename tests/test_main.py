@@ -1469,6 +1469,19 @@ def test_seed_pull_reports_what_it_copied(tmp_path, caplog):
         seed.run_pull(preview, dest=dest, fetch=fetch)
     assert "remove them here" in caplog.text
 
+    # Any bucket setting is a policy violation in a Railway environment, not
+    # only the secret key.
+    for name in (*seed.REQUIRED_VARS, "SEED_S3_REGION", "SEED_S3_KEY"):
+        caplog.clear()
+        preview = {
+            **ARCHIVE_ENV,
+            "RAILWAY_ENVIRONMENT_NAME": "Proj-pr-9",
+            name: "unexpected",
+        }
+        with caplog.at_level("WARNING", logger="seed_images"):
+            seed.run_pull(preview, dest=dest, fetch=fetch)
+        assert "remove them here" in caplog.text, name
+
 
 def test_seed_fetch_accepts_only_https_links(tmp_path):
     seed = _seed_module()
@@ -1518,6 +1531,56 @@ def test_seed_fetch_downloads_and_never_repeats_the_link_in_errors(tmp_path):
     # An expired link says how to renew it.
     with pytest.raises(RuntimeError, match="seed_images.py link"):
         seed.fetch_archive(SEED_LINK, into, opener=expired)
+
+
+def test_seed_fetch_caps_each_socket_read_to_the_total_deadline(tmp_path, monkeypatch):
+    seed = _seed_module()
+    now = iter((10.0, 10.0, 11.0, 12.0, 13.0, 14.5, 15.1))
+    monkeypatch.setattr(seed.time, "monotonic", lambda: next(now))
+
+    class Socket:
+        def __init__(self):
+            self.timeouts = []
+
+        def settimeout(self, value):
+            self.timeouts.append(value)
+
+    class Raw:
+        def __init__(self, sock):
+            self._sock = sock
+
+    class FP:
+        def __init__(self, sock):
+            self.raw = Raw(sock)
+
+    class Response:
+        def __init__(self):
+            self.socket = Socket()
+            self.fp = FP(self.socket)
+            self.reads = iter((b"a", b"b", b"c"))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read1(self, _size):
+            return next(self.reads)
+
+        def read(self, _size):
+            raise AssertionError("the bounded path must use read1")
+
+    response = Response()
+    with pytest.raises(RuntimeError, match="did not finish"):
+        seed.fetch_archive(
+            SEED_LINK,
+            tmp_path / "seed.tar",
+            opener=lambda _url, timeout: response,
+            deadline_seconds=5,
+        )
+
+    assert response.socket.timeouts == [5.0, 3.0, 0.5]
 
 
 def test_seed_archive_holds_the_folder_without_locks_links_or_owner(tmp_path):
