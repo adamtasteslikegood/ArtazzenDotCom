@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
   URLs are accepted. An approved artwork is shown beside the offer:
   `JOIN_FEATURE_IMAGE` names it, and the gallery's first artwork is used when
   that is unset or is not an approved image.
+- Upscaler service in `services/upscaler/`, deployed as its own Railway
+  service. This first part imports copies into the `wrapped-stand` bucket from
+  the gallery, a browser upload or a server path, and lists them in a
+  Library. Importing never processes anything; upscaling jobs come in a later
+  change. The gallery admin links to it when `UPSCALER_URL` is set, and the
+  gallery itself does no upscaling.
 - Enlarged view on the artwork page: clicking the image opens it full-window
   instead of opening the original in a new tab. "Full size" (or a click on the
   image) then loads the original and shows it at its real size; the original

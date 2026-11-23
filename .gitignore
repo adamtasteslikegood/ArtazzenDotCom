@@ -23,3 +23,6 @@ coverage.xml
 
 # Local copies of environment image volumes (artwork + sidecars) for testing
 test_data/
+
+# Upscaler local server-path import root
+services/upscaler/imports/
