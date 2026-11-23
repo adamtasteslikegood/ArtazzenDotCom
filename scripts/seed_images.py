@@ -58,6 +58,9 @@ REQUIRED_VARS = (
 )
 # How Railway names the environment it creates for a pull request.
 PR_ENVIRONMENT_NAME = re.compile(r"-pr-\d+$")
+# The app's registry lock. A running app holds a lock on this very file, so it
+# is never replaced: a new file under the same name would be a different lock.
+REGISTRY_LOCKFILE = PurePosixPath(".curation/.lock")
 # Never copied in either direction: the volume's own filesystem folder.
 SKIPPED_TOP_LEVEL = {"lost+found"}
 # Keep in sync with app.config.ALLOWED_IMAGE_EXTENSIONS without importing the
@@ -156,6 +159,8 @@ def _relative_path(key: str, prefix: str) -> PurePosixPath | None:
         return None
     if path.parts[0] in SKIPPED_TOP_LEVEL:
         return None
+    if path == REGISTRY_LOCKFILE:
+        return None
     return path
 
 
@@ -184,8 +189,10 @@ def holds_artwork(dest: Path) -> bool:
 def pull(client: Any, bucket: str, prefix: str, dest: Path) -> tuple[int, int]:
     """Copy objects under ``prefix`` into ``dest``. Returns (copied, skipped).
 
-    Existing files are kept once ``dest`` holds artwork; before that they are
-    replaced, or app-made empty registries would hide the seeded collections.
+    Existing files are kept once ``dest`` holds artwork. Before that, the
+    files that were there when the pull began are replaced, or app-made empty
+    registries would hide the seeded collections. A file that appears while
+    the copy runs (an upload to a running app) is never replaced.
     """
     paths: dict[PurePosixPath, str] = {}
     paginator = client.get_paginator("list_objects_v2")
@@ -196,9 +203,13 @@ def pull(client: Any, bucket: str, prefix: str, dest: Path) -> tuple[int, int]:
                 paths[path] = obj["Key"]
 
     copied = skipped = 0
-    keep_existing = holds_artwork(dest)
     dest.mkdir(parents=True, exist_ok=True)
     dest_root = dest.resolve()
+    replaceable = (
+        set()
+        if holds_artwork(dest_root)
+        else {found for found in dest_root.rglob("*") if found.is_file()}
+    )
     for path in sorted(paths, key=_sidecars_first):
         target = dest.joinpath(*path.parts)
         target_parent = target.parent.resolve()
@@ -206,7 +217,7 @@ def pull(client: Any, bucket: str, prefix: str, dest: Path) -> tuple[int, int]:
             logger.warning("Skipping key outside destination: %r", paths[path])
             continue
         target = target_parent / target.name
-        if keep_existing and target.exists():
+        if target.exists() and target not in replaceable:
             skipped += 1
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -216,12 +227,15 @@ def pull(client: Any, bucket: str, prefix: str, dest: Path) -> tuple[int, int]:
         os.close(handle)
         try:
             client.download_file(bucket, paths[path], partial)
+            if target.exists() and target not in replaceable:
+                skipped += 1  # it appeared while this one was downloading
+                continue
             os.chmod(partial, 0o644)  # mkstemp makes it owner-only
             os.replace(partial, target)
+            copied += 1
         finally:
             if os.path.exists(partial):
                 os.remove(partial)
-        copied += 1
     return copied, skipped
 
 
