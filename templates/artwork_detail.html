@@ -22,9 +22,9 @@
     <main>
         <div class="artwork-detail-grid">
             <div>
-                <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" id="artwork-zoom-link" class="artwork-zoom-link"><img src="{{ artwork.display_url }}"{% if artwork.srcset %} srcset="{{ artwork.srcset }}" sizes="(max-width: 900px) calc(100vw - 4rem), 536px"{% endif %} alt="{{ artwork.title }}"></a>
+                <a href="{{ artwork.image_url }}" target="_blank" rel="noopener" id="artwork-zoom-link" class="artwork-zoom-link"><img src="{{ artwork.display_url }}"{% if artwork.srcset %} srcset="{{ artwork.srcset }}" sizes="(max-width: 900px) calc(100vw - 4rem), 626px"{% endif %} alt="{{ artwork.title }}"></a>
             </div>
-            <div style="padding-top: 2rem;">
+            <div>
                 {% if artwork.caption %}
                 <p class="artwork-meta-label">Caption</p>
                 <p class="artwork-meta-value">{{ artwork.caption }}</p>

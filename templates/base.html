@@ -31,7 +31,7 @@
         {% block header_pre %}{% endblock %}
         <h1>{% block page_heading %}{{ gallery_title | default('Artazzen Gallery') }}{% endblock %}</h1>
         {% block header_extra %}{% endblock %}
-        <nav class="site-nav">{% block site_nav %}<a href="{{ url_for('read_root') }}"{% if request.url.path == '/' %} aria-current="page"{% endif %}>Gallery</a><a href="{{ url_for('collections_index') }}"{% if request.url.path.startswith('/collections') %} aria-current="page"{% endif %}>Collections</a>{% endblock %}</nav>
+        <nav class="site-nav">{% block site_nav %}<a href="{{ url_for('read_root') }}"{% if request.url.path == '/' %} aria-current="page"{% endif %}>Gallery</a><a href="{{ url_for('collections_index') }}"{% if request.url.path.startswith('/collections') %} aria-current="page"{% endif %}>Collections</a><a href="{{ url_for('join') }}"{% if request.url.path == '/join' %} aria-current="page"{% endif %}>Join</a>{% endblock %}</nav>
         {% endblock %}
     </header>
 
@@ -41,6 +41,7 @@
 
     <footer>
         {% block footer %}<p>Artazzen</p>{% endblock %}
+        {% block footer_nav %}<nav class="footer-nav" aria-label="Footer"><a href="{{ url_for('join') }}">Join the Collective</a></nav>{% endblock %}
     </footer>
 
     {% block scripts %}{% endblock %}

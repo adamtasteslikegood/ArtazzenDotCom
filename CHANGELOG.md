@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- "Join the Collective" page at `/join`, linked from the header and footer of
+  every public page and listed in the sitemap. It offers the early-access Fire
+  Opal lifetime membership through a hosted pay link (`FIRE_OPAL_PAYLINK_URL`)
+  and, optionally, sponsorship links on other platforms (`SUPPORT_LINKS`).
+  Without a pay link the page says membership opens soon. Only `https://`
+  URLs are accepted. An approved artwork is shown beside the offer:
+  `JOIN_FEATURE_IMAGE` names it, and the gallery's first artwork is used when
+  that is unset or is not an approved image.
 - Upscaler service in `services/upscaler/`, deployed as its own Railway
   service. This first part imports copies into the `wrapped-stand` bucket from
   the gallery, a browser upload or a server path, and lists them in a
@@ -28,6 +36,25 @@ All notable changes to this project will be documented in this file.
 - The watcher builds the new sizes for existing images (five images per
   scan). An image whose sizes are rebuilt gets new thumbnail and detail URLs
   once.
+- Public pages, after a design review:
+  - The artwork page gives the image more of the width (7 of 12 columns, was
+    half) and lines the details up with the top of the image.
+  - Artwork is shown in its true colours. It used to be slightly desaturated
+    until hovered.
+  - The gallery is three columns on wide screens with the middle column set
+    lower, and two columns from 601 to 1099 px. The offset used to alternate
+    from row to row.
+  - Descriptions in the gallery and collection grids are cut to two lines; the
+    artwork page still shows the whole text.
+  - Collection cards are two to a row, level with each other, with a wider
+    crop. Their covers load a larger image on wide screens, so they
+    stay sharp at the new size.
+
+### Fixed
+
+- Collection and series links on the artwork page were the browser's default
+  blue, which was unreadable on the dark background. They now use the text
+  colour and stay underlined.
 
 ## [0.4.0] - 2026-10-11
 

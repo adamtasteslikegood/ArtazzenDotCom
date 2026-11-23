@@ -5,6 +5,7 @@ import os
 import threading
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi.templating import Jinja2Templates
 
@@ -107,6 +108,47 @@ templates.env.globals["site_url"] = SITE_URL
 # Public URL of the separate upscaler service (services/upscaler). The admin
 # nav links to it only when set; the gallery itself never upscales.
 templates.env.globals["upscaler_url"] = os.getenv("UPSCALER_URL", "").strip()
+
+
+def _https_url(value: str, name: str) -> str:
+    """Return ``value`` if it is a valid https URL, else "" (logged)."""
+    value = value.strip()
+    if not value:
+        return ""
+    try:
+        parsed = urlsplit(value)
+        valid = parsed.scheme.lower() == "https" and bool(parsed.hostname)
+    except ValueError:
+        valid = False
+    if not valid:
+        logger.warning("Ignoring %s: only valid https:// URLs are allowed", name)
+        return ""
+    return value
+
+
+def _parse_support_links(raw: str) -> list[dict[str, str]]:
+    """Parse ``Label|https://url; Label|https://url`` into label/url dicts."""
+    links: list[dict[str, str]] = []
+    for entry in raw.split(";"):
+        label, sep, url = entry.partition("|")
+        label = label.strip()
+        url = _https_url(url, "SUPPORT_LINKS entry") if sep else ""
+        if label and url:
+            links.append({"label": label, "url": url})
+        elif entry.strip():
+            logger.warning("Ignoring malformed SUPPORT_LINKS entry: %r", entry)
+    return links
+
+
+# Hosted checkout for the early-access Fire Opal lifetime membership (/join).
+FIRE_OPAL_PAYLINK_URL = _https_url(
+    os.getenv("FIRE_OPAL_PAYLINK_URL", ""), "FIRE_OPAL_PAYLINK_URL"
+)
+# Sponsorship/donation links on other platforms (/join), optional.
+SUPPORT_LINKS = _parse_support_links(os.getenv("SUPPORT_LINKS", ""))
+# Artwork shown beside the offer on /join: the file name of an approved image
+# (a path is accepted; only its last part is used). Optional.
+JOIN_FEATURE_IMAGE = Path(os.getenv("JOIN_FEATURE_IMAGE", "").strip()).name
 
 # RLock: writers that must make a read-merge-write cycle atomic (e.g. the
 # AI populate persist path) hold it across _write_sidecar, which acquires

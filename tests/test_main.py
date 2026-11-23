@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 import main as gallery_app
+from app import config
 from main import ALLOWED_IMAGE_EXTENSIONS, IMAGES_DIR, app
 
 
@@ -3564,3 +3565,114 @@ def test_admin_nav_links_upscaler_only_when_configured(authed_client, monkeypatc
     monkeypatch.setitem(globals_, "upscaler_url", "https://upscaler.example")
     page = authed_client.get("/admin").text
     assert 'href="https://upscaler.example"' in page
+
+
+# ---------------------------------------------------------------------------
+# Join the Collective (/join)
+# ---------------------------------------------------------------------------
+
+
+def test_join_page_without_paylink(client: TestClient, monkeypatch):
+    monkeypatch.setattr(config, "FIRE_OPAL_PAYLINK_URL", "")
+    monkeypatch.setattr(config, "SUPPORT_LINKS", [])
+    response = client.get("/join")
+    assert response.status_code == 200
+    assert "Fire Opal Lifetime Membership" in response.text
+    assert "Membership opens soon." in response.text
+    assert "Become a Fire Opal member" not in response.text
+    assert "Support the Collective" not in response.text
+    assert '<link rel="canonical" href="https://artazzen.com/join">' in response.text
+
+
+def test_join_page_with_paylink_and_support_links(client: TestClient, monkeypatch):
+    monkeypatch.setattr(config, "FIRE_OPAL_PAYLINK_URL", "https://pay.example/fo")
+    monkeypatch.setattr(
+        config,
+        "SUPPORT_LINKS",
+        [{"label": "Buy Me a Coffee", "url": "https://buymeacoffee.example/a"}],
+    )
+    response = client.get("/join")
+    assert response.status_code == 200
+    assert 'href="https://pay.example/fo"' in response.text
+    assert "Membership opens soon." not in response.text
+    assert 'href="https://buymeacoffee.example/a"' in response.text
+    assert "Buy Me a Coffee" in response.text
+
+
+def test_collection_cards_offer_a_larger_cover(tmp_path, monkeypatch):
+    _curation_fixture(tmp_path, monkeypatch)
+    with TestClient(app) as c:
+        page = c.get("/collections").text
+    srcset = re.search(r'srcset="([^"]+)"', page).group(1)
+    assert " 480w, " in srcset
+    assert srcset.endswith(" 1600w")
+    entry = {"id": "empty-collection"}
+    assert gallery_app.curation.collection_cover(entry) == {
+        "cover_url": "",
+        "cover_srcset": "",
+    }
+
+
+def test_join_feature_uses_configured_artwork(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", title="First Work")
+    _add_image(image_root, "b#featured.jpg", title="Chosen Work")
+    monkeypatch.setattr(gallery_app.config, "JOIN_FEATURE_IMAGE", "b#featured.jpg")
+    with TestClient(app) as c:
+        page = c.get("/join").text
+    assert '/artwork/b%23featured.jpg"' in page
+    assert "Chosen Work, from the gallery" in page
+    assert "/artwork/a.jpg" not in page
+
+
+def test_join_feature_falls_back_to_first_approved(tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_image(image_root, "a.jpg", title="First Work")
+    _add_image(image_root, "hidden.jpg", title="Secret Work", status="pending")
+    for wanted in ("", "missing.jpg", "hidden.jpg"):
+        monkeypatch.setattr(gallery_app.config, "JOIN_FEATURE_IMAGE", wanted)
+        with TestClient(app) as c:
+            page = c.get("/join").text
+        assert '/artwork/a.jpg"' in page
+        assert "Secret Work" not in page
+
+
+def test_join_page_without_artwork(tmp_path, monkeypatch):
+    _make_curation_root(tmp_path, monkeypatch)
+    with TestClient(app) as c:
+        response = c.get("/join")
+    assert response.status_code == 200
+    assert "join-feature" not in response.text
+
+
+def test_join_linked_from_public_nav_and_footer_not_admin(
+    client: TestClient, authed_client: TestClient
+):
+    page = client.get("/").text
+    assert page.count('/join"') == 2  # header nav + footer
+    assert '/join"' not in authed_client.get("/admin").text
+
+
+def test_join_in_sitemap(client: TestClient):
+    assert "<loc>https://artazzen.com/join</loc>" in client.get("/sitemap.xml").text
+
+
+def test_https_url_rejects_other_schemes():
+    assert config._https_url(" https://pay.example/x ", "X") == "https://pay.example/x"
+    assert config._https_url("javascript:alert(1)", "X") == ""
+    assert config._https_url("http://pay.example/x", "X") == ""
+    assert config._https_url("https://", "X") == ""
+    assert config._https_url("https:///missing-host", "X") == ""
+    assert config._https_url("", "X") == ""
+
+
+def test_parse_support_links():
+    links = config._parse_support_links(
+        "Buy Me a Coffee|https://bmc.example/a; GitHub Sponsors | https://gh.example/s;"
+        " bad entry; Evil|javascript:alert(1)"
+    )
+    assert links == [
+        {"label": "Buy Me a Coffee", "url": "https://bmc.example/a"},
+        {"label": "GitHub Sponsors", "url": "https://gh.example/s"},
+    ]
+    assert config._parse_support_links("") == []
