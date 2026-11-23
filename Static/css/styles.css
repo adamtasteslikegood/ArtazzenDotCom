@@ -1053,6 +1053,11 @@ footer {
     padding-bottom: 4rem;
 }
 
+/* The gap under the page's last section comes from main, like every public page. */
+.join-page > section:last-child {
+    padding-bottom: 0;
+}
+
 .join-offer-body {
     max-width: 38rem;
 }
