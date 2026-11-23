@@ -384,7 +384,9 @@ overwritten, so edits made in a preview survive its next deploy. Until then the
 seed replaces what is there: the app creates empty collection and series
 registries on its first start, and they would otherwise hide the seeded ones.
 Without the variables below it logs one line and starts the app; a failed copy
-logs a warning and starts the app.
+logs a warning and starts the app. Existing files always win, except that an
+app-created empty collection or series registry may be replaced while the
+volume still has no artwork; that replacement uses the app's registry lock.
 
 A bucket has no file path or mount. It is reached over HTTPS by endpoint,
 bucket name and key prefix, with credentials. Set these on the `staging-dev`

@@ -1270,7 +1270,7 @@ def test_seed_pull_replaces_app_made_registries_on_a_volume_without_artwork(
     # What the app leaves behind when it first starts on an empty volume.
     (dest / ".curation").mkdir(parents=True)
     (dest / ".curation" / "collections.json").write_text('{"collections": []}')
-    (dest / "a.json").write_text("sidecar left by an interrupted seed")
+    (dest / "a.json").write_text("sidecar-a")
     (dest / "lost+found").mkdir()
     assert not seed.holds_artwork(dest)
     assert not seed.holds_artwork(tmp_path / "missing")
@@ -1282,8 +1282,9 @@ def test_seed_pull_replaces_app_made_registries_on_a_volume_without_artwork(
         }
     )
 
-    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (3, 0)
+    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (2, 1)
     assert (dest / ".curation" / "collections.json").read_text() == "seeded registry"
+    assert (dest / "a.json").read_text() == "sidecar-a"
     assert seed.holds_artwork(dest)
 
     # From now on the volume's own files win, registries included.
@@ -1298,13 +1299,18 @@ def test_seed_pull_on_a_running_app_keeps_what_appears_during_the_copy(tmp_path)
     seed = _seed_module()
     dest = tmp_path / "images"
     (dest / ".curation").mkdir(parents=True)
-    (dest / ".curation" / "collections.json").write_text("app-made")
+    (dest / ".curation" / "collections.json").write_text('{"collections": []}')
     (dest / ".curation" / ".lock").write_text("held by the app")
     (dest / ".curation" / ".sidecars.lock").write_text("held by the app")
 
     class UploadDuringCopy(_FakeBucket):
         def download_file(self, bucket, key, filename):
             super().download_file(bucket, key, filename)
+            if key.endswith("collections.json"):
+                # A curation edit lands after the download starts. It must win.
+                (dest / ".curation" / "collections.json").write_text(
+                    '{"collections": [{"id": "live-edit"}]}'
+                )
             if key.endswith("a.json"):
                 # The admin uploads files while the seed is still copying.
                 (dest / "b.jpg").write_bytes(b"uploaded")
@@ -1322,8 +1328,10 @@ def test_seed_pull_on_a_running_app_keeps_what_appears_during_the_copy(tmp_path)
         }
     )
 
-    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (2, 2)
-    assert (dest / ".curation" / "collections.json").read_text() == "seeded registry"
+    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (1, 3)
+    assert json.loads((dest / ".curation" / "collections.json").read_text()) == {
+        "collections": [{"id": "live-edit"}]
+    }
     for lockfile in (".lock", ".sidecars.lock"):
         assert (dest / ".curation" / lockfile).read_text() == "held by the app"
     assert (dest / "b.jpg").read_bytes() == b"uploaded"
