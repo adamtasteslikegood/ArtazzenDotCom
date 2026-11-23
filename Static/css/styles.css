@@ -123,6 +123,12 @@ main {
     width: 100%;
 }
 
+/* Public pages: keep the last row as far from the footer rule as rows are
+   from each other. */
+body:not(.admin-page) main {
+    padding-bottom: 4rem;
+}
+
 /* Gallery Grid - Asymmetric Editorial Feel */
 .gallery-grid {
     display: grid;
