@@ -406,7 +406,13 @@ service, from the Credentials tab of that environment's bucket:
 - The credentials can write to the bucket, and every preview holds them. Keep
   nothing but seed data in that bucket.
 - The seeder refuses to run when `RAILWAY_ENVIRONMENT_NAME` starts with `prod`
-  or the environment is the production one.
+  or the environment is the production one. `start` also copies nothing unless
+  the name ends in `-pr-<number>`, which is how Railway names pull-request
+  environments, so it is safe as the start command of any environment.
+- **`railway.json` stops being read on 2026-12-01** (Railway has deprecated
+  Config as Code). Its replacement, `.railway/railway.ts`, is applied to one
+  environment at a time and has no pull-request override. See `TODOS.md` for
+  the two ways to keep automatic seeding after that date.
 
 Upload or refresh the seed folder from a machine that has the local seed set
 (`test_data/images`, never committed), with the same variables exported:

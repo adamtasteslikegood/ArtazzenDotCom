@@ -1325,10 +1325,28 @@ def test_seed_start_runs_the_procfile_command_even_when_seeding_fails(monkeypatc
 
     launched = []
     monkeypatch.setattr(seed.os, "execvp", lambda file, args: launched.append(args))
+    preview = {"RAILWAY_ENVIRONMENT_NAME": "ArtazzenDotCom-pr-252"}
     # A half-configured source makes the pull raise; the app must still start.
-    seed.start({"SEED_S3_ENDPOINT": "https://s3.example"})
+    seed.start({**preview, "SEED_S3_ENDPOINT": "https://s3.example"})
+    seed.start(preview)
     seed.start({})
-    assert launched == [["sh", "-c", f"exec {web_command}"]] * 2
+    assert launched == [["sh", "-c", f"exec {web_command}"]] * 3
+
+
+def test_seed_start_pulls_only_in_pull_request_environments(monkeypatch):
+    seed = _seed_module()
+    monkeypatch.setattr(seed.os, "execvp", lambda file, args: None)
+    pulled = []
+    monkeypatch.setattr(
+        seed,
+        "run_pull",
+        lambda environ: pulled.append(environ["RAILWAY_ENVIRONMENT_NAME"]) or "ok",
+    )
+    for name in ("staging-dev", "production", "pr-preview", "my-pr-12-copy", ""):
+        seed.start({**SEED_ENV, "RAILWAY_ENVIRONMENT_NAME": name})
+    assert pulled == []
+    seed.start({**SEED_ENV, "RAILWAY_ENVIRONMENT_NAME": "ArtazzenDotCom-pr-252"})
+    assert pulled == ["ArtazzenDotCom-pr-252"]
 
 
 def test_only_pr_environments_use_the_seeding_start_command():

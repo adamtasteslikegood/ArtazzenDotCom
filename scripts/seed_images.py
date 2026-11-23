@@ -14,7 +14,9 @@ pull   Copy every object under the prefix into DIR (default: IMAGES_DIR).
 push   Upload a local folder (artwork, sidecars, curation registries) to the
        prefix, replacing same-named objects. Nothing is deleted.
 start  What a PR environment runs to start: pull, then run the Procfile's
-       web command. A failed or unconfigured pull never stops the app.
+       web command. A failed or unconfigured pull never stops the app, and
+       outside a pull-request environment (Railway names them "<name>-pr-<n>")
+       nothing is pulled, so any environment can safely start this way.
 
 A bucket has no mount point or file path. It is reached over HTTPS at an
 endpoint, a bucket name and a key prefix, with credentials:
@@ -35,6 +37,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Mapping
@@ -53,6 +56,8 @@ REQUIRED_VARS = (
     "SEED_S3_ACCESS_KEY_ID",
     "SEED_S3_SECRET_ACCESS_KEY",
 )
+# How Railway names the environment it creates for a pull request.
+PR_ENVIRONMENT_NAME = re.compile(r"-pr-\d+$")
 # Never copied in either direction: the volume's own filesystem folder.
 SKIPPED_TOP_LEVEL = {"lost+found"}
 
@@ -103,6 +108,11 @@ def production_reason(environ: Mapping[str, str]) -> str | None:
     if name.lower().startswith("prod"):
         return f"environment {name!r} is production"
     return None
+
+
+def is_pr_environment(environ: Mapping[str, str]) -> bool:
+    name = environ.get("RAILWAY_ENVIRONMENT_NAME", "")
+    return bool(PR_ENVIRONMENT_NAME.search(name))
 
 
 def make_client(source: SeedSource) -> Any:
@@ -269,10 +279,13 @@ def procfile_web_command(procfile: Path | None = None) -> str:
 
 def start(environ: Mapping[str, str]) -> None:
     """Seed, then become the web process. Seeding can never block the start."""
-    try:
-        logger.info(run_pull(environ))
-    except Exception as exc:
-        logger.warning("Seed failed, starting without it: %s", exc)
+    if not is_pr_environment(environ):
+        logger.info("Seed skipped: not a pull-request environment.")
+    else:
+        try:
+            logger.info(run_pull(environ))
+        except Exception as exc:
+            logger.warning("Seed failed, starting without it: %s", exc)
     command = procfile_web_command()
     logger.info("Starting: %s", command)
     sys.stdout.flush()
