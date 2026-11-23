@@ -83,6 +83,10 @@ class JobFinished(JobError):
     """The job reached a final state elsewhere; the write was refused."""
 
 
+class PredictionFinished(ReplicateError):
+    """Replicate reported a terminal non-success state; do not cancel it."""
+
+
 def now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -740,6 +744,7 @@ class JobRunner:
                 cancel_url = (
                     (job.get("prediction") or {}).get("cancel_url")
                     if job.get("state") != "postprocessing"
+                    and not isinstance(exc, PredictionFinished)
                     else None
                 )
                 if cancel_url:
@@ -844,7 +849,9 @@ class JobRunner:
             await asyncio.sleep(self.settings.poll_seconds)
         if status_ != "succeeded":
             error = current.get("error") or status_
-            raise ReplicateError(f"Replicate prediction {status_}: {str(error)[:300]}")
+            raise PredictionFinished(
+                f"Replicate prediction {status_}: {str(error)[:300]}"
+            )
 
         job = await self._io(set_state, self.storage, job, "postprocessing")
         max_bytes = int(self.settings.max_output_megapixels * 1_000_000 * 4 + 1_000_000)

@@ -264,11 +264,16 @@ def test_confirm_rejects_a_job_prepared_for_another_model(
 
 def test_replicate_failure_is_recorded(client, storage, fake_replicate):
     fake_replicate.fail_with = "CUDA out of memory"
+    # A terminal failed prediction must not be sent to the cancellation-retry
+    # path, even when Replicate would reject such a cancellation.
+    fake_replicate.cancel_status = 503
     job_id = prepare(client, upload(client, png(gradient())))
     client.post(f"/jobs/{job_id}/confirm")
     job = wait_for(client, job_id)
     assert job["state"] == "error"
     assert "CUDA out of memory" in job["error"]
+    assert job.get("cancel_pending") is None
+    assert not any(str(r.url).endswith("/cancel") for r in fake_replicate.requests)
 
 
 def test_cancel_running_job_cancels_prediction(client, storage, fake_replicate):
