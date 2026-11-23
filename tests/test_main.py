@@ -1042,6 +1042,37 @@ def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path):
     assert not [p for p in dest.rglob(".seed-*")]
 
 
+def test_seed_pull_replaces_app_made_registries_on_a_volume_without_artwork(
+    tmp_path,
+):
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    # What the app leaves behind when it first starts on an empty volume.
+    (dest / ".curation").mkdir(parents=True)
+    (dest / ".curation" / "collections.json").write_text('{"collections": []}')
+    (dest / "lost+found").mkdir()
+    assert not seed.holds_artwork(dest)
+    assert not seed.holds_artwork(tmp_path / "missing")
+    bucket = _FakeBucket(
+        {
+            "seed/images/.curation/collections.json": b"seeded registry",
+            "seed/images/a.json": b"sidecar-a",
+            "seed/images/a.jpg": b"image-a",
+        }
+    )
+
+    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (3, 0)
+    assert (dest / ".curation" / "collections.json").read_text() == "seeded registry"
+    assert seed.holds_artwork(dest)
+
+    # From now on the volume's own files win, registries included.
+    (dest / ".curation" / "collections.json").write_text("curated in the preview")
+    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (0, 3)
+    assert (
+        dest / ".curation" / "collections.json"
+    ).read_text() == "curated in the preview"
+
+
 def test_seed_pull_is_skipped_when_unconfigured_or_in_production(tmp_path):
     seed = _seed_module()
 

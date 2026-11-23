@@ -379,9 +379,12 @@ environments (and only those) the start command
 `python scripts/seed_images.py start`. It copies a folder of a storage bucket
 into `IMAGES_DIR` and then runs the `Procfile`'s web command. It runs in the
 start command because Railway does not mount volumes during a pre-deploy
-command. Files already on the volume are never overwritten, so edits made in a
-preview survive its next deploy. Without the variables below it logs one line
-and starts the app; a failed copy logs a warning and starts the app.
+command. Once the volume holds artwork, files already on it are never
+overwritten, so edits made in a preview survive its next deploy. Until then the
+seed replaces what is there: the app creates empty collection and series
+registries on its first start, and they would otherwise hide the seeded ones.
+Without the variables below it logs one line and starts the app; a failed copy
+logs a warning and starts the app.
 
 A bucket has no file path or mount. It is reached over HTTPS by endpoint,
 bucket name and key prefix, with credentials. Set these on the `staging-dev`
@@ -679,7 +682,7 @@ Images are always served from `/images` (`media.PublicImageFiles`), with or with
 
 ### PR environment images
 
-A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which copies the bucket folder named by the `SEED_S3_*` variables into `IMAGES_DIR` (never overwriting, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Setup and the variable list are in `BRANCHING_STRATEGY.md` under "Seeding preview images".
+A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which copies the bucket folder named by the `SEED_S3_*` variables into `IMAGES_DIR` (never overwriting once the volume holds artwork, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Setup and the variable list are in `BRANCHING_STRATEGY.md` under "Seeding preview images".
 
 ### Cloudflare cache purge
 

@@ -7,8 +7,10 @@ Usage:
     python scripts/seed_images.py start
 
 pull   Copy every object under the prefix into DIR (default: IMAGES_DIR).
-       Files that already exist are left alone, so edits made in the
-       environment survive the next deploy. Refuses to run in production.
+       Once DIR holds artwork, files that already exist are left alone, so
+       edits made in the environment survive the next deploy. Until then the
+       seed replaces what is there (the empty registries the app creates on
+       its first start). Refuses to run in production.
 push   Upload a local folder (artwork, sidecars, curation registries) to the
        prefix, replacing same-named objects. Nothing is deleted.
 start  What a PR environment runs to start: pull, then run the Procfile's
@@ -150,8 +152,26 @@ def _sidecars_first(path: PurePosixPath) -> tuple[int, str]:
     return (0 if path.suffix == ".json" else 1, str(path))
 
 
+def holds_artwork(dest: Path) -> bool:
+    """True once ``dest`` has anything but the app's own bookkeeping folders.
+
+    The app creates ``.curation`` with empty registries the first time it
+    starts, so a volume can be non-empty and still have nothing worth keeping.
+    """
+    if not dest.is_dir():
+        return False
+    return any(
+        not child.name.startswith(".") and child.name not in SKIPPED_TOP_LEVEL
+        for child in dest.iterdir()
+    )
+
+
 def pull(client: Any, bucket: str, prefix: str, dest: Path) -> tuple[int, int]:
-    """Copy objects under ``prefix`` into ``dest``. Returns (copied, skipped)."""
+    """Copy objects under ``prefix`` into ``dest``. Returns (copied, skipped).
+
+    Existing files are kept once ``dest`` holds artwork; before that they are
+    replaced, or app-made empty registries would hide the seeded collections.
+    """
     paths: dict[PurePosixPath, str] = {}
     paginator = client.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -161,10 +181,11 @@ def pull(client: Any, bucket: str, prefix: str, dest: Path) -> tuple[int, int]:
                 paths[path] = obj["Key"]
 
     copied = skipped = 0
+    keep_existing = holds_artwork(dest)
     dest.mkdir(parents=True, exist_ok=True)
     for path in sorted(paths, key=_sidecars_first):
         target = dest.joinpath(*path.parts)
-        if target.exists():
+        if keep_existing and target.exists():
             skipped += 1
             continue
         target.parent.mkdir(parents=True, exist_ok=True)

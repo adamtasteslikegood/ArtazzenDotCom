@@ -135,9 +135,12 @@ environments (and only those) the start command
 `python scripts/seed_images.py start`. It copies a folder of a storage bucket
 into `IMAGES_DIR` and then runs the `Procfile`'s web command. It runs in the
 start command because Railway does not mount volumes during a pre-deploy
-command. Files already on the volume are never overwritten, so edits made in a
-preview survive its next deploy. Without the variables below it logs one line
-and starts the app; a failed copy logs a warning and starts the app.
+command. Once the volume holds artwork, files already on it are never
+overwritten, so edits made in a preview survive its next deploy. Until then the
+seed replaces what is there: the app creates empty collection and series
+registries on its first start, and they would otherwise hide the seeded ones.
+Without the variables below it logs one line and starts the app; a failed copy
+logs a warning and starts the app.
 
 A bucket has no file path or mount. It is reached over HTTPS by endpoint,
 bucket name and key prefix, with credentials. Set these on the `staging-dev`

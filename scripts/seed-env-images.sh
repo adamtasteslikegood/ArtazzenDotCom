@@ -16,8 +16,9 @@ deleted. Production is refused.
 
 With --from-bucket nothing is sent from this machine: the environment copies
 the seed folder from its bucket source instead (see scripts/seed_images.py),
-and files that already exist there are left alone. The environment must be
-running a build that has scripts/seed_images.py and the SEED_S3_* variables.
+and once the volume holds artwork, files that already exist there are left
+alone. The environment must be running a build that has
+scripts/seed_images.py and the SEED_S3_* variables.
 
 Options:
   --project ID       Railway project      (env: RAILWAY_PROJECT)

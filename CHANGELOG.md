@@ -26,8 +26,8 @@ All notable changes to this project will be documented in this file.
   `railway.json` starts them (and only them) through
   `scripts/seed_images.py start`, which copies a storage-bucket folder named
   by the `SEED_S3_*` variables into `IMAGES_DIR` and then runs the `Procfile`
-  command. Existing files are kept, production is refused, and with no
-  variables set the app starts as before. `seed_images.py push` uploads a
+  command. Once the volume holds artwork its files are kept, production is
+  refused, and with no variables set the app starts as before. `seed_images.py push` uploads a
   local folder to the bucket. Adds `boto3`.
 - `scripts/seed-env-images.sh` has `-h/--help`, options for the project,
   service and target directory (`--project`, `--service`, `--remote-dir`; an
