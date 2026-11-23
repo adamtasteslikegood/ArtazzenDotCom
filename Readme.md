@@ -53,6 +53,7 @@ app/
   factory.py             # create_app: lifespan, mounts, middleware, routers
 manage_sidecars.py       # CLI: validate/migrate sidecars + curation registries
 ImageSidecar.schema.json # Authoritative schema for per-image metadata
+ai_config/               # AI model catalog: models.json (prices, efforts), schema, README
 CollectionsRegistry.schema.json  # Schema for .curation/collections.json
 SeriesRegistry.schema.json       # Schema for .curation/series.json
 templates/               # Jinja2: base + base_admin, pages extend them
