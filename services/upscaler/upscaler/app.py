@@ -330,22 +330,25 @@ def create_app(
     async def confirm(job_id: str, request: Request) -> RedirectResponse:
         storage = _storage(request)
         job = await asyncio.to_thread(_job_or_404, storage, job_id)
+        # Redirect to the stored record's id, never to the text from the URL.
+        page = f"/jobs/{job['id']}"
         try:
             await runner.confirm(job)
         except JobError as exc:
-            return _see(f"/jobs/{job_id}?error={quote(str(exc))}")
-        return _see(f"/jobs/{job_id}")
+            return _see(f"{page}?error={quote(str(exc))}")
+        return _see(page)
 
     @app.post("/jobs/{job_id}/cancel", dependencies=[Depends(verify_admin)])
     async def cancel(job_id: str, request: Request) -> RedirectResponse:
         storage = _storage(request)
         job = await asyncio.to_thread(_job_or_404, storage, job_id)
         was_staged = job["state"] == "staged"
+        page = f"/jobs/{job['id']}"
         try:
             await runner.cancel(job)
         except JobError as exc:
-            return _see(f"/jobs/{job_id}?error={quote(str(exc))}")
-        return _see("/library" if was_staged else f"/jobs/{job_id}")
+            return _see(f"{page}?error={quote(str(exc))}")
+        return _see("/library" if was_staged else page)
 
     @app.get("/api/jobs/{job_id}", dependencies=[Depends(verify_admin)])
     def api_job(job_id: str, request: Request) -> JSONResponse:
