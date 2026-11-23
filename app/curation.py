@@ -258,22 +258,44 @@ def collection_members(slug: str) -> list[dict[str, Any]]:
     return members
 
 
-def collection_cover_url(entry: dict[str, Any]) -> str:
-    """Resolve a collection's cover image URL ('' when it has no artwork)."""
+def _collection_cover_meta(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Approved artwork used as a collection's cover (None when it has none)."""
     cover = (entry.get("cover") or "").strip()
     # An unapproved cover is not publicly served; fall through to a member.
     cover_meta = _approved_metadata(cover) if cover else None
     if cover_meta:
-        return cover_meta["thumb_url"]
+        return cover_meta
     members = collection_members(entry["id"])
     if members:
-        return members[0]["thumb_url"]
+        return members[0]
     for series in series_in_collection(entry["id"]):
         for filename in series.get("images") or []:
             meta = _approved_metadata(filename)
             if meta:
-                return meta["thumb_url"]
-    return ""
+                return meta
+    return None
+
+
+def collection_cover_url(entry: dict[str, Any]) -> str:
+    """Resolve a collection's cover image URL ('' when it has no artwork)."""
+    meta = _collection_cover_meta(entry)
+    return meta["thumb_url"] if meta else ""
+
+
+def collection_cover(entry: dict[str, Any]) -> dict[str, str]:
+    """Cover fields for a collection card: `cover_url` and `cover_srcset`.
+
+    The cards are wider than the grid thumbnail, so the srcset also offers the
+    detail-page size. Both are '' when the collection has no artwork.
+    """
+    meta = _collection_cover_meta(entry)
+    if not meta:
+        return {"cover_url": "", "cover_srcset": ""}
+    srcset = (
+        f"{meta['thumb_url']} {config.THUMB_WIDTH}w, "
+        f"{meta['display_url']} {config.DISPLAY_WIDTH}w"
+    )
+    return {"cover_url": meta["thumb_url"], "cover_srcset": srcset}
 
 
 def collection_view(slug: str) -> dict[str, Any] | None:
@@ -298,10 +320,7 @@ def collection_view(slug: str) -> dict[str, Any] | None:
     direct = collection_members(slug)
     standalone = [m for m in direct if m["name"] not in series_member_names]
 
-    children = [
-        {**child, "cover_url": collection_cover_url(child)}
-        for child in children_of(slug)
-    ]
+    children = [{**child, **collection_cover(child)} for child in children_of(slug)]
 
     return {
         "collection": entry,

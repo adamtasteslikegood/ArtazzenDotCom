@@ -100,6 +100,16 @@ header h1 {
     letter-spacing: -0.03em;
     margin: 0;
     font-weight: 700;
+    text-wrap: balance;
+}
+
+/* Line under the page heading (gallery tagline, collection description) */
+.tagline {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    opacity: 0.6;
+    margin-top: 1rem;
 }
 
 /* Main Content Area */
@@ -114,7 +124,7 @@ main {
 /* Gallery Grid - Asymmetric Editorial Feel */
 .gallery-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 4rem;
     align-items: start;
 }
@@ -126,7 +136,8 @@ main {
     transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.artwork-item:nth-child(even) {
+/* Stagger: the middle column sits lower, the same way on every row. */
+.artwork-item:nth-child(3n + 2) {
     margin-top: 4rem;
 }
 
@@ -150,12 +161,6 @@ main {
     border-radius: var(--radius-sm);
     aspect-ratio: 4 / 5;
     object-fit: cover;
-    filter: grayscale(8%);
-    transition: filter 0.4s ease;
-}
-
-.artwork-item:hover img {
-    filter: grayscale(0%);
 }
 
 .artwork-title {
@@ -172,6 +177,29 @@ main {
     color: var(--text-muted);
     margin-top: 0.5rem;
     max-width: 30ch;
+}
+
+/* In a grid the description is a teaser; the artwork page has all of it. */
+.gallery-grid .artwork-description {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+}
+
+/* Collection cards: two wide cards per row, level with each other. */
+.collections-grid .artwork-item:nth-child(n) {
+    margin-top: 0;
+}
+
+@media (min-width: 601px) {
+    .gallery-grid.collections-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .collections-grid .artwork-item img {
+        aspect-ratio: 5 / 4;
+    }
 }
 
 /* Admin HUD Styles */
@@ -597,9 +625,21 @@ footer {
 }
 
 /* Responsive */
-@media (max-width: 900px) {
+@media (max-width: 1099px) {
+    /* Two columns: the right-hand column sits lower. */
     .gallery-grid {
         grid-template-columns: repeat(2, 1fr);
+    }
+    .artwork-item:nth-child(3n + 2) {
+        margin-top: 0;
+    }
+    .artwork-item:nth-child(even) {
+        margin-top: 4rem;
+    }
+}
+
+@media (max-width: 900px) {
+    .gallery-grid {
         gap: 2rem;
     }
     .artwork-item:nth-child(even) {
@@ -803,7 +843,7 @@ footer {
 /* Artwork detail responsive */
 .artwork-detail-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
     gap: 4rem;
     align-items: start;
 }
@@ -819,12 +859,6 @@ footer {
     width: 100%;
     height: auto;
     border-radius: var(--radius-sm);
-    filter: grayscale(8%);
-    transition: filter 0.4s ease;
-}
-
-.artwork-detail-grid img:hover {
-    filter: grayscale(0%);
 }
 
 /* Enlarged artwork view */

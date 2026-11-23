@@ -117,7 +117,7 @@ def _latest_lastmod(paths: list[Path]) -> str | None:
 async def collections_index(request: Request):
     """Top-level collections grid."""
     collections = [
-        {**entry, "cover_url": curation.collection_cover_url(entry)}
+        {**entry, **curation.collection_cover(entry)}
         for entry in curation.top_level_collections()
     ]
     context = seo.build_context(

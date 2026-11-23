@@ -30,6 +30,19 @@ All notable changes to this project will be documented in this file.
 - The watcher builds the new sizes for existing images (five images per
   scan). An image whose sizes are rebuilt gets new thumbnail and detail URLs
   once.
+- Public pages, after a design review:
+  - The artwork page gives the image more of the width (7 of 12 columns, was
+    half) and lines the details up with the top of the image.
+  - Artwork is shown in its true colours. It used to be slightly desaturated
+    until hovered.
+  - The gallery is three columns on wide screens with the middle column set
+    lower, and two columns from 601 to 1099 px. The offset used to alternate
+    from row to row.
+  - Descriptions in the gallery and collection grids are cut to two lines; the
+    artwork page still shows the whole text.
+  - Collection cards are two to a row, level with each other, with a wider
+    crop. Their covers load a larger image on wide screens, so they
+    stay sharp at the new size.
 
 ### Fixed
 
