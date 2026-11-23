@@ -1470,6 +1470,24 @@ def test_seed_script_help_and_usage_errors(tmp_path):
         assert calls == []
 
 
+def test_seed_script_rejects_values_railway_would_replace_with_a_default(tmp_path):
+    # An empty project, service or environment makes railway choose one itself.
+    for bad in (
+        [""],
+        ["--from-bucket", ""],
+        [" production"],
+        ["pr-9 "],
+        ["--", "-x"],
+        ["--project=", "pr-9"],
+        ["--service", "", "pr-9"],
+        ["--project", "--from-bucket", "pr-9"],
+        ["--from-bucket", "--prefix", "--project", "pr-9"],
+    ):
+        result, calls = _run_seed_script(tmp_path, *bad)
+        assert result.returncode == 2, bad
+        assert calls == [], bad
+
+
 def test_seed_script_refuses_production(tmp_path):
     for name in ("production", "Prod", "54b8b12f-df88-47f7-aef4-3cd356770e1a"):
         for mode in ([], ["--from-bucket"]):

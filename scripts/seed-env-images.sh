@@ -42,15 +42,22 @@ PREFIX=""
 ARGS=()
 
 # Prints the value of an option given as "--name value" or "--name=value".
+# An empty value, or one that is itself an option, is a mistake: railway would
+# fall back to whatever project or service it considers the default.
 option_value() {
+    local value
     if [[ "$1" == *=* ]]; then
-        printf '%s' "${1#*=}"
+        value="${1#*=}"
     elif [[ $# -ge 2 ]]; then
-        printf '%s' "$2"
+        value="$2"
     else
-        echo "Option ${1} needs a value." >&2
+        value=""
+    fi
+    if [[ -z "$value" || "$value" == -* ]]; then
+        echo "Option ${1%%=*} needs a value." >&2
         exit 2
     fi
+    printf '%s' "$value"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -104,6 +111,13 @@ fi
 
 ENVIRONMENT="${ARGS[0]}"
 SOURCE="${ARGS[1]:-test_data/images}"
+
+# With an empty name railway picks an environment itself, which may be
+# production, and a padded name would slip past the check below.
+if [[ ! "$ENVIRONMENT" =~ ^[A-Za-z0-9]([A-Za-z0-9\ ._-]*[A-Za-z0-9])?$ ]]; then
+    echo "Not an environment name or id: '$ENVIRONMENT'" >&2
+    exit 2
+fi
 
 shopt -s nocasematch
 if [[ "$ENVIRONMENT" == "$PRODUCTION_ID" || "$ENVIRONMENT" == prod* ]]; then
