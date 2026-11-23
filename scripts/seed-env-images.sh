@@ -119,6 +119,15 @@ if [[ "$ENVIRONMENT" == "$PRODUCTION_ID" || "$ENVIRONMENT" == prod* ]]; then
 fi
 shopt -u nocasematch
 
+# The same holds for the project and service, whether they came from an option
+# or from RAILWAY_PROJECT / RAILWAY_SERVICE.
+for pair in "project:$PROJECT" "service:$SERVICE"; do
+    if [[ ! "${pair#*:}" =~ ^[A-Za-z0-9]([A-Za-z0-9\ ._-]*[A-Za-z0-9])?$ ]]; then
+        echo "Not a ${pair%%:*} name or id: '${pair#*:}'" >&2
+        exit 2
+    fi
+done
+
 if [[ ! "$REMOTE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
     echo "REMOTE_DIR must be a plain absolute path: $REMOTE_DIR" >&2
     exit 1

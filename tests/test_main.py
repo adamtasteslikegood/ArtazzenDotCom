@@ -1711,6 +1711,24 @@ def test_seed_script_rejects_values_railway_would_replace_with_a_default(tmp_pat
         assert calls == [], bad
 
 
+def test_seed_script_checks_project_and_service_from_the_environment(tmp_path):
+    # RAILWAY_PROJECT and RAILWAY_SERVICE reach railway like the options do.
+    for env in (
+        {"RAILWAY_PROJECT": "--other-project"},
+        {"RAILWAY_SERVICE": "-x"},
+        {"RAILWAY_SERVICE": " padded"},
+    ):
+        result, calls = _run_seed_script(tmp_path, "pr-9", env=env)
+        assert result.returncode == 2, env
+        assert calls == [], env
+    # An empty variable means "not set": the default is used.
+    result, calls = _run_seed_script(
+        tmp_path, "--from-archive", "pr-9", env={"RAILWAY_PROJECT": ""}
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--project=182bb54e-88dc-4026-97ed-cffc1d3c1f33" in calls[0]
+
+
 def test_seed_script_refuses_production(tmp_path):
     for name in ("production", "Prod", "54b8b12f-df88-47f7-aef4-3cd356770e1a"):
         for mode in ([], ["--from-archive"]):
