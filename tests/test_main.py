@@ -940,6 +940,272 @@ def test_prompt_includes_tags_instruction_when_tags_requested():
 
 
 # ---------------------------------------------------------------------------
+# Seeding an environment's images (scripts/seed_images.py, seed-env-images.sh)
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SEED_ENV = {
+    "SEED_S3_ENDPOINT": "https://s3.example",
+    "SEED_S3_BUCKET": "seed-bucket",
+    "SEED_S3_ACCESS_KEY_ID": "key",
+    "SEED_S3_SECRET_ACCESS_KEY": "secret",
+}
+
+
+def _seed_module():
+    import sys
+    from importlib import util
+
+    spec = util.spec_from_file_location(
+        "seed_images", REPO_ROOT / "scripts" / "seed_images.py"
+    )
+    module = util.module_from_spec(spec)
+    # The dataclass decorator looks its module up by name while it runs.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _FakeBucket:
+    """Stands in for the boto3 S3 client: just the calls the seeder makes."""
+
+    def __init__(self, objects=None):
+        self.objects = dict(objects or {})
+        self.downloads = []
+        self.uploads = {}
+
+    def get_paginator(self, name):
+        assert name == "list_objects_v2"
+        return self
+
+    def paginate(self, Bucket, Prefix):
+        keys = [key for key in self.objects if key.startswith(Prefix)]
+        # Two pages, so a seeder that reads only the first one fails.
+        yield {"Contents": [{"Key": key} for key in keys[:1]]}
+        yield {"Contents": [{"Key": key} for key in keys[1:]]}
+
+    def download_file(self, bucket, key, filename):
+        self.downloads.append(key)
+        Path(filename).write_bytes(self.objects[key])
+
+    def upload_file(self, filename, bucket, key):
+        self.uploads[key] = Path(filename).read_bytes()
+
+
+def test_seed_source_reads_the_seed_variables():
+    seed = _seed_module()
+    assert seed.seed_source({}) is None
+    source = seed.seed_source(SEED_ENV)
+    assert (source.bucket, source.region, source.prefix) == (
+        "seed-bucket",
+        "auto",
+        "seed/images/",
+    )
+    custom = seed.seed_source({**SEED_ENV, "SEED_S3_PREFIX": "/sets/orbs"})
+    assert custom.prefix == "sets/orbs/"
+    partial = {**SEED_ENV, "SEED_S3_SECRET_ACCESS_KEY": ""}
+    with pytest.raises(ValueError, match="SEED_S3_SECRET_ACCESS_KEY"):
+        seed.seed_source(partial)
+
+
+def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path):
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    dest.mkdir()
+    (dest / "edited.json").write_text("edited in the preview")
+    bucket = _FakeBucket(
+        {
+            "seed/images/": b"",
+            "seed/images/a.jpg": b"image-a",
+            "seed/images/a.json": b"sidecar-a",
+            "seed/images/edited.json": b"from the bucket",
+            "seed/images/.curation/collections.json": b"registry",
+            "seed/images/lost+found/junk": b"junk",
+            "seed/images/../escape.txt": b"escape",
+            "other/b.jpg": b"not ours",
+        }
+    )
+
+    copied, skipped = seed.pull(bucket, "seed-bucket", "seed/images/", dest)
+
+    assert (copied, skipped) == (3, 1)
+    assert (dest / "a.jpg").read_bytes() == b"image-a"
+    assert (dest / ".curation" / "collections.json").read_bytes() == b"registry"
+    assert (dest / "edited.json").read_text() == "edited in the preview"
+    assert not (dest / "lost+found").exists()
+    assert not (tmp_path / "escape.txt").exists()
+    assert not (dest / "b.jpg").exists()
+    # Sidecars land before the images they describe, and no partial is left.
+    assert bucket.downloads.index("seed/images/a.json") < bucket.downloads.index(
+        "seed/images/a.jpg"
+    )
+    assert not [p for p in dest.rglob(".seed-*")]
+
+
+def test_seed_pull_is_skipped_when_unconfigured_or_in_production(tmp_path):
+    seed = _seed_module()
+
+    def no_client(source):
+        raise AssertionError("the bucket must not be contacted")
+
+    assert "no SEED_S3_* variables" in seed.run_pull({}, client_factory=no_client)
+    for production in (
+        {"RAILWAY_ENVIRONMENT_NAME": "production"},
+        {"RAILWAY_ENVIRONMENT_NAME": "Prod"},
+        {"RAILWAY_ENVIRONMENT_ID": seed.PRODUCTION_ENVIRONMENT_ID},
+    ):
+        message = seed.run_pull(
+            {**SEED_ENV, **production}, dest=tmp_path, client_factory=no_client
+        )
+        assert "production" in message
+    assert seed.production_reason({"RAILWAY_ENVIRONMENT_NAME": "Proj-pr-247"}) is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_seed_pull_reports_what_it_copied(tmp_path):
+    seed = _seed_module()
+    bucket = _FakeBucket({"sets/orbs/a.json": b"{}", "sets/orbs/a.jpg": b"a"})
+    message = seed.run_pull(
+        {**SEED_ENV, "SEED_S3_PREFIX": "sets/orbs"},
+        dest=tmp_path / "images",
+        client_factory=lambda source: bucket,
+    )
+    assert "2 files copied, 0 already there" in message
+    empty = seed.run_pull(
+        SEED_ENV, dest=tmp_path / "images", client_factory=lambda source: bucket
+    )
+    assert "found nothing" in empty
+
+
+def test_seed_push_uploads_the_folder_under_the_prefix(tmp_path, capsys):
+    seed = _seed_module()
+    source = tmp_path / "set"
+    (source / ".curation").mkdir(parents=True)
+    (source / "lost+found").mkdir()
+    (source / "a.jpg").write_bytes(b"image-a")
+    (source / ".curation" / "series.json").write_bytes(b"series")
+    (source / "lost+found" / "junk").write_bytes(b"junk")
+
+    bucket = _FakeBucket()
+    assert seed.push(bucket, "seed-bucket", "seed/images/", source) == 2
+    assert bucket.uploads == {
+        "seed/images/a.jpg": b"image-a",
+        "seed/images/.curation/series.json": b"series",
+    }
+
+    assert seed.push(None, "seed-bucket", "seed/images/", source, dry_run=True) == 2
+    assert "would upload a.jpg -> seed/images/a.jpg" in capsys.readouterr().out
+
+
+def test_seed_start_runs_the_procfile_command_even_when_seeding_fails(monkeypatch):
+    seed = _seed_module()
+    procfile = (REPO_ROOT / "Procfile").read_text()
+    web_command = seed.procfile_web_command()
+    assert web_command.startswith("uvicorn main:app")
+    assert f"web: {web_command}" in procfile
+
+    launched = []
+    monkeypatch.setattr(seed.os, "execvp", lambda file, args: launched.append(args))
+    # A half-configured source makes the pull raise; the app must still start.
+    seed.start({"SEED_S3_ENDPOINT": "https://s3.example"})
+    seed.start({})
+    assert launched == [["sh", "-c", f"exec {web_command}"]] * 2
+
+
+def test_only_pr_environments_use_the_seeding_start_command():
+    railway = json.loads((REPO_ROOT / "railway.json").read_text())
+    assert railway["environments"] == {
+        "pr": {"deploy": {"startCommand": "python scripts/seed_images.py start"}}
+    }
+    # No base start command: staging and production keep the Procfile.
+    assert "deploy" not in railway
+
+
+def _run_seed_script(tmp_path, *args, env=None):
+    """Run seed-env-images.sh with a fake `railway` that records its arguments."""
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = tmp_path / "railway-calls.txt"
+    fake = bin_dir / "railway"
+    fake.write_text(f'#!/bin/sh\ncat >/dev/null\necho "$@" >> "{calls}"\necho 26\n')
+    fake.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "seed-env-images.sh"), *args],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=tmp_path,
+        env={"PATH": f"{bin_dir}:{os.environ['PATH']}", **(env or {})},
+        timeout=30,
+    )
+    recorded = calls.read_text().splitlines() if calls.exists() else []
+    return result, recorded
+
+
+def test_seed_script_help_and_usage_errors(tmp_path):
+    for flag in ("-h", "--help"):
+        result, calls = _run_seed_script(tmp_path, flag)
+        assert result.returncode == 0
+        assert result.stdout.startswith("Usage:")
+        assert "--from-bucket" in result.stdout
+        assert calls == []
+    for bad in ([], ["--nope", "pr-1"], ["pr-1", "a", "b"], ["--project"]):
+        result, calls = _run_seed_script(tmp_path, *bad)
+        assert result.returncode == 2
+        assert calls == []
+
+
+def test_seed_script_refuses_production(tmp_path):
+    for name in ("production", "Prod", "54b8b12f-df88-47f7-aef4-3cd356770e1a"):
+        for mode in ([], ["--from-bucket"]):
+            result, calls = _run_seed_script(tmp_path, *mode, name)
+            assert result.returncode == 1
+            assert "Refusing" in result.stderr
+            assert calls == []
+
+
+def test_seed_script_options_win_over_environment_variables(tmp_path):
+    source = tmp_path / "set"
+    source.mkdir()
+    (source / "a.jpg").write_bytes(b"a")
+    result, calls = _run_seed_script(
+        tmp_path,
+        "--project=flag-project",
+        "--remote-dir",
+        "/data/flag",
+        "pr-9",
+        str(source),
+        env={"RAILWAY_PROJECT": "env-project", "RAILWAY_SERVICE": "env-service"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Sending 1 files" in result.stdout
+    assert len(calls) == 2
+    for call in calls:
+        assert "--project=flag-project" in call
+        assert "--service=env-service" in call
+        assert "--environment=pr-9" in call
+        assert "/data/flag" in call
+
+
+def test_seed_script_from_bucket_runs_the_pull_in_the_environment(tmp_path):
+    result, calls = _run_seed_script(
+        tmp_path, "--from-bucket", "--prefix", "sets/orbs", "pr-9"
+    )
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 1
+    assert (
+        "python scripts/seed_images.py pull --dest '/data/images' --prefix 'sets/orbs'"
+        in calls[0]
+    )
+    result, calls = _run_seed_script(tmp_path, "--prefix", "x", "pr-9")
+    assert result.returncode == 2
+    result, calls = _run_seed_script(tmp_path, "--from-bucket", "--prefix", "a;b", "pr")
+    assert result.returncode == 1
+
+
+# ---------------------------------------------------------------------------
 # Collections and series (schema v3 curation)
 # ---------------------------------------------------------------------------
 

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "environments": {
+    "pr": {
+      "deploy": {
+        "startCommand": "python scripts/seed_images.py start"
+      }
+    }
+  }
+}
