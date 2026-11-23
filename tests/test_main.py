@@ -861,7 +861,15 @@ def test_unusable_model_catalog_yields_empty_catalog(tmp_path):
     """A broken catalog file must not stop the app from starting."""
     config = gallery_app.config
     assert config._load_model_catalog(tmp_path / "missing.json")["models"] == []
-    for text in ("{not json", "[]", '{"models": [{"id": "x"}]}'):
+    for text in (
+        "{not json",
+        "[]",
+        '{"models": [{"id": "x"}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": null}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": "low"}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": [["low"]]}]}',
+        '{"models": [{"id": ["x"], "reasoning_efforts": ["low"]}]}',
+    ):
         path = tmp_path / "models.json"
         path.write_text(text)
         assert config._load_model_catalog(path)["models"] == []

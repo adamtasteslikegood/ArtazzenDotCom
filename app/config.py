@@ -85,10 +85,12 @@ def _load_model_catalog(path: Path) -> dict[str, Any]:
     """
     try:
         catalog = json.loads(path.read_text(encoding="utf-8"))
-        if not all(
-            {"id", "reasoning_efforts"} <= entry.keys() for entry in catalog["models"]
-        ):
-            raise KeyError("id or reasoning_efforts")
+        for entry in catalog["models"]:
+            if not isinstance(entry["id"], str) or not isinstance(
+                entry["reasoning_efforts"], list
+            ):
+                raise TypeError("id must be a string, reasoning_efforts a list")
+            frozenset(entry["reasoning_efforts"])
         return catalog
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         logging.getLogger(__name__).exception("Model catalog %s is unusable", path)

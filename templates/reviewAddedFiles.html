@@ -571,8 +571,8 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Failed to save settings');
-            // Show what the server stored: it keeps the token limit in range
-            // and replaces an effort the model rejects.
+            // Show what the server stored. An empty token field keeps the
+            // saved limit, so fill it in.
             if (typeof data.ai?.reasoning_effort === 'string') aiEffort.value = data.ai.reasoning_effort;
             if (typeof data.ai?.max_output_tokens === 'number') aiTokens.value = data.ai.max_output_tokens;
             syncModelInfo();

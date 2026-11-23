@@ -71,8 +71,8 @@ All notable changes to this project will be documented in this file.
 - Saving a token limit that is not a finite number (for example `1e999`) from
   an API client returned a 500. The saved limit is now kept.
 - After a save, the admin AI settings form shows the token limit and effort
-  the server stored. It used to keep showing what was typed, even when the
-  server had moved the value into range or replaced the effort.
+  the server stored. Saving with the token field empty keeps the saved limit,
+  and the field used to stay blank.
 
 ## [0.4.0] - 2026-10-11
 
