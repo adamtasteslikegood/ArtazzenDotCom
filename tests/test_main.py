@@ -894,6 +894,10 @@ def test_unusable_model_catalog_yields_empty_catalog(tmp_path):
     broken["models"][0]["reasoning_efforts"].remove(config.DEFAULT_REASONING_EFFORT)
     path.write_text(json.dumps(broken))
     assert config._load_model_catalog(path)["models"] == []
+    broken = json.loads(json.dumps(shipped))
+    broken["models"].append(json.loads(json.dumps(broken["models"][0])))
+    path.write_text(json.dumps(broken))
+    assert config._load_model_catalog(path)["models"] == []
 
 
 def test_admin_config_clamps_output_tokens(monkeypatch, tmp_path):

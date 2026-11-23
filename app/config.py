@@ -90,6 +90,9 @@ def _load_model_catalog(path: Path) -> dict[str, Any]:
         catalog = json.loads(path.read_text(encoding="utf-8"))
         schema = json.loads(MODEL_CATALOG_SCHEMA_PATH.read_text(encoding="utf-8"))
         js_validate(instance=catalog, schema=schema)
+        model_ids = [entry["id"] for entry in catalog["models"]]
+        if len(model_ids) != len(set(model_ids)):
+            raise ValueError("model ids must be unique")
         return catalog
     except (OSError, ValueError, ValidationError, SchemaError):
         logging.getLogger(__name__).exception("Model catalog %s is unusable", path)
