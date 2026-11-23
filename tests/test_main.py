@@ -1180,6 +1180,11 @@ class _FakeBucket:
         self.uploads[key] = Path(filename).read_bytes()
 
 
+def test_seed_artwork_suffixes_match_the_app():
+    # The seeder cannot import the app, so its copy of the list is checked here.
+    assert _seed_module().ARTWORK_SUFFIXES == set(ALLOWED_IMAGE_EXTENSIONS)
+
+
 def test_seed_source_reads_the_seed_variables():
     seed = _seed_module()
     assert seed.seed_source({}) is None
