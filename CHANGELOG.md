@@ -30,7 +30,9 @@ All notable changes to this project will be documented in this file.
   listed model.
 - Model catalog in `ai_config/models.json` (schema and README beside it): the
   admin model list, each model's description, list prices with an "as of"
-  date, and the efforts each model accepts now come from this one file.
+  date, and the efforts each model accepts now come from this one file. The
+  app checks it against the schema at startup and ignores a catalog that
+  fails. The selector shows each model's name with its ID.
 - Under the model selector: the model's description and its input and output
   price per 1M tokens. Under "Max output tokens": the most one attempt can
   cost at the current limit, and what one image can cost including its

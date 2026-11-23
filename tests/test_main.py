@@ -874,6 +874,21 @@ def test_unusable_model_catalog_yields_empty_catalog(tmp_path):
         path.write_text(text)
         assert config._load_model_catalog(path)["models"] == []
 
+    # The loader checks the whole schema, not only the fields the server reads:
+    # the form would print a missing price or description as it stands.
+    shipped = json.loads(config.MODEL_CATALOG_PATH.read_text(encoding="utf-8"))
+    path.write_text(json.dumps(shipped))
+    assert config._load_model_catalog(path) == shipped
+    for field in ("description", "input_price_per_mtok", "name"):
+        broken = json.loads(json.dumps(shipped))
+        del broken["models"][0][field]
+        path.write_text(json.dumps(broken))
+        assert config._load_model_catalog(path)["models"] == []
+    broken = json.loads(json.dumps(shipped))
+    del broken["as_of"]
+    path.write_text(json.dumps(broken))
+    assert config._load_model_catalog(path)["models"] == []
+
 
 def test_admin_config_clamps_output_tokens(monkeypatch, tmp_path):
     monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
@@ -938,6 +953,8 @@ def test_admin_settings_list_models_with_prices(monkeypatch):
         assert f'data-output-price="{entry["output_price_per_mtok"]}"' in option
         if re.search(r"\sselected>", option):
             selected.append(entry["id"])
+        # The label is the display name, with the id the API takes beside it.
+        assert f'{option}{entry["name"]} ({entry["id"]})</option>' in page
     assert selected == [config.OPENAI_DEFAULT_MODEL]
     assert f'data-as-of="{catalog["as_of"]}"' in page
     assert f'data-input-tokens="{catalog["estimated_input_tokens_per_image"]}"' in page
@@ -946,6 +963,9 @@ def test_admin_settings_list_models_with_prices(monkeypatch):
     for effort in config.REASONING_EFFORTS:
         assert f'<option value="{effort}"' in effort_block
     assert 'id="ai-tokens" min="4000" max="14000"' in page
+    # Both hint lines change as the admin edits, so they are live regions.
+    assert 'id="ai-model-info" class="form-hint" aria-live="polite"' in page
+    assert 'id="ai-cost-info" class="form-hint" aria-live="polite"' in page
 
 
 def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):

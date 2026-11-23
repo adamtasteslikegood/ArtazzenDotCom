@@ -1,11 +1,11 @@
 # AI model catalog
 
-Shipped data about the models the admin can pick for AI metadata. It is read once at startup by `app/config.py`.
+Shipped data about the models the admin can pick for AI metadata. It is read once at startup by `app/config.py`, which checks it against the schema. A catalog that fails the check is ignored whole: the model dropdown is empty and the log says why.
 
-| File                 | What it is                                                              |
-| -------------------- | ----------------------------------------------------------------------- |
-| `models.json`        | The catalog: model list, list prices, descriptions and allowed efforts. |
-| `models.schema.json` | JSON Schema for the catalog. A test checks `models.json` against it.    |
+| File                 | What it is                                                                      |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `models.json`        | The catalog: model list, list prices, descriptions and allowed efforts.         |
+| `models.schema.json` | JSON Schema for the catalog. The app and a test check `models.json` against it. |
 
 The saved admin settings (`ai_config.json`) are a different thing and still live in the repository root. They are written at runtime; this folder is only changed by commits.
 
@@ -35,7 +35,7 @@ Each model:
 | Field                   | Meaning                                                                 |
 | ----------------------- | ----------------------------------------------------------------------- |
 | `id`                    | Model ID sent to the API.                                               |
-| `name`                  | Display name.                                                           |
+| `name`                  | Display name, shown in the dropdown with the ID beside it.              |
 | `description`           | One or two sentences shown under the dropdown (200 characters at most). |
 | `input_price_per_mtok`  | List price per 1M input tokens.                                         |
 | `output_price_per_mtok` | List price per 1M output tokens. Reasoning tokens are billed as output. |

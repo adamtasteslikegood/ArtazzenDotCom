@@ -9,6 +9,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi.templating import Jinja2Templates
+from jsonschema import SchemaError, ValidationError
+from jsonschema import validate as js_validate
 
 # --- Configuration ---
 # The repository root (this file lives in app/).
@@ -75,24 +77,21 @@ DEFAULT_REASONING_EFFORT = "low"
 # Models offered in the admin settings, with list prices and the efforts each
 # one accepts. Shipped data; see ai_config/README.md.
 MODEL_CATALOG_PATH = BASE_DIR / "ai_config" / "models.json"
+MODEL_CATALOG_SCHEMA_PATH = BASE_DIR / "ai_config" / "models.schema.json"
 
 
 def _load_model_catalog(path: Path) -> dict[str, Any]:
-    """Read the model catalog.
+    """Read the model catalog and check it against its schema.
 
-    A missing or malformed file must not stop the public site, so it yields an
+    A missing or invalid file must not stop the public site, so it yields an
     empty catalog (no model listed, no effort blocked) and an error in the log.
     """
     try:
         catalog = json.loads(path.read_text(encoding="utf-8"))
-        for entry in catalog["models"]:
-            if not isinstance(entry["id"], str) or not isinstance(
-                entry["reasoning_efforts"], list
-            ):
-                raise TypeError("id must be a string, reasoning_efforts a list")
-            frozenset(entry["reasoning_efforts"])
+        schema = json.loads(MODEL_CATALOG_SCHEMA_PATH.read_text(encoding="utf-8"))
+        js_validate(instance=catalog, schema=schema)
         return catalog
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except (OSError, ValueError, ValidationError, SchemaError):
         logging.getLogger(__name__).exception("Model catalog %s is unusable", path)
         return {"as_of": "", "estimated_input_tokens_per_image": 0, "models": []}
 
