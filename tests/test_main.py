@@ -1265,6 +1265,53 @@ def test_collection_page_series_order_anchor_and_dedup(client, tmp_path, monkeyp
     assert "hidden.jpg" not in html
 
 
+def _add_captioned_and_bare(image_root, **fields):
+    """One artwork with a caption and a description, one with a description only."""
+    _add_image(
+        image_root,
+        "captioned.jpg",
+        title="Captioned",
+        caption="Petals in low light",
+        description="A long description of the captioned work.",
+        **fields,
+    )
+    _add_image(
+        image_root,
+        "bare.jpg",
+        title="Bare",
+        description="A long description of the bare work.",
+        **fields,
+    )
+
+
+def _assert_grid_text_is_caption(html):
+    assert '<p class="artwork-caption">Petals in low light</p>' in html
+    assert "A long description of the captioned work." not in html
+    # No caption: the title stands alone, the description does not fill in.
+    assert "A long description of the bare work." not in html
+    assert html.count('class="artwork-caption"') == 1
+    assert "artwork-description" not in html
+
+
+def test_gallery_grid_shows_caption_not_description(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_captioned_and_bare(image_root)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "/artwork/bare.jpg" in response.text
+    _assert_grid_text_is_caption(response.text)
+
+
+def test_collection_grid_shows_caption_not_description(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+    _add_captioned_and_bare(image_root, collections=["flora"])
+    response = client.get("/collections/flora")
+    assert response.status_code == 200
+    assert "/artwork/bare.jpg" in response.text
+    _assert_grid_text_is_caption(response.text)
+
+
 def test_collection_image_state_markup_and_series_css(client, tmp_path, monkeypatch):
     _curation_fixture(tmp_path, monkeypatch)
     response = client.get("/collections/flora")

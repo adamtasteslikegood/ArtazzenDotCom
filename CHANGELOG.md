@@ -25,6 +25,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- The text under each thumbnail in the gallery and on collection pages is now
+  the artwork's caption, shown whole (six lines at most), instead of the first
+  two lines of its description. An artwork with no caption shows its title
+  alone. The description stays on the artwork page.
 - Images 1600 px wide or narrower now get a detail-page WebP at their own
   width; the artwork page used to load the original for them.
 - The watcher builds the new sizes for existing images (five images per

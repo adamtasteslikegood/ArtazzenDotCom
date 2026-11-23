@@ -172,19 +172,30 @@ main {
     letter-spacing: -0.01em;
 }
 
-.artwork-description {
+.artwork-description,
+.artwork-caption {
     font-size: 0.9rem;
     color: var(--text-muted);
     margin-top: 0.5rem;
     max-width: 30ch;
 }
 
-/* In a grid the description is a teaser; the artwork page has all of it. */
+/* On a collection card the description is a teaser; its page has all of it. */
 .gallery-grid .artwork-description {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
+    overflow: hidden;
+}
+
+/* A caption is written to be read whole (160 characters at most), so the
+   clamp is only a backstop against an overlong one stretching its row. */
+.gallery-grid .artwork-caption {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
     overflow: hidden;
 }
 

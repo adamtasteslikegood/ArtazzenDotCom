@@ -21,8 +21,8 @@
                                  onerror="this.onerror=null; this.parentElement.classList.remove('img-loaded'); this.style.display='none'; this.parentElement.classList.add('img-error'); this.parentElement.setAttribute('aria-label', this.alt + ' — image unavailable');">
                         </a>
                         <p class="artwork-title">{{ artwork.title }}</p>
-                        {% if artwork.description %}
-                        <p class="artwork-description">{{ artwork.description }}</p>
+                        {% if artwork.caption %}
+                        <p class="artwork-caption">{{ artwork.caption }}</p>
                         {% endif %}
                     </div>
                 {% endfor %}
