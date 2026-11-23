@@ -16,9 +16,11 @@ from upscaler.jobs import (
     job_name,
     list_jobs,
     postprocess,
+    save_final_metadata,
     save_job,
     set_state,
 )
+from upscaler.jobs import prepare as prepare_job
 from upscaler.replicate import ReplicateClient, ReplicateError
 
 from tests.patterns import gradient, periodic, png, srgb_icc
@@ -124,6 +126,25 @@ def test_failed_staging_cleanup_is_retried_on_startup(
     assert get_job(storage, job_id)["cleanup_pending"] == []
 
 
+def test_failed_first_staging_write_leaves_no_copy(
+    client, settings, storage, monkeypatch
+):
+    import_id = upload(client, png(gradient()))
+    original_put = storage.put_bytes
+
+    def stored_then_failed(name, data, content_type):
+        # The bucket took the object, but the reply never reached the client.
+        original_put(name, data, content_type)
+        if name.startswith("staging/"):
+            raise RuntimeError("connection lost after the write")
+
+    monkeypatch.setattr(storage, "put_bytes", stored_then_failed)
+    with pytest.raises(RuntimeError, match="connection lost"):
+        prepare_job(storage, settings, import_id, "print", 4)
+    assert storage.list_names("staging/") == []
+    assert list_jobs(storage) == []
+
+
 def test_print_job_runs_and_keeps_icc_at_300_dpi(client, storage, fake_replicate):
     icc = srgb_icc()
     job_id = prepare(client, upload(client, png(gradient(), icc_profile=icc)))
@@ -185,6 +206,51 @@ def test_failed_done_cleanup_remains_pending(client, storage, monkeypatch):
     job = wait_for(client, job_id)
     assert job["state"] == "done"
     assert job["cleanup_pending"] == [f"staging/{job_id}/"]
+    assert storage.list_names(f"staging/{job_id}/")
+
+
+def test_failed_postprocessing_removes_the_uploaded_master(
+    client, settings, storage, fake_replicate, monkeypatch
+):
+    job_id = prepare(client, upload(client, png(periodic(200, 150))), "seamless", 2)
+    original_put = storage.put_bytes
+    original_delete = storage.delete
+    deleted_once = False
+
+    def fail_proof(name, data, content_type):
+        # The master is uploaded first; the proof after it fails.
+        if name == f"results/{job_id}/proof.jpg":
+            raise RuntimeError("bucket temporarily unavailable")
+        original_put(name, data, content_type)
+
+    def fail_once(name):
+        nonlocal deleted_once
+        if name.startswith(f"results/{job_id}/") and not deleted_once:
+            deleted_once = True
+            raise RuntimeError("bucket temporarily unavailable")
+        original_delete(name)
+
+    monkeypatch.setattr(storage, "put_bytes", fail_proof)
+    monkeypatch.setattr(storage, "delete", fail_once)
+    client.post(f"/jobs/{job_id}/confirm")
+
+    assert wait_for(client, job_id)["state"] == "error"
+    deadline = time.monotonic() + 5
+    while not deleted_once and time.monotonic() < deadline:
+        time.sleep(0.01)
+    # No job lists this master, so it is marked for removal, and the mark
+    # survives a failed delete.
+    assert storage.list_names(f"results/{job_id}/") == [f"results/{job_id}/master.png"]
+    assert get_job(storage, job_id)["cleanup_pending"] == [f"results/{job_id}/"]
+
+    replicate = ReplicateClient(settings, transport=httpx.MockTransport(fake_replicate))
+    app = create_app(settings=settings, storage=storage, replicate=replicate)
+    with TestClient(app):
+        pass
+    assert storage.list_names(f"results/{job_id}/") == []
+    job = get_job(storage, job_id)
+    assert job["state"] == "error" and job["cleanup_pending"] == []
+    # The job page of a failed job still shows its staged copy.
     assert storage.list_names(f"staging/{job_id}/")
 
 
@@ -495,6 +561,93 @@ def test_cancel_during_create_cancels_the_new_prediction(
     job = get_job(storage, job_id)
     assert job["state"] == "cancelled"
     assert not job.get("prediction")
+
+
+def _wait_job(storage, job_id, check, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = get_job(storage, job_id)
+        if check(job):
+            return job
+        time.sleep(0.01)
+    raise AssertionError(f"job never got there: {job}")
+
+
+def test_failed_cancel_after_create_is_persisted_and_retried(
+    client, storage, fake_replicate
+):
+    fake_replicate.polls_before_done = 10_000
+    fake_replicate.cancel_status = 503
+    job_id = prepare(client, upload(client, png(gradient())))
+    gate = _hold_create(client)
+    client.post(f"/jobs/{job_id}/confirm")
+    _wait_state(storage, job_id, "running", prediction={})
+    client.post(f"/jobs/{job_id}/cancel")
+    client.portal.call(gate.set)
+
+    # The job is already cancelled, but the prediction made after the cancel
+    # is still running at the provider: that is recorded, not only logged.
+    job = _wait_job(storage, job_id, lambda j: j.get("provider_cancel_pending"))
+    assert job["state"] == "cancelled"
+    assert job["prediction"]["cancel_url"].endswith("/p1/cancel")
+    assert fake_replicate.predictions["p1"]["status"] != "canceled"
+
+    fake_replicate.cancel_status = 202
+    job = _wait_job(storage, job_id, lambda j: not j.get("provider_cancel_pending"))
+    assert job["state"] == "cancelled"
+    assert fake_replicate.predictions["p1"]["status"] == "canceled"
+    assert fake_replicate.created == 1
+
+
+def test_pending_provider_cancel_is_retried_on_startup(
+    client, settings, storage, fake_replicate
+):
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/cancel")
+    fake_replicate.predictions["p1"] = {"status": "processing", "polls": 0}
+    save_final_metadata(
+        storage,
+        get_job(storage, job_id),
+        prediction={"cancel_url": f"{fake_replicate.API}/predictions/p1/cancel"},
+        provider_cancel_pending=True,
+    )
+
+    replicate = ReplicateClient(settings, transport=httpx.MockTransport(fake_replicate))
+    app = create_app(settings=settings, storage=storage, replicate=replicate)
+    with TestClient(app):
+        job = _wait_job(storage, job_id, lambda j: not j.get("provider_cancel_pending"))
+    assert job["state"] == "cancelled"
+    assert fake_replicate.predictions["p1"]["status"] == "canceled"
+    assert fake_replicate.created == 0
+
+
+def test_pending_provider_cancel_ends_when_the_prediction_has_ended(
+    client, settings, storage, fake_replicate
+):
+    # The cancel keeps failing, but the prediction finished by itself.
+    fake_replicate.cancel_status = 503
+    fake_replicate.polls_before_done = 0
+    fake_replicate.fail_with = "out of memory"
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/cancel")
+    fake_replicate.predictions["p1"] = {"status": "processing", "polls": 0}
+    save_final_metadata(
+        storage,
+        get_job(storage, job_id),
+        prediction={
+            "get_url": f"{fake_replicate.API}/predictions/p1",
+            "cancel_url": f"{fake_replicate.API}/predictions/p1/cancel",
+        },
+        provider_cancel_pending=True,
+    )
+
+    replicate = ReplicateClient(settings, transport=httpx.MockTransport(fake_replicate))
+    app = create_app(settings=settings, storage=storage, replicate=replicate)
+    with TestClient(app):
+        job = _wait_job(storage, job_id, lambda j: not j.get("provider_cancel_pending"))
+    assert job["state"] == "cancelled"
+    cancels = [r for r in fake_replicate.requests if str(r.url).endswith("/cancel")]
+    assert len(cancels) == 1
 
 
 def test_a_stale_copy_cannot_undo_a_cancel(client, storage):
