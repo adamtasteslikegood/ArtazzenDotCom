@@ -42,8 +42,13 @@ All notable changes to this project will be documented in this file.
   - The gallery is three columns on wide screens with the middle column set
     lower, and two columns from 601 to 1099 px. The offset used to alternate
     from row to row.
-  - Descriptions in the gallery and collection grids are cut to two lines; the
-    artwork page still shows the whole text.
+  - Descriptions on collection cards are cut to two lines.
+  - Page headings keep a clear gap between words; the tight letter spacing
+    had closed it, most visibly on phones.
+  - On the artwork page every value sits the same distance under its label.
+  - Public pages end 64px above the footer rule instead of 16 to 32px.
+  - The header tagline and the artwork page's labels use the same letter
+    spacing as the other small uppercase labels.
   - Collection cards are two to a row, level with each other, with a wider
     crop. Their covers load a larger image on wide screens, so they
     stay sharp at the new size.
