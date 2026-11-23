@@ -1,6 +1,6 @@
 # AI prompt guidance on the admin settings page: feature brief
 
-Date: 2026-11-22. Status: pre-spec. This brief records the request, what the code and the OpenAI docs say today, a recommended set of controls, and the questions to answer before a spec is written. No application code or prompt text has been changed.
+Date: 2026-11-22. Status: pre-spec. This brief records the request, what the code and the OpenAI docs say today, a recommended set of controls, and the questions to answer before a spec is written. No prompt text or guidance code has been changed; the model catalog, the two new efforts and the wider token range landed separately on the same day.
 
 ## 1. The request, as written
 
@@ -92,7 +92,7 @@ Both boxes are optional and capped in length (suggested 600 characters each). Ea
 - **Description length**: Short, Standard, Long, replacing the hard-coded 400 characters. This is the closest thing to a slider that works on every model.
 - **Tag count**: a minimum and maximum, replacing the hard-coded 3 to 8.
 - **Verbosity**: a candidate only. Run it at low, medium and high on the test images first; ship it only if the difference is visible.
-- **Effort**: already present. Fix the option list separately (finding 3).
+- **Effort**: already present. The option list is already fixed (finding 3).
 - **Temperature and top_p**: not offered, for the reasons in 3.3. Variety between attempts comes from regenerating in preview.
 
 ### 4.4 Where each piece goes in the request

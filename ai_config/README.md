@@ -53,12 +53,12 @@ It is an upper bound on one request, not a typical cost: most requests stop well
 
 `estimated_input_tokens_per_image` is 1,200. That is the top of the range seen in 11 recorded `gpt-6-luna` requests (773 to 1,202 input tokens for the prompt plus one image resized to 1024 px). Other models may count image tokens differently, so treat it as an estimate.
 
-A new image whose attempt leaves a field empty is retried automatically, up to `AI_MAX_RETRIES` more times, and every attempt is charged.
+A new image whose attempt leaves a field empty is retried automatically, up to `AI_MAX_RETRIES` more times, and every attempt is charged. That count is not a hard ceiling: regenerating from the admin page, reopening the image's review page while a field is still empty, and a server restart (which grants a new set of retries) all add attempts.
 
 ## Updating
 
 1. Check each model's page (the `source` links) for price and supported efforts.
-2. Edit `models.json` and set `as_of` to the day you checked.
+2. Edit `models.json` and set `as_of` to the day you checked. Re-read every `description`: several compare prices or name the default model, and nothing updates them for you.
 3. Run `pytest tests/test_main.py -q` and `npx --yes prettier --check "ai_config/*"`.
 
 To add a model, add an entry; to retire one, remove it. The default model is named separately, as `OPENAI_DEFAULT_MODEL` in `app/config.py`, and must stay in the catalog (a test checks this).

@@ -144,7 +144,7 @@
                                     data-description="{{ model.description }}"
                                     data-input-price="{{ model.input_price_per_mtok }}"
                                     data-output-price="{{ model.output_price_per_mtok }}"
-                                    {% if model.id == 'gpt-6-luna' %}selected{% endif %}>{{ model.id }}</option>
+                                    {% if model.id == ai_default_model %}selected{% endif %}>{{ model.id }}</option>
                             {% endfor %}
                         </select>
                         <p id="ai-model-info" class="form-hint" data-as-of="{{ ai_models.as_of }}"></p>
@@ -333,7 +333,10 @@
         const perAttempt = (inputTokens * inputPrice + tokens * outputPrice) / 1e6;
         let text = `Up to about ${formatUsd(perAttempt)} per attempt (roughly ${inputTokens.toLocaleString()} input and ${tokens.toLocaleString()} output tokens). Most attempts use far fewer.`;
         if (retries > 0) {
-            text += ` A new image that comes back with a field empty is retried up to ${retries} more times, so the ceiling for one image is about ${formatUsd(perAttempt * (retries + 1))}.`;
+            text += ` A new image that comes back with a field empty is retried automatically up to ${retries} more times, about ${formatUsd(perAttempt * (retries + 1))} in all. Regenerating, reopening its review page or restarting the server can add more attempts.`;
+        }
+        if (typed !== tokens) {
+            text = `${typed.toLocaleString()} is outside the allowed range of ${Number(aiTokens.min).toLocaleString()} to ${Number(aiTokens.max).toLocaleString()}; this estimate uses ${tokens.toLocaleString()}. ` + text;
         }
         aiCostInfo.textContent = text;
     }
@@ -568,6 +571,11 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Failed to save settings');
+            // Show what the server stored: it keeps the token limit in range
+            // and replaces an effort the model rejects.
+            if (typeof data.ai?.reasoning_effort === 'string') aiEffort.value = data.ai.reasoning_effort;
+            if (typeof data.ai?.max_output_tokens === 'number') aiTokens.value = data.ai.max_output_tokens;
+            syncModelInfo();
             showFeedback('Settings saved.', 'success');
         } catch (e) {
             console.error(e);

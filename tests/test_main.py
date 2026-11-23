@@ -810,13 +810,61 @@ def test_ai_config_keeps_output_tokens_in_range(monkeypatch):
         (50000, 14000),
         ("not a number", 4000),
         (None, 4000),
+        (float("inf"), 4000),
     ]:
-        monkeypatch.setattr(
-            gallery_app.config,
-            "runtime_ai_config",
-            {"model": "gpt-6-luna", "max_output_tokens": stored},
-        )
-        assert gallery_app._get_ai_config()["max_output_tokens"] == expected
+        # Not only reasoning models: the range has no per-model exception.
+        for model in ("gpt-6-luna", "gpt-4o-mini", "some-unlisted-model"):
+            monkeypatch.setattr(
+                gallery_app.config,
+                "runtime_ai_config",
+                {"model": model, "max_output_tokens": stored},
+            )
+            assert gallery_app._get_ai_config()["max_output_tokens"] == expected
+
+
+def test_saved_and_env_token_limits_are_clamped_on_load(monkeypatch, tmp_path):
+    config = gallery_app.config
+    path = tmp_path / "ai.json"
+    monkeypatch.setattr(config, "CONFIG_PATH", path)
+    monkeypatch.setenv("OPENAI_IMAGE_METADATA_MAX_TOKENS", "600")
+    assert config._default_ai_config_from_env()["max_output_tokens"] == 4000
+
+    path.write_text(json.dumps({"max_output_tokens": 624}))
+    assert config._load_ai_config()["max_output_tokens"] == 4000
+    path.write_text(json.dumps({"max_output_tokens": 50000}))
+    assert config._load_ai_config()["max_output_tokens"] == 14000
+    # A saved value that is not a number falls back to the env default.
+    monkeypatch.setenv("OPENAI_IMAGE_METADATA_MAX_TOKENS", "9000")
+    path.write_text(json.dumps({"max_output_tokens": "junk"}))
+    assert config._load_ai_config()["max_output_tokens"] == 9000
+
+
+def test_admin_config_infinite_token_limit_keeps_saved_value(monkeypatch, tmp_path):
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
+    monkeypatch.setattr(
+        gallery_app.config, "runtime_ai_config", {"max_output_tokens": 9400}
+    )
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    # json.loads reads 1e999 as infinity, which int() cannot convert.
+    response = client.post(
+        "/admin/config",
+        content='{"ai": {"max_output_tokens": 1e999}}',
+        headers={"Content-Type": "application/json"},
+        auth=("admin", "secret"),
+    )
+    assert response.status_code == 200
+    assert response.json()["ai"]["max_output_tokens"] == 9400
+
+
+def test_unusable_model_catalog_yields_empty_catalog(tmp_path):
+    """A broken catalog file must not stop the app from starting."""
+    config = gallery_app.config
+    assert config._load_model_catalog(tmp_path / "missing.json")["models"] == []
+    for text in ("{not json", "[]", '{"models": [{"id": "x"}]}'):
+        path = tmp_path / "models.json"
+        path.write_text(text)
+        assert config._load_model_catalog(path)["models"] == []
 
 
 def test_admin_config_clamps_output_tokens(monkeypatch, tmp_path):
@@ -848,6 +896,12 @@ def test_model_catalog_matches_schema_and_app():
         (config.MODEL_CATALOG_PATH.parent / "models.schema.json").read_text()
     )
     jsonschema.validate(catalog, schema)
+    # The file the app loaded is the shipped one, not the empty fallback.
+    assert config.MODEL_CATALOG == catalog
+    effort_enum = schema["properties"]["models"]["items"]["properties"][
+        "reasoning_efforts"
+    ]["items"]["enum"]
+    assert tuple(effort_enum) == config.REASONING_EFFORTS
 
     ids = [entry["id"] for entry in catalog["models"]]
     assert len(ids) == len(set(ids))
@@ -863,14 +917,26 @@ def test_admin_settings_list_models_with_prices(monkeypatch):
     client = TestClient(gallery_app.app)
     page = client.get("/admin", auth=("admin", "secret")).text
 
-    catalog = gallery_app.config.MODEL_CATALOG
+    config = gallery_app.config
+    catalog = config.MODEL_CATALOG
+    selected = []
     for entry in catalog["models"]:
-        assert f'<option value="{entry["id"]}"' in page
-    assert 'data-efforts="low medium high xhigh max"' in page
-    assert 'data-input-price="8.0"' in page
-    assert 'data-output-price="40.0"' in page
+        # Each model's own option carries that model's efforts and prices.
+        match = re.search(rf'<option value="{re.escape(entry["id"])}"[^>]*>', page)
+        assert match, entry["id"]
+        option = match.group(0)
+        assert f'data-efforts="{" ".join(entry["reasoning_efforts"])}"' in option
+        assert f'data-input-price="{entry["input_price_per_mtok"]}"' in option
+        assert f'data-output-price="{entry["output_price_per_mtok"]}"' in option
+        if re.search(r"\sselected>", option):
+            selected.append(entry["id"])
+    assert selected == [config.OPENAI_DEFAULT_MODEL]
     assert f'data-as-of="{catalog["as_of"]}"' in page
-    assert '<option value="max">max</option>' in page
+    assert f'data-input-tokens="{catalog["estimated_input_tokens_per_image"]}"' in page
+    assert f'data-retries="{config.AI_MAX_RETRIES}"' in page
+    effort_block = page.split('id="ai-effort"', 1)[1].split("</select>", 1)[0]
+    for effort in config.REASONING_EFFORTS:
+        assert f'<option value="{effort}"' in effort_block
     assert 'id="ai-tokens" min="4000" max="14000"' in page
 
 

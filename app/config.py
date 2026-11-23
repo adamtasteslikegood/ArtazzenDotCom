@@ -75,9 +75,27 @@ DEFAULT_REASONING_EFFORT = "low"
 # Models offered in the admin settings, with list prices and the efforts each
 # one accepts. Shipped data; see ai_config/README.md.
 MODEL_CATALOG_PATH = BASE_DIR / "ai_config" / "models.json"
-MODEL_CATALOG: dict[str, Any] = json.loads(
-    MODEL_CATALOG_PATH.read_text(encoding="utf-8")
-)
+
+
+def _load_model_catalog(path: Path) -> dict[str, Any]:
+    """Read the model catalog.
+
+    A missing or malformed file must not stop the public site, so it yields an
+    empty catalog (no model listed, no effort blocked) and an error in the log.
+    """
+    try:
+        catalog = json.loads(path.read_text(encoding="utf-8"))
+        if not all(
+            {"id", "reasoning_efforts"} <= entry.keys() for entry in catalog["models"]
+        ):
+            raise KeyError("id or reasoning_efforts")
+        return catalog
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        logging.getLogger(__name__).exception("Model catalog %s is unusable", path)
+        return {"as_of": "", "estimated_input_tokens_per_image": 0, "models": []}
+
+
+MODEL_CATALOG: dict[str, Any] = _load_model_catalog(MODEL_CATALOG_PATH)
 # Efforts a model rejects with HTTP 400. A model outside the catalog has no
 # entry, so nothing is blocked for it.
 UNSUPPORTED_REASONING_EFFORTS: dict[str, frozenset[str]] = {
@@ -104,11 +122,11 @@ def _coerce_reasoning_effort(value: Any, model: str) -> str:
 def _coerce_max_output_tokens(value: Any, default: int = MIN_OUTPUT_TOKENS) -> int:
     """Return an output token limit inside the allowed range.
 
-    A value that is not a number yields `default` (itself clamped).
+    A value that is not a finite number yields `default` (itself clamped).
     """
     try:
         tokens = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         tokens = default
     return max(MIN_OUTPUT_TOKENS, min(MAX_OUTPUT_TOKENS, tokens))
 
@@ -264,6 +282,7 @@ AI_RETRY_DELAY_SECONDS = max(
 
 # Read by the admin settings form.
 templates.env.globals["ai_models"] = MODEL_CATALOG
+templates.env.globals["ai_default_model"] = OPENAI_DEFAULT_MODEL
 templates.env.globals["ai_token_limits"] = {
     "min": MIN_OUTPUT_TOKENS,
     "max": MAX_OUTPUT_TOKENS,
@@ -316,7 +335,6 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_ai_config() -> dict[str, Any]:
-    import json
     from contextlib import suppress
 
     base = _default_ai_config_from_env()

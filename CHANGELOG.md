@@ -33,7 +33,7 @@ All notable changes to this project will be documented in this file.
   date, and the efforts each model accepts now come from this one file.
 - Under the model selector: the model's description and its input and output
   price per 1M tokens. Under "Max output tokens": the most one attempt can
-  cost at the current limit, and the ceiling for one image including
+  cost at the current limit, and what one image can cost including its
   automatic retries.
 
 ### Changed
@@ -68,6 +68,11 @@ All notable changes to this project will be documented in this file.
 - `minimal` effort is no longer offered for `gpt-6-luna` or `gpt-6-astra`.
   The API rejects it for both (HTTP 400), so a saved `minimal` setting made
   every request fail. It now falls back to `low`.
+- Saving a token limit that is not a finite number (for example `1e999`) from
+  an API client returned a 500. The saved limit is now kept.
+- After a save, the admin AI settings form shows the token limit and effort
+  the server stored. It used to keep showing what was typed, even when the
+  server had moved the value into range or replaced the effort.
 
 ## [0.4.0] - 2026-10-11
 
