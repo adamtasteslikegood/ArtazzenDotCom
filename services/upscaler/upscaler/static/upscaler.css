@@ -53,6 +53,7 @@ button { justify-self: start; font: inherit; padding: .55rem 1.1rem; border: 0; 
   .library tr { display: grid; grid-template-columns: 4.5rem 1fr; }
   .library td { border: 0; padding: .1rem .4rem; }
   .library td:first-child { grid-row: span 6; }
+  .library.jobs td:first-child { grid-row: span 4; }
 }
 :root { --warn: #8a5a00; }
 @media (prefers-color-scheme: dark) { :root { --warn: #f0c060; } }

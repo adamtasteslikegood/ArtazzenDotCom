@@ -542,7 +542,23 @@ class JobRunner:
             return
         task = asyncio.create_task(self._run(job_id), name=f"job-{job_id}")
         self._tasks[job_id] = task
-        task.add_done_callback(lambda _t: self._tasks.pop(job_id, None))
+
+        def forget(finished: asyncio.Task) -> None:
+            if self._tasks.get(job_id) is finished:
+                self._tasks.pop(job_id, None)
+
+        task.add_done_callback(forget)
+
+    async def _stop_task(self, job_id: str) -> None:
+        """Stop this process's runner before cancelling a saved prediction."""
+        task = self._tasks.get(job_id)
+        if not task or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     async def confirm(self, job: dict[str, Any]) -> dict[str, Any]:
         if job["state"] != "staged":
@@ -572,20 +588,25 @@ class JobRunner:
                 raise JobError(str(exc)) from None
         if state not in ACTIVE:
             raise JobError(f"Job is already {state}")
+        # Stop polling before asking Replicate to cancel. If the provider
+        # request fails, leave the stored job active and restart polling so
+        # the operator can retry instead of recording a false local success.
+        cancel_url = (job.get("prediction") or {}).get("cancel_url")
+        if cancel_url:
+            await self._stop_task(job["id"])
+            try:
+                await self.replicate.cancel(cancel_url)
+            except ReplicateError as exc:
+                self.start(job["id"])
+                raise JobError(
+                    f"Replicate cancellation failed: {exc}. Try again."
+                ) from None
         try:
             job = await self._io(
                 set_state, self.storage, job, "cancelled", finished_at=now_iso()
             )
         except JobFinished as exc:
             raise JobError(str(exc)) from None
-        # Take the cancel URL from the record just written, not the copy the
-        # caller read: the prediction may have been saved in between.
-        cancel_url = (job.get("prediction") or {}).get("cancel_url")
-        if cancel_url:
-            try:
-                await self.replicate.cancel(cancel_url)
-            except ReplicateError as exc:
-                logger.warning("Cancel of %s failed: %s", job["id"], exc)
         task = self._tasks.get(job["id"])
         # An empty prediction means the create call is in flight. Aborting it
         # could leave a prediction Replicate already accepted with nobody to
@@ -732,9 +753,8 @@ class JobRunner:
                 postprocess, self.storage, self.settings, job, out_path
             )
         metrics = current.get("metrics") or {}
-        await self._io(delete_prefix, self.storage, f"staging/{job['id']}/")
         try:
-            await self._io(
+            job = await self._io(
                 set_state,
                 self.storage,
                 job,
@@ -748,3 +768,7 @@ class JobRunner:
             if await self._io(_state, self.storage, job["id"]) == "cancelled":
                 await self._io(delete_prefix, self.storage, f"results/{job['id']}/")
             raise
+        # The durable final record must exist before its source disappears.
+        # A restart after this point sees a completed job, not a
+        # postprocessing job whose source can no longer be re-opened.
+        await self._io(delete_prefix, self.storage, f"staging/{job['id']}/")

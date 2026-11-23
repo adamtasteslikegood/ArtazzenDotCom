@@ -118,6 +118,27 @@ def test_print_job_runs_and_keeps_icc_at_300_dpi(client, storage, fake_replicate
     assert resp.status_code == 307 and "X-Amz-Signature" in resp.headers["location"]
 
 
+def test_done_is_durable_before_staging_cleanup(client, storage, monkeypatch):
+    states_at_delete = []
+    original_delete = storage.delete
+
+    def checked_delete(name):
+        if name.startswith("staging/"):
+            job_id = name.split("/", 2)[1]
+            states_at_delete.append(get_job(storage, job_id)["state"])
+        original_delete(name)
+
+    monkeypatch.setattr(storage, "delete", checked_delete)
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/confirm")
+
+    assert wait_for(client, job_id)["state"] == "done"
+    deadline = time.monotonic() + 5
+    while not states_at_delete and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert states_at_delete and set(states_at_delete) == {"done"}
+
+
 def test_seamless_job_pads_then_crops_back(client, storage, fake_replicate):
     job_id = prepare(client, upload(client, png(periodic(200, 150))), "seamless", 2)
     job = get_job(storage, job_id)
@@ -213,6 +234,22 @@ def test_cancel_running_job_cancels_prediction(client, storage, fake_replicate):
     assert storage.list_names(f"staging/{job_id}/") == []
 
 
+def test_failed_remote_cancel_stays_retryable(client, storage, fake_replicate):
+    fake_replicate.polls_before_done = 10_000
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/confirm")
+    wait_for_prediction(client, job_id)
+    fake_replicate.cancel_status = 503
+
+    response = client.post(f"/jobs/{job_id}/cancel", follow_redirects=False)
+
+    assert "Replicate%20cancellation%20failed" in response.headers["location"]
+    assert get_job(storage, job_id)["state"] == "running"
+    fake_replicate.cancel_status = 202
+    client.post(f"/jobs/{job_id}/cancel")
+    assert wait_for(client, job_id)["state"] == "cancelled"
+
+
 def test_blockers_for_missing_token_and_oversized_input(
     settings, storage, fake_gallery
 ):
@@ -264,6 +301,7 @@ def test_job_routes_need_auth_and_known_names(client):
     assert client.get(f"/jobs/{job_id}/files/master").status_code == 404
     assert client.get("/jobs/000000000000").status_code == 404
     assert client.get("/jobs").status_code == 200
+    assert 'class="library jobs"' in client.get("/jobs").text
     client.headers.pop("Authorization")
     assert client.get(f"/api/jobs/{job_id}").status_code == 401
     assert client.post(f"/jobs/{job_id}/confirm").status_code == 401
@@ -277,6 +315,13 @@ def test_logs_written_per_event(client, storage):
     lines = storage.get_bytes(names[0]).decode().strip().splitlines()
     assert [line.count(job_id) for line in lines] == [1, 1]
     assert list_jobs(storage)[0]["id"] == job_id
+
+
+def test_job_progress_has_an_accessible_name(client):
+    job_id = prepare(client, upload(client, png(gradient())))
+    client.post(f"/jobs/{job_id}/confirm")
+    page = client.get(f"/jobs/{job_id}").text
+    assert 'aria-label="Upscaling progress"' in page
 
 
 def _hold_create(client):

@@ -113,6 +113,7 @@ class FakeReplicate:
         self.predictions: dict[str, dict] = {}
         self.polls_before_done = 1
         self.fail_with = ""
+        self.cancel_status = 202
         self.created = 0
 
     def _prediction(self, pid):
@@ -149,9 +150,13 @@ class FakeReplicate:
             }
             return httpx.Response(201, json=self._prediction(pid))
         if url.endswith("/cancel"):
+            if self.cancel_status >= 400:
+                return httpx.Response(
+                    self.cancel_status, json={"detail": "cancel unavailable"}
+                )
             pid = url.split("/")[-2]
             self.predictions[pid]["status"] = "canceled"
-            return httpx.Response(200, json={"status": "canceled"})
+            return httpx.Response(self.cancel_status)
         if url.startswith(f"{self.API}/predictions/"):
             pid = url.rsplit("/", 1)[1]
             pred = self.predictions[pid]

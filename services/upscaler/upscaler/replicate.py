@@ -99,6 +99,8 @@ class ReplicateClient:
                 f"Replicate returned {resp.status_code}"
                 + (f": {detail[:300]}" if detail else "")
             )
+        if not resp.content:
+            return {}
         return resp.json()
 
     async def _prediction_target(self) -> tuple[str, dict[str, str]]:

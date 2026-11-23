@@ -37,7 +37,7 @@
 <section class="progress" data-job="{{ job.id }}" data-estimate="{{ job.estimate.seconds }}" data-started="{{ job.started_at or job.queued_at or '' }}">
     <h3>Progress</h3>
     <p>State: <strong class="state {{ job.state }}" id="state">{{ job.state }}</strong> <span id="elapsed"></span></p>
-    <progress id="bar" max="100" {% if job.state == 'done' %}value="100"{% endif %}></progress>
+    <progress id="bar" max="100" aria-label="Upscaling progress" {% if job.state == 'done' %}value="100"{% endif %}></progress>
     <p class="err" id="error" {% if not job.error %}hidden{% endif %}>{{ job.error }}</p>
     <div id="downloads" {% if job.state != 'done' %}hidden{% endif %}>
         <p><a id="master" href="/jobs/{{ job.id }}/files/master">Download the master (PNG)</a> <span id="size">{{ job.results.size or '' }}</span></p>
