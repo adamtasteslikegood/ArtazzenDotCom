@@ -70,6 +70,7 @@
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,
+            "contains": { "const": "low" },
             "items": {
               "enum": [
                 "none",
@@ -81,7 +82,7 @@
                 "max"
               ]
             },
-            "description": "Efforts the app lets the admin choose for this model. Any other effort falls back to the default."
+            "description": "Efforts the app lets the admin choose for this model. Any other effort falls back to low, so every model must list it."
           },
           "source": {
             "type": "string",

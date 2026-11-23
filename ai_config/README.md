@@ -32,15 +32,15 @@ Top level:
 
 Each model:
 
-| Field                   | Meaning                                                                 |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `id`                    | Model ID sent to the API.                                               |
-| `name`                  | Display name, shown in the dropdown with the ID beside it.              |
-| `description`           | One or two sentences shown under the dropdown (200 characters at most). |
-| `input_price_per_mtok`  | List price per 1M input tokens.                                         |
-| `output_price_per_mtok` | List price per 1M output tokens. Reasoning tokens are billed as output. |
-| `reasoning_efforts`     | Efforts the admin may choose for this model.                            |
-| `source`                | The provider's page for the model.                                      |
+| Field                   | Meaning                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| `id`                    | Model ID sent to the API.                                                      |
+| `name`                  | Display name, shown in the dropdown with the ID beside it.                     |
+| `description`           | One or two sentences shown under the dropdown (200 characters at most).        |
+| `input_price_per_mtok`  | List price per 1M input tokens.                                                |
+| `output_price_per_mtok` | List price per 1M output tokens. Reasoning tokens are billed as output.        |
+| `reasoning_efforts`     | Efforts the admin may choose for this model. Must include `low`, the fallback. |
+| `source`                | The provider's page for the model.                                             |
 
 ## How the cost estimate is worked out
 
