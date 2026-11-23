@@ -60,6 +60,9 @@ REQUIRED_VARS = (
 PR_ENVIRONMENT_NAME = re.compile(r"-pr-\d+$")
 # Never copied in either direction: the volume's own filesystem folder.
 SKIPPED_TOP_LEVEL = {"lost+found"}
+# Keep in sync with app.config.ALLOWED_IMAGE_EXTENSIONS without importing the
+# application (which creates runtime directories at import time).
+ARTWORK_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"}
 
 
 @dataclass(frozen=True)
@@ -148,7 +151,7 @@ def _relative_path(key: str, prefix: str) -> PurePosixPath | None:
     if not rest or rest.endswith("/"):
         return None  # the folder marker itself
     path = PurePosixPath(rest)
-    if path.is_absolute() or ".." in path.parts:
+    if not path.parts or path.is_absolute() or ".." in path.parts:
         logger.warning("Skipping unsafe key %r", key)
         return None
     if path.parts[0] in SKIPPED_TOP_LEVEL:
@@ -163,7 +166,7 @@ def _sidecars_first(path: PurePosixPath) -> tuple[int, str]:
 
 
 def holds_artwork(dest: Path) -> bool:
-    """True once ``dest`` has anything but the app's own bookkeeping folders.
+    """True once ``dest`` has an artwork image the application can read.
 
     The app creates ``.curation`` with empty registries the first time it
     starts, so a volume can be non-empty and still have nothing worth keeping.
@@ -171,7 +174,9 @@ def holds_artwork(dest: Path) -> bool:
     if not dest.is_dir():
         return False
     return any(
-        not child.name.startswith(".") and child.name not in SKIPPED_TOP_LEVEL
+        child.is_file()
+        and not child.is_symlink()
+        and child.suffix.lower() in ARTWORK_SUFFIXES
         for child in dest.iterdir()
     )
 
@@ -193,8 +198,14 @@ def pull(client: Any, bucket: str, prefix: str, dest: Path) -> tuple[int, int]:
     copied = skipped = 0
     keep_existing = holds_artwork(dest)
     dest.mkdir(parents=True, exist_ok=True)
+    dest_root = dest.resolve()
     for path in sorted(paths, key=_sidecars_first):
         target = dest.joinpath(*path.parts)
+        target_parent = target.parent.resolve()
+        if not target_parent.is_relative_to(dest_root):
+            logger.warning("Skipping key outside destination: %r", paths[path])
+            continue
+        target = target_parent / target.name
         if keep_existing and target.exists():
             skipped += 1
             continue
@@ -219,7 +230,12 @@ def push(
 ) -> int:
     """Upload every file under ``source`` to ``prefix``. Returns the count."""
     count = 0
-    for file in sorted(p for p in source.rglob("*") if p.is_file()):
+    for file in sorted(source.rglob("*")):
+        if file.is_symlink():
+            logger.warning("Skipping symlink %s", file)
+            continue
+        if not file.is_file():
+            continue
         relative = file.relative_to(source)
         if relative.parts[0] in SKIPPED_TOP_LEVEL:
             continue

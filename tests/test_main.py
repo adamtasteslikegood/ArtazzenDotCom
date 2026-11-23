@@ -1200,6 +1200,7 @@ def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path):
     seed = _seed_module()
     dest = tmp_path / "images"
     dest.mkdir()
+    (dest / "edited.jpg").write_bytes(b"artwork in the preview")
     (dest / "edited.json").write_text("edited in the preview")
     bucket = _FakeBucket(
         {
@@ -1210,6 +1211,7 @@ def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path):
             "seed/images/.curation/collections.json": b"registry",
             "seed/images/lost+found/junk": b"junk",
             "seed/images/../escape.txt": b"escape",
+            "seed/images/.": b"not a file path",
             "other/b.jpg": b"not ours",
         }
     )
@@ -1230,6 +1232,19 @@ def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path):
     assert not [p for p in dest.rglob(".seed-*")]
 
 
+def test_seed_pull_rejects_a_destination_symlink_escape(tmp_path):
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    outside = tmp_path / "outside"
+    dest.mkdir()
+    outside.mkdir()
+    (dest / "link").symlink_to(outside, target_is_directory=True)
+    bucket = _FakeBucket({"seed/images/link/escaped.txt": b"escape"})
+
+    assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (0, 0)
+    assert not (outside / "escaped.txt").exists()
+
+
 def test_seed_pull_replaces_app_made_registries_on_a_volume_without_artwork(
     tmp_path,
 ):
@@ -1238,6 +1253,7 @@ def test_seed_pull_replaces_app_made_registries_on_a_volume_without_artwork(
     # What the app leaves behind when it first starts on an empty volume.
     (dest / ".curation").mkdir(parents=True)
     (dest / ".curation" / "collections.json").write_text('{"collections": []}')
+    (dest / "a.json").write_text("sidecar left by an interrupted seed")
     (dest / "lost+found").mkdir()
     assert not seed.holds_artwork(dest)
     assert not seed.holds_artwork(tmp_path / "missing")
@@ -1304,6 +1320,9 @@ def test_seed_push_uploads_the_folder_under_the_prefix(tmp_path, capsys):
     (source / "a.jpg").write_bytes(b"image-a")
     (source / ".curation" / "series.json").write_bytes(b"series")
     (source / "lost+found" / "junk").write_bytes(b"junk")
+    outside = tmp_path / "secret.txt"
+    outside.write_bytes(b"not seed data")
+    (source / "external.txt").symlink_to(outside)
 
     bucket = _FakeBucket()
     assert seed.push(bucket, "seed-bucket", "seed/images/", source) == 2
@@ -1311,6 +1330,7 @@ def test_seed_push_uploads_the_folder_under_the_prefix(tmp_path, capsys):
         "seed/images/a.jpg": b"image-a",
         "seed/images/.curation/series.json": b"series",
     }
+    assert "seed/images/external.txt" not in bucket.uploads
 
     assert seed.push(None, "seed-bucket", "seed/images/", source, dry_run=True) == 2
     assert "would upload a.jpg -> seed/images/a.jpg" in capsys.readouterr().out
