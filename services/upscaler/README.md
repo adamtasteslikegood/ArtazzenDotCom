@@ -126,6 +126,10 @@ logs/<YYYY-MM-DD>.jsonl       one line per job event
 | `REPLICATE_TIMEOUT_SECONDS`, `UPSCALER_POLL_SECONDS`                 | Give up after (default 1800 s); poll interval (default 3 s).                                                           |
 | `UPSCALER_PRINT_DPI`                                                 | DPI tag on masters (default 300).                                                                                      |
 
+The numeric limits, the estimate rate, the timeout, the poll interval and the
+DPI must be greater than zero (the price may be zero). The service refuses to
+start with a value that is not.
+
 On the gallery service, set `UPSCALER_URL` to this service's public URL to
 show the "Upscaler" link in the admin.
 

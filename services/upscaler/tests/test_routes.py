@@ -63,12 +63,39 @@ def test_import_page_reports_malformed_gallery_response(settings, storage):
         ("UPSCALER_MAX_UPLOAD_MB", "0"),
         ("UPSCALER_MAX_MEGAPIXELS", "inf"),
         ("UPSCALER_MAX_MEGAPIXELS", "-1"),
+        ("UPSCALER_REPLICATE_MAX_INPUT_MP", "nan"),
+        ("REPLICATE_TIMEOUT_SECONDS", "0"),
+        ("UPSCALER_POLL_SECONDS", "-1"),
+        ("UPSCALER_POLL_SECONDS", "0"),
+        ("UPSCALER_SECONDS_PER_MP", "inf"),
+        ("UPSCALER_MAX_OUTPUT_MEGAPIXELS", "0"),
     ],
 )
 def test_settings_reject_non_positive_or_non_finite_limits(monkeypatch, name, value):
     monkeypatch.setenv(name, value)
     with pytest.raises(ValueError, match=rf"{name} must be a finite positive number"):
         Settings.from_env()
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "message"),
+    [
+        # A zero DPI divides by zero when a job is prepared.
+        ("UPSCALER_PRINT_DPI", "0", "must be a positive whole number"),
+        ("UPSCALER_PRINT_DPI", "-300", "must be a positive whole number"),
+        ("UPSCALER_PRICE_PER_SECOND", "nan", "must be a finite number, zero or more"),
+        ("UPSCALER_PRICE_PER_SECOND", "-0.01", "must be a finite number, zero or more"),
+    ],
+)
+def test_settings_reject_unusable_dpi_and_price(monkeypatch, name, value, message):
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=rf"{name} {message}"):
+        Settings.from_env()
+
+
+def test_settings_accept_a_free_model(monkeypatch):
+    monkeypatch.setenv("UPSCALER_PRICE_PER_SECOND", "0")
+    assert Settings.from_env().price_per_second == 0
 
 
 def test_import_tabs_have_server_rendered_fallback(client):

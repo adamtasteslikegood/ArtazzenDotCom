@@ -31,9 +31,20 @@ def _positive_float(name: str, default: float) -> float:
     return value
 
 
-def _float(name: str, default: float) -> float:
+def _non_negative_float(name: str, default: float) -> float:
     raw = os.getenv(name, "").strip()
-    return float(raw) if raw else default
+    value = float(raw) if raw else default
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite number, zero or more")
+    return value
+
+
+def _positive_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    value = int(raw) if raw else default
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive whole number")
+    return value
 
 
 def _int(name: str, default: int) -> int:
@@ -121,13 +132,20 @@ class Settings:
             replicate_model=os.getenv("REPLICATE_UPSCALE_MODEL", "").strip()
             or DEFAULT_MODEL,
             replicate_version=os.getenv("REPLICATE_UPSCALE_VERSION", "").strip(),
-            replicate_max_input_mp=_float("UPSCALER_REPLICATE_MAX_INPUT_MP", 8.0),
+            replicate_max_input_mp=_positive_float(
+                "UPSCALER_REPLICATE_MAX_INPUT_MP", 8.0
+            ),
             replicate_tile=_int("UPSCALER_REPLICATE_TILE", 400),
-            replicate_timeout_seconds=_float("REPLICATE_TIMEOUT_SECONDS", 1800.0),
-            poll_seconds=_float("UPSCALER_POLL_SECONDS", 3.0),
-            seconds_per_mp=_float("UPSCALER_SECONDS_PER_MP", 10.0),
-            price_per_second=_float("UPSCALER_PRICE_PER_SECOND", 0.000225),
+            replicate_timeout_seconds=_positive_float(
+                "REPLICATE_TIMEOUT_SECONDS", 1800.0
+            ),
+            poll_seconds=_positive_float("UPSCALER_POLL_SECONDS", 3.0),
+            seconds_per_mp=_positive_float("UPSCALER_SECONDS_PER_MP", 10.0),
+            # Zero is a real price: a model that costs nothing to run.
+            price_per_second=_non_negative_float("UPSCALER_PRICE_PER_SECOND", 0.000225),
             max_concurrent_jobs=max(1, _int("UPSCALER_MAX_CONCURRENT_JOBS", 1)),
-            max_output_megapixels=_float("UPSCALER_MAX_OUTPUT_MEGAPIXELS", 400.0),
-            print_dpi=_int("UPSCALER_PRINT_DPI", 300),
+            max_output_megapixels=_positive_float(
+                "UPSCALER_MAX_OUTPUT_MEGAPIXELS", 400.0
+            ),
+            print_dpi=_positive_int("UPSCALER_PRINT_DPI", 300),
         )
