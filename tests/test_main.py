@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
+import jsonschema
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -799,25 +800,88 @@ def test_request_empty_content_no_crash(monkeypatch, tmp_path):
     assert result["title"] == ""
 
 
-def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
-    """Reasoning models get a higher max_output_tokens floor."""
-    monkeypatch.setattr(
-        gallery_app.config,
-        "runtime_ai_config",
-        {"model": "gpt-5-mini", "max_output_tokens": 624},
+def test_ai_config_keeps_output_tokens_in_range(monkeypatch):
+    """max_output_tokens is held between 4,000 and 14,000 for every model."""
+    for stored, expected in [
+        (624, 4000),
+        (4000, 4000),
+        (9400, 9400),
+        (14000, 14000),
+        (50000, 14000),
+        ("not a number", 4000),
+        (None, 4000),
+    ]:
+        monkeypatch.setattr(
+            gallery_app.config,
+            "runtime_ai_config",
+            {"model": "gpt-6-luna", "max_output_tokens": stored},
+        )
+        assert gallery_app._get_ai_config()["max_output_tokens"] == expected
+
+
+def test_admin_config_clamps_output_tokens(monkeypatch, tmp_path):
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
+    monkeypatch.setattr(gallery_app.config, "runtime_ai_config", {})
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    auth = ("admin", "secret")
+
+    def save(value):
+        response = client.post(
+            "/admin/config", json={"ai": {"max_output_tokens": value}}, auth=auth
+        )
+        return response.json()["ai"]["max_output_tokens"]
+
+    assert save(600) == 4000
+    assert save(9400) == 9400
+    assert save(99999) == 14000
+    # A value that is not a number leaves the saved limit alone.
+    assert save(9400) == 9400
+    assert save("lots") == 9400
+    assert json.loads((tmp_path / "ai.json").read_text())["max_output_tokens"] == 9400
+
+
+def test_model_catalog_matches_schema_and_app():
+    config = gallery_app.config
+    catalog = json.loads(config.MODEL_CATALOG_PATH.read_text())
+    schema = json.loads(
+        (config.MODEL_CATALOG_PATH.parent / "models.schema.json").read_text()
     )
-    cfg = gallery_app._get_ai_config()
-    assert cfg["max_output_tokens"] == 1200
+    jsonschema.validate(catalog, schema)
+
+    ids = [entry["id"] for entry in catalog["models"]]
+    assert len(ids) == len(set(ids))
+    assert config.OPENAI_DEFAULT_MODEL in ids
+    for entry in catalog["models"]:
+        assert set(entry["reasoning_efforts"]) <= set(config.REASONING_EFFORTS)
+        # The fallback effort must be one every listed model accepts.
+        assert config.DEFAULT_REASONING_EFFORT in entry["reasoning_efforts"]
+
+
+def test_admin_settings_list_models_with_prices(monkeypatch):
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    page = client.get("/admin", auth=("admin", "secret")).text
+
+    catalog = gallery_app.config.MODEL_CATALOG
+    for entry in catalog["models"]:
+        assert f'<option value="{entry["id"]}"' in page
+    assert 'data-efforts="low medium high xhigh max"' in page
+    assert 'data-input-price="8.0"' in page
+    assert 'data-output-price="40.0"' in page
+    assert f'data-as-of="{catalog["as_of"]}"' in page
+    assert '<option value="max">max</option>' in page
+    assert 'id="ai-tokens" min="4000" max="14000"' in page
 
 
 def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):
-    """GPT-6 models are reasoning models: token floor, no temperature sent."""
+    """GPT-6 models are reasoning models: token minimum, no temperature sent."""
     monkeypatch.setattr(
         gallery_app.config,
         "runtime_ai_config",
         {"model": "gpt-6.1-sol", "max_output_tokens": 624},
     )
-    assert gallery_app._get_ai_config()["max_output_tokens"] == 1200
+    assert gallery_app._get_ai_config()["max_output_tokens"] == 4000
 
     _patch_openai_transport(monkeypatch, _output_text_payload('{"title": "T"}'))
     fake_client = gallery_app.ai_metadata.httpx.Client
@@ -839,9 +903,24 @@ def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):
 def test_reasoning_effort_falls_back_when_model_rejects_it(monkeypatch):
     for model, effort, expected in [
         ("gpt-6-luna", "none", "none"),
+        ("gpt-6-luna", "minimal", "low"),
+        ("gpt-6-astra", "minimal", "low"),
         ("gpt-6-astra", "none", "low"),
         ("gpt-6.1-sol", "minimal", "low"),
         ("gpt-6.1-sol", "high", "high"),
+        ("gpt-6.1-terra", "none", "none"),
+        ("gpt-6.1-terra", "minimal", "low"),
+        ("gpt-6.2-astra", "none", "low"),
+        ("gpt-6.2-astra", "minimal", "low"),
+        ("gpt-6.2-astra", "high", "high"),
+        ("gpt-6.2-sol", "none", "low"),
+        ("gpt-6.2-sol", "minimal", "low"),
+        ("gpt-6.2-sol", "medium", "medium"),
+        ("gpt-6.2-sol", "xhigh", "xhigh"),
+        ("gpt-6-luna", "xhigh", "xhigh"),
+        ("gpt-6-luna", "max", "max"),
+        ("gpt-6.2-astra", "max", "max"),
+        ("some-unlisted-model", "none", "none"),
         ("gpt-6-luna", "bogus", "low"),
     ]:
         monkeypatch.setattr(

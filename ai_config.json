@@ -2,5 +2,5 @@
   "enabled": true,
   "model": "gpt-6-luna",
   "reasoning_effort": "low",
-  "max_output_tokens": 624
+  "max_output_tokens": 4000
 }

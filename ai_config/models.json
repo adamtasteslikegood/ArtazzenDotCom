@@ -1,0 +1,63 @@
+{
+  "$schema": "./models.schema.json",
+  "as_of": "2026-11-22",
+  "currency": "USD",
+  "source": "https://developers.openai.com/api/docs/models/all",
+  "estimated_input_tokens_per_image": 1200,
+  "models": [
+    {
+      "id": "gpt-6.2-astra",
+      "name": "GPT-6.2 Astra",
+      "description": "OpenAI's flagship and most capable model. Costs 80 times as much per token as GPT-6 Luna.",
+      "input_price_per_mtok": 8.0,
+      "output_price_per_mtok": 40.0,
+      "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.2-astra"
+    },
+    {
+      "id": "gpt-6.2-sol",
+      "name": "GPT-6.2 Sol",
+      "description": "The mid-range 6.2 model, positioned by OpenAI as its everyday choice. A quarter of the price of GPT-6.2 Astra.",
+      "input_price_per_mtok": 2.0,
+      "output_price_per_mtok": 10.0,
+      "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.2-sol"
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "name": "GPT-6.1 Sol",
+      "description": "The previous Sol model. Same price as GPT-6.2 Sol.",
+      "input_price_per_mtok": 2.0,
+      "output_price_per_mtok": 10.0,
+      "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
+    },
+    {
+      "id": "gpt-6.1-terra",
+      "name": "GPT-6.1 Terra",
+      "description": "A faster, cheaper model that OpenAI positions for visual reasoning and natural writing. Half the price of the Sol models.",
+      "input_price_per_mtok": 1.0,
+      "output_price_per_mtok": 5.0,
+      "reasoning_efforts": ["none", "low", "medium", "high", "xhigh", "max"],
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.1-terra"
+    },
+    {
+      "id": "gpt-6-luna",
+      "name": "GPT-6 Luna",
+      "description": "The cheapest model, built for high-volume work. The app's default.",
+      "input_price_per_mtok": 0.1,
+      "output_price_per_mtok": 0.5,
+      "reasoning_efforts": ["none", "low", "medium", "high", "xhigh", "max"],
+      "source": "https://developers.openai.com/api/docs/models/gpt-6-luna"
+    },
+    {
+      "id": "gpt-6-astra",
+      "name": "GPT-6 Astra",
+      "description": "An earlier flagship. GPT-6.2 Astra is newer and cheaper; this is the most expensive model listed.",
+      "input_price_per_mtok": 10.0,
+      "output_price_per_mtok": 50.0,
+      "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
+      "source": "https://developers.openai.com/api/docs/models/gpt-6-astra"
+    }
+  ]
+}

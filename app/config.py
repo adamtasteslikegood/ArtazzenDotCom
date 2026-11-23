@@ -1,5 +1,6 @@
 """Paths, environment configuration, and runtime AI settings."""
 
+import json
 import logging
 import os
 import threading
@@ -69,13 +70,25 @@ OPENAI_DEFAULT_MODEL = "gpt-6-luna"
 # Reasoning model families: no 'temperature' parameter, and they spend output
 # tokens on reasoning before emitting text.
 REASONING_MODEL_PREFIXES = ("gpt-5", "gpt-6")
-REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 DEFAULT_REASONING_EFFORT = "low"
-# Efforts a model rejects with HTTP 400.
+# Models offered in the admin settings, with list prices and the efforts each
+# one accepts. Shipped data; see ai_config/README.md.
+MODEL_CATALOG_PATH = BASE_DIR / "ai_config" / "models.json"
+MODEL_CATALOG: dict[str, Any] = json.loads(
+    MODEL_CATALOG_PATH.read_text(encoding="utf-8")
+)
+# Efforts a model rejects with HTTP 400. A model outside the catalog has no
+# entry, so nothing is blocked for it.
 UNSUPPORTED_REASONING_EFFORTS: dict[str, frozenset[str]] = {
-    "gpt-6-astra": frozenset({"none"}),
-    "gpt-6.1-sol": frozenset({"none", "minimal"}),
+    entry["id"]: frozenset(REASONING_EFFORTS) - frozenset(entry["reasoning_efforts"])
+    for entry in MODEL_CATALOG["models"]
 }
+# Bounds for the admin "Max output tokens" setting. Reasoning models spend
+# output tokens on reasoning before emitting text, so a small budget yields
+# incomplete (empty-text) responses.
+MIN_OUTPUT_TOKENS = 4000
+MAX_OUTPUT_TOKENS = 14000
 
 
 def _coerce_reasoning_effort(value: Any, model: str) -> str:
@@ -86,6 +99,18 @@ def _coerce_reasoning_effort(value: Any, model: str) -> str:
     if effort in UNSUPPORTED_REASONING_EFFORTS.get(model, frozenset()):
         return DEFAULT_REASONING_EFFORT
     return effort
+
+
+def _coerce_max_output_tokens(value: Any, default: int = MIN_OUTPUT_TOKENS) -> int:
+    """Return an output token limit inside the allowed range.
+
+    A value that is not a number yields `default` (itself clamped).
+    """
+    try:
+        tokens = int(value)
+    except (TypeError, ValueError):
+        tokens = default
+    return max(MIN_OUTPUT_TOKENS, min(MAX_OUTPUT_TOKENS, tokens))
 
 
 try:
@@ -181,14 +206,6 @@ def _get_ai_config() -> dict[str, Any]:
         temperature = float(cfg.get("temperature", 0.6))
     except (TypeError, ValueError):
         temperature = 0.6
-    try:
-        max_output_tokens = int(cfg.get("max_output_tokens", 600))
-    except (TypeError, ValueError):
-        max_output_tokens = 600
-    # Reasoning models spend output tokens on reasoning before emitting text;
-    # too small a budget yields incomplete (empty-text) responses.
-    if model.startswith(REASONING_MODEL_PREFIXES) and max_output_tokens < 1200:
-        max_output_tokens = 1200
     return {
         "enabled": enabled,
         "model": model,
@@ -196,7 +213,7 @@ def _get_ai_config() -> dict[str, Any]:
         "reasoning_effort": _coerce_reasoning_effort(
             cfg.get("reasoning_effort"), model
         ),
-        "max_output_tokens": max_output_tokens,
+        "max_output_tokens": _coerce_max_output_tokens(cfg.get("max_output_tokens")),
         "default_artist": str(cfg.get("default_artist", "")),
         "artist_in_prompt": _coerce_bool(cfg.get("artist_in_prompt", False)),
         "default_copyright": str(cfg.get("default_copyright", "")),
@@ -245,6 +262,15 @@ AI_RETRY_DELAY_SECONDS = max(
 )
 
 
+# Read by the admin settings form.
+templates.env.globals["ai_models"] = MODEL_CATALOG
+templates.env.globals["ai_token_limits"] = {
+    "min": MIN_OUTPUT_TOKENS,
+    "max": MAX_OUTPUT_TOKENS,
+}
+templates.env.globals["ai_max_retries"] = AI_MAX_RETRIES
+
+
 def _default_ai_config_from_env() -> dict[str, Any]:
     return {
         "enabled": _parse_bool_env(os.getenv("AI_METADATA_ENABLED"), True),
@@ -253,8 +279,8 @@ def _default_ai_config_from_env() -> dict[str, Any]:
             os.getenv("OPENAI_IMAGE_METADATA_TEMPERATURE"), 0.6
         ),
         "reasoning_effort": DEFAULT_REASONING_EFFORT,
-        "max_output_tokens": _parse_int_env(
-            os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS"), 600
+        "max_output_tokens": _coerce_max_output_tokens(
+            os.getenv("OPENAI_IMAGE_METADATA_MAX_TOKENS")
         ),
         "default_artist": os.getenv("DEFAULT_ARTIST", ""),
         "artist_in_prompt": False,
@@ -274,11 +300,9 @@ def _sanitize_ai_config(cfg: dict[str, Any]) -> dict[str, Any]:
             out["temperature"] = max(0.0, min(2.0, t))
         except (TypeError, ValueError):
             pass
-        try:
-            tok = int(cfg.get("max_output_tokens", out["max_output_tokens"]))
-            out["max_output_tokens"] = max(16, min(4000, tok))
-        except (TypeError, ValueError):
-            pass
+        out["max_output_tokens"] = _coerce_max_output_tokens(
+            cfg.get("max_output_tokens"), out["max_output_tokens"]
+        )
         if isinstance(cfg.get("default_artist"), str):
             out["default_artist"] = cfg["default_artist"].strip()
         if "artist_in_prompt" in cfg:
