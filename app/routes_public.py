@@ -3,6 +3,7 @@
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 from xml.etree import ElementTree
 
@@ -44,6 +45,7 @@ async def sitemap_xml():
 
     add_url("/")
     add_url("/collections")
+    add_url("/join")
 
     registry_path = config.IMAGES_DIR / ".curation" / "collections.json"
     registry_mtime = [registry_path] if registry_path.is_file() else []
@@ -115,7 +117,7 @@ def _latest_lastmod(paths: list[Path]) -> str | None:
 async def collections_index(request: Request):
     """Top-level collections grid."""
     collections = [
-        {**entry, "cover_url": curation.collection_cover_url(entry)}
+        {**entry, **curation.collection_cover(entry)}
         for entry in curation.top_level_collections()
     ]
     context = seo.build_context(
@@ -326,3 +328,45 @@ async def read_root(request: Request):
         )
     )
     return config.templates.TemplateResponse(request, "index.html", context)
+
+
+def _join_feature() -> dict[str, Any] | None:
+    """Approved artwork shown on /join: the configured one, else the first."""
+    artworks = media.list_artworks()
+    wanted = config.JOIN_FEATURE_IMAGE
+    if wanted:
+        for artwork in artworks:
+            if artwork["name"] == wanted:
+                return artwork
+        logger.warning(
+            "JOIN_FEATURE_IMAGE %r is not an approved artwork; using the first",
+            wanted,
+        )
+    return artworks[0] if artworks else None
+
+
+@router.get("/join", response_class=HTMLResponse)
+async def join(request: Request):
+    """Membership and support page ("Join the Collective")."""
+    context = {
+        "request": request,
+        "gallery_title": config.GALLERY_TITLE,
+        "fire_opal_url": config.FIRE_OPAL_PAYLINK_URL,
+        "support_links": config.SUPPORT_LINKS,
+        "feature": _join_feature(),
+    }
+    context.update(
+        seo.build_context(
+            request,
+            title=f"Join the Collective | {config.GALLERY_TITLE}",
+            description=(
+                "Join the Artazzen Collective: early-access Fire Opal lifetime "
+                "membership and other ways to support the artists."
+            ),
+            breadcrumbs=[
+                {"name": "Gallery", "path": "/"},
+                {"name": "Join the Collective", "path": "/join"},
+            ],
+        )
+    )
+    return config.templates.TemplateResponse(request, "join.html", context)

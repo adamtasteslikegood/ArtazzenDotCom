@@ -364,6 +364,9 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 | `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                          |
 | `CLOUDFLARE_API_TOKEN`        | Cache Purge token                                            | unset (no purge)              |
 | `CLOUDFLARE_ZONE_ID`          | artazzen.com zone id                                         | unset                         |
+| `FIRE_OPAL_PAYLINK_URL`       | GoDaddy/PayPal pay link                                      | unset or same link            |
+| `SUPPORT_LINKS`               | sponsorship links                                            | unset or same links           |
+| `JOIN_FEATURE_IMAGE`          | file name of an approved image                               | unset (first artwork)         |
 | `PORT`                        | set by Railway                                               | set by Railway                |
 
 ## Workflow Summary
@@ -519,6 +522,7 @@ Layering (no cycles): `config → sidecars → media → ai_metadata → curatio
 | `/admin/metadata/{image_name}` | POST     | Save image metadata                                      |
 | `/collections`                 | GET      | Collections index                                        |
 | `/collections/{slug}`          | GET      | Collection page (series strips + grid)                   |
+| `/join`                        | GET      | Join the Collective: membership pay link + support links |
 | `/admin/api/collections`       | GET/POST | Collections registry CRUD                                |
 | `/admin/api/series`            | GET/POST | Series registry CRUD                                     |
 | `/admin/config`                | GET/POST | AI config CRUD                                           |
@@ -653,6 +657,9 @@ See `.env.example` for the full list. Key vars:
 | `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                                                                                |
 | `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; with the zone id, enables purge on unapprove/delete                                              |
 | `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone of the site                                                                                         |
+| `FIRE_OPAL_PAYLINK_URL`       | _(none)_               | Hosted pay link for the Fire Opal membership on `/join` (https only)                                                |
+| `SUPPORT_LINKS`               | _(none)_               | `Label\|URL; Label\|URL` sponsorship links on `/join` (https only)                                                  |
+| `JOIN_FEATURE_IMAGE`          | _(first artwork)_      | File name of the approved image shown beside the offer on `/join`                                                   |
 | `PORT`                        | _(uvicorn default)_    | Server port (set by Railway)                                                                                        |
 
 ## Core Principles
