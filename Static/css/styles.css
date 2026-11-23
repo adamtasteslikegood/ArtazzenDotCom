@@ -954,6 +954,8 @@ footer {
 .artwork-meta-value {
     font-size: 1rem;
     line-height: 1.6;
+    /* A <p> value would otherwise sit 1em further from its label than a <div> one. */
+    margin-top: 0;
     margin-bottom: 1.5rem;
 }
 
