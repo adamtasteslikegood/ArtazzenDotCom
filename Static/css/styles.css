@@ -511,6 +511,14 @@ footer {
     margin-bottom: 1rem;
 }
 
+.form-hint {
+    margin: 0.5rem 0 0;
+    max-width: 70ch;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
 .checkbox {
     display: flex;
     align-items: center;

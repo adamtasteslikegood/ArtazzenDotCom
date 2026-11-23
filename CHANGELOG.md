@@ -22,13 +22,28 @@ All notable changes to this project will be documented in this file.
 - 2560 px WebP derivative for images wider than 1600 px, used by the enlarged
   view. The artwork page image now has a `srcset`, so the browser picks the
   size that fits the screen.
+- `gpt-6.2-astra`, `gpt-6.2-sol` and `gpt-6.1-terra` in the admin model list.
+  Efforts the OpenAI model pages do not list for them (`none` and `minimal` on
+  the two 6.2 models; `minimal` on `gpt-6.1-terra`) are disabled in the form
+  and fall back to `low` on the server.
+- `xhigh` and `max` reasoning efforts in the admin AI settings, for every
+  listed model.
+- Model catalog in `ai_config/models.json` (schema and README beside it): the
+  admin model list, each model's description, list prices with an "as of"
+  date, and the efforts each model accepts now come from this one file. The
+  app checks it against the schema at startup and ignores a catalog that
+  fails. The selector shows each model's name with its ID.
+- Under the model selector: the model's description and its input and output
+  price per 1M tokens. Under "Max output tokens": the most one attempt can
+  cost at the current limit, and what one image can cost including its
+  automatic retries.
 - Pull-request environments can fill their empty image volume on their own.
   `railway.json` starts them (and only them) through
   `scripts/seed_images.py start`, which copies a storage-bucket folder named
   by the `SEED_S3_*` variables into `IMAGES_DIR` and then runs the `Procfile`
   command. Once the volume holds artwork its files are kept, production is
-  refused, and with no variables set the app starts as before. `seed_images.py push` uploads a
-  local folder to the bucket. Adds `boto3`.
+  refused, and with no variables set the app starts as before.
+  `seed_images.py push` uploads a local folder to the bucket. Adds `boto3`.
 - `scripts/seed-env-images.sh` has `-h/--help`, options for the project,
   service and target directory (`--project`, `--service`, `--remote-dir`; an
   option wins over its environment variable), and `--from-bucket` to make a
@@ -36,6 +51,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- "Max output tokens" now ranges from 4,000 to 14,000 (was 16 to 4,000) and
+  defaults to 4,000. Stored or posted values outside the range are moved to
+  the nearest bound, so every existing setup is raised to at least 4,000.
 - Images 1600 px wide or narrower now get a detail-page WebP at their own
   width; the artwork page used to load the original for them.
 - The watcher builds the new sizes for existing images (five images per
@@ -60,6 +78,14 @@ All notable changes to this project will be documented in this file.
 - Collection and series links on the artwork page were the browser's default
   blue, which was unreadable on the dark background. They now use the text
   colour and stay underlined.
+- `minimal` effort is no longer offered for `gpt-6-luna` or `gpt-6-astra`.
+  The API rejects it for both (HTTP 400), so a saved `minimal` setting made
+  every request fail. It now falls back to `low`.
+- Saving a token limit that is not a finite number (for example `1e999`) from
+  an API client returned a 500. The saved limit is now kept.
+- After a save, the admin AI settings form shows the token limit and effort
+  the server stored. Saving with the token field empty keeps the saved limit,
+  and the field used to stay blank.
 
 ## [0.4.0] - 2026-10-11
 

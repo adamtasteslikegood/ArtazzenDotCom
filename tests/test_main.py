@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
+import jsonschema
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -799,25 +800,197 @@ def test_request_empty_content_no_crash(monkeypatch, tmp_path):
     assert result["title"] == ""
 
 
-def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
-    """Reasoning models get a higher max_output_tokens floor."""
+def test_ai_config_keeps_output_tokens_in_range(monkeypatch):
+    """max_output_tokens is held between 4,000 and 14,000 for every model."""
+    for stored, expected in [
+        (624, 4000),
+        (4000, 4000),
+        (9400, 9400),
+        (14000, 14000),
+        (50000, 14000),
+        ("not a number", 4000),
+        (None, 4000),
+        (float("inf"), 4000),
+    ]:
+        # Not only reasoning models: the range has no per-model exception.
+        for model in ("gpt-6-luna", "gpt-4o-mini", "some-unlisted-model"):
+            monkeypatch.setattr(
+                gallery_app.config,
+                "runtime_ai_config",
+                {"model": model, "max_output_tokens": stored},
+            )
+            assert gallery_app._get_ai_config()["max_output_tokens"] == expected
+
+
+def test_saved_and_env_token_limits_are_clamped_on_load(monkeypatch, tmp_path):
+    config = gallery_app.config
+    path = tmp_path / "ai.json"
+    monkeypatch.setattr(config, "CONFIG_PATH", path)
+    monkeypatch.setenv("OPENAI_IMAGE_METADATA_MAX_TOKENS", "600")
+    assert config._default_ai_config_from_env()["max_output_tokens"] == 4000
+
+    path.write_text(json.dumps({"max_output_tokens": 624}))
+    assert config._load_ai_config()["max_output_tokens"] == 4000
+    path.write_text(json.dumps({"max_output_tokens": 50000}))
+    assert config._load_ai_config()["max_output_tokens"] == 14000
+    # A saved value that is not a number falls back to the env default.
+    monkeypatch.setenv("OPENAI_IMAGE_METADATA_MAX_TOKENS", "9000")
+    path.write_text(json.dumps({"max_output_tokens": "junk"}))
+    assert config._load_ai_config()["max_output_tokens"] == 9000
+
+
+def test_admin_config_infinite_token_limit_keeps_saved_value(monkeypatch, tmp_path):
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
     monkeypatch.setattr(
-        gallery_app.config,
-        "runtime_ai_config",
-        {"model": "gpt-5-mini", "max_output_tokens": 624},
+        gallery_app.config, "runtime_ai_config", {"max_output_tokens": 9400}
     )
-    cfg = gallery_app._get_ai_config()
-    assert cfg["max_output_tokens"] == 1200
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    # json.loads reads 1e999 as infinity, which int() cannot convert.
+    response = client.post(
+        "/admin/config",
+        content='{"ai": {"max_output_tokens": 1e999}}',
+        headers={"Content-Type": "application/json"},
+        auth=("admin", "secret"),
+    )
+    assert response.status_code == 200
+    assert response.json()["ai"]["max_output_tokens"] == 9400
+
+
+def test_unusable_model_catalog_yields_empty_catalog(tmp_path):
+    """A broken catalog file must not stop the app from starting."""
+    config = gallery_app.config
+    assert config._load_model_catalog(tmp_path / "missing.json")["models"] == []
+    for text in (
+        "{not json",
+        "[]",
+        '{"models": [{"id": "x"}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": null}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": "low"}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": [["low"]]}]}',
+        '{"models": [{"id": ["x"], "reasoning_efforts": ["low"]}]}',
+    ):
+        path = tmp_path / "models.json"
+        path.write_text(text)
+        assert config._load_model_catalog(path)["models"] == []
+
+    # The loader checks the whole schema, not only the fields the server reads:
+    # the form would print a missing price or description as it stands.
+    shipped = json.loads(config.MODEL_CATALOG_PATH.read_text(encoding="utf-8"))
+    path.write_text(json.dumps(shipped))
+    assert config._load_model_catalog(path) == shipped
+    for field in ("description", "input_price_per_mtok", "name"):
+        broken = json.loads(json.dumps(shipped))
+        del broken["models"][0][field]
+        path.write_text(json.dumps(broken))
+        assert config._load_model_catalog(path)["models"] == []
+    broken = json.loads(json.dumps(shipped))
+    del broken["as_of"]
+    path.write_text(json.dumps(broken))
+    assert config._load_model_catalog(path)["models"] == []
+    # The server and the form fall back to the default effort, so a model
+    # that does not accept it would turn every fallback into an HTTP 400.
+    broken = json.loads(json.dumps(shipped))
+    broken["models"][0]["reasoning_efforts"].remove(config.DEFAULT_REASONING_EFFORT)
+    path.write_text(json.dumps(broken))
+    assert config._load_model_catalog(path)["models"] == []
+    broken = json.loads(json.dumps(shipped))
+    broken["models"].append(json.loads(json.dumps(broken["models"][0])))
+    path.write_text(json.dumps(broken))
+    assert config._load_model_catalog(path)["models"] == []
+
+
+def test_admin_config_clamps_output_tokens(monkeypatch, tmp_path):
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
+    monkeypatch.setattr(gallery_app.config, "runtime_ai_config", {})
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    auth = ("admin", "secret")
+
+    def save(value):
+        response = client.post(
+            "/admin/config", json={"ai": {"max_output_tokens": value}}, auth=auth
+        )
+        return response.json()["ai"]["max_output_tokens"]
+
+    assert save(600) == 4000
+    assert save(9400) == 9400
+    assert save(99999) == 14000
+    # A value that is not a number leaves the saved limit alone.
+    assert save(9400) == 9400
+    assert save("lots") == 9400
+    assert json.loads((tmp_path / "ai.json").read_text())["max_output_tokens"] == 9400
+
+
+def test_model_catalog_matches_schema_and_app():
+    config = gallery_app.config
+    catalog = json.loads(config.MODEL_CATALOG_PATH.read_text())
+    schema = json.loads(
+        (config.MODEL_CATALOG_PATH.parent / "models.schema.json").read_text()
+    )
+    jsonschema.validate(catalog, schema)
+    # The file the app loaded is the shipped one, not the empty fallback.
+    assert config.MODEL_CATALOG == catalog
+    effort_enum = schema["properties"]["models"]["items"]["properties"][
+        "reasoning_efforts"
+    ]["items"]["enum"]
+    assert tuple(effort_enum) == config.REASONING_EFFORTS
+    # The schema names the fallback effort itself; keep it equal to the app's.
+    fallback = schema["properties"]["models"]["items"]["properties"][
+        "reasoning_efforts"
+    ]["contains"]["const"]
+    assert fallback == config.DEFAULT_REASONING_EFFORT
+
+    ids = [entry["id"] for entry in catalog["models"]]
+    assert len(ids) == len(set(ids))
+    assert config.OPENAI_DEFAULT_MODEL in ids
+    for entry in catalog["models"]:
+        assert set(entry["reasoning_efforts"]) <= set(config.REASONING_EFFORTS)
+        # The fallback effort must be one every listed model accepts.
+        assert config.DEFAULT_REASONING_EFFORT in entry["reasoning_efforts"]
+
+
+def test_admin_settings_list_models_with_prices(monkeypatch):
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    page = client.get("/admin", auth=("admin", "secret")).text
+
+    config = gallery_app.config
+    catalog = config.MODEL_CATALOG
+    selected = []
+    for entry in catalog["models"]:
+        # Each model's own option carries that model's efforts and prices.
+        match = re.search(rf'<option value="{re.escape(entry["id"])}"[^>]*>', page)
+        assert match, entry["id"]
+        option = match.group(0)
+        assert f'data-efforts="{" ".join(entry["reasoning_efforts"])}"' in option
+        assert f'data-input-price="{entry["input_price_per_mtok"]}"' in option
+        assert f'data-output-price="{entry["output_price_per_mtok"]}"' in option
+        if re.search(r"\sselected>", option):
+            selected.append(entry["id"])
+        # The label is the display name, with the id the API takes beside it.
+        assert f'{option}{entry["name"]} ({entry["id"]})</option>' in page
+    assert selected == [config.OPENAI_DEFAULT_MODEL]
+    assert f'data-as-of="{catalog["as_of"]}"' in page
+    assert f'data-input-tokens="{catalog["estimated_input_tokens_per_image"]}"' in page
+    assert f'data-retries="{config.AI_MAX_RETRIES}"' in page
+    effort_block = page.split('id="ai-effort"', 1)[1].split("</select>", 1)[0]
+    for effort in config.REASONING_EFFORTS:
+        assert f'<option value="{effort}"' in effort_block
+    assert 'id="ai-tokens" min="4000" max="14000"' in page
+    # Both hint lines change as the admin edits, so they are live regions.
+    assert 'id="ai-model-info" class="form-hint" aria-live="polite"' in page
+    assert 'id="ai-cost-info" class="form-hint" aria-live="polite"' in page
 
 
 def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):
-    """GPT-6 models are reasoning models: token floor, no temperature sent."""
+    """GPT-6 models are reasoning models: token minimum, no temperature sent."""
     monkeypatch.setattr(
         gallery_app.config,
         "runtime_ai_config",
         {"model": "gpt-6.1-sol", "max_output_tokens": 624},
     )
-    assert gallery_app._get_ai_config()["max_output_tokens"] == 1200
+    assert gallery_app._get_ai_config()["max_output_tokens"] == 4000
 
     _patch_openai_transport(monkeypatch, _output_text_payload('{"title": "T"}'))
     fake_client = gallery_app.ai_metadata.httpx.Client
@@ -839,9 +1012,24 @@ def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):
 def test_reasoning_effort_falls_back_when_model_rejects_it(monkeypatch):
     for model, effort, expected in [
         ("gpt-6-luna", "none", "none"),
+        ("gpt-6-luna", "minimal", "low"),
+        ("gpt-6-astra", "minimal", "low"),
         ("gpt-6-astra", "none", "low"),
         ("gpt-6.1-sol", "minimal", "low"),
         ("gpt-6.1-sol", "high", "high"),
+        ("gpt-6.1-terra", "none", "none"),
+        ("gpt-6.1-terra", "minimal", "low"),
+        ("gpt-6.2-astra", "none", "low"),
+        ("gpt-6.2-astra", "minimal", "low"),
+        ("gpt-6.2-astra", "high", "high"),
+        ("gpt-6.2-sol", "none", "low"),
+        ("gpt-6.2-sol", "minimal", "low"),
+        ("gpt-6.2-sol", "medium", "medium"),
+        ("gpt-6.2-sol", "xhigh", "xhigh"),
+        ("gpt-6-luna", "xhigh", "xhigh"),
+        ("gpt-6-luna", "max", "max"),
+        ("gpt-6.2-astra", "max", "max"),
+        ("some-unlisted-model", "none", "none"),
         ("gpt-6-luna", "bogus", "low"),
     ]:
         monkeypatch.setattr(

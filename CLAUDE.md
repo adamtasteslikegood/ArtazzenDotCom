@@ -37,6 +37,7 @@ app/
   factory.py             # create_app: lifespan, mounts, middleware, routers
 manage_sidecars.py       # CLI: validate/migrate sidecars + curation registries
 ImageSidecar.schema.json # Authoritative schema for per-image metadata
+ai_config/               # AI model catalog: models.json (prices, efforts), schema, README
 CollectionsRegistry.schema.json  # Schema for .curation/collections.json
 SeriesRegistry.schema.json       # Schema for .curation/series.json
 templates/               # Jinja2: base + base_admin, pages extend them
@@ -211,25 +212,26 @@ Admin routes (`/admin/*`) are protected by HTTP Basic Auth.
 
 See `.env.example` for the full list. Key vars:
 
-| Variable                      | Default                | Description                                                            |
-| ----------------------------- | ---------------------- | ---------------------------------------------------------------------- |
-| `SITE_URL`                    | `https://artazzen.com` | Canonical site URL for SEO (sitemap, robots.txt, canonical tags)       |
-| `IMAGES_DIR`                  | `Static/images`        | Image storage path. Set to `/data/images` on Railway                   |
-| `IMPORT_ROOT`                 | `imports`              | Only server directory allowed as a source for admin filesystem imports |
-| `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                                          |
-| `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin)                           |
-| `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                                         |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Model for AI descriptions                                              |
-| `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                                               |
-| `AI_MAX_RETRIES`              | `5`                    | Automatic retries after a failed AI metadata attempt (watcher only)    |
-| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum wait between those automatic retries                           |
-| `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                                   |
-| `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; with the zone id, enables purge on unapprove/delete |
-| `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone of the site                                            |
-| `FIRE_OPAL_PAYLINK_URL`       | _(none)_               | Hosted pay link for the Fire Opal membership on `/join` (https only)   |
-| `SUPPORT_LINKS`               | _(none)_               | `Label\|URL; Label\|URL` sponsorship links on `/join` (https only)     |
-| `JOIN_FEATURE_IMAGE`          | _(first artwork)_      | File name of the approved image shown beside the offer on `/join`      |
-| `PORT`                        | _(uvicorn default)_    | Server port (set by Railway)                                           |
+| Variable                           | Default                | Description                                                                                                    |
+| ---------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `SITE_URL`                         | `https://artazzen.com` | Canonical site URL for SEO (sitemap, robots.txt, canonical tags)                                               |
+| `IMAGES_DIR`                       | `Static/images`        | Image storage path. Set to `/data/images` on Railway                                                           |
+| `IMPORT_ROOT`                      | `imports`              | Only server directory allowed as a source for admin filesystem imports                                         |
+| `ADMIN_USERNAME`                   | `admin`                | Basic auth username for admin                                                                                  |
+| `ADMIN_PASSWORD`                   | _(none)_               | Basic auth password (**required** for admin)                                                                   |
+| `MY_OPENAI_API_KEY`                | _(none)_               | OpenAI API key for AI metadata                                                                                 |
+| `OPENAI_IMAGE_METADATA_MODEL`      | `gpt-6-luna`           | Model for AI descriptions                                                                                      |
+| `OPENAI_IMAGE_METADATA_MAX_TOKENS` | `4000`                 | Startup output token limit per AI request, kept inside 4,000 to 14,000; a limit saved in `ai_config.json` wins |
+| `OPENAI_TIMEOUT_SECONDS`           | `30`                   | Timeout for OpenAI calls                                                                                       |
+| `AI_MAX_RETRIES`                   | `5`                    | Automatic retries after a failed AI metadata attempt (watcher only)                                            |
+| `AI_RETRY_DELAY_SECONDS`           | `60`                   | Minimum wait between those automatic retries                                                                   |
+| `MAX_UPLOAD_SIZE_MB`               | `50`                   | Max upload file size                                                                                           |
+| `CLOUDFLARE_API_TOKEN`             | _(none)_               | Cache Purge token; with the zone id, enables purge on unapprove/delete                                         |
+| `CLOUDFLARE_ZONE_ID`               | _(none)_               | Cloudflare zone of the site                                                                                    |
+| `FIRE_OPAL_PAYLINK_URL`            | _(none)_               | Hosted pay link for the Fire Opal membership on `/join` (https only)                                           |
+| `SUPPORT_LINKS`                    | _(none)_               | `Label\|URL; Label\|URL` sponsorship links on `/join` (https only)                                             |
+| `JOIN_FEATURE_IMAGE`               | _(first artwork)_      | File name of the approved image shown beside the offer on `/join`                                              |
+| `PORT`                             | _(uvicorn default)_    | Server port (set by Railway)                                                                                   |
 
 ## Core Principles
 

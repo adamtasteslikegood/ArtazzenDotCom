@@ -137,11 +137,17 @@
                     </div>
                     <div class="form-row">
                         <label for="ai-model">Model</label>
-                        <select id="ai-model">
-                            <option value="gpt-6.1-sol" data-unsupported-efforts="none minimal">gpt-6.1-sol</option>
-                            <option value="gpt-6-luna" selected>gpt-6-luna</option>
-                            <option value="gpt-6-astra" data-unsupported-efforts="none">gpt-6-astra</option>
+                        <select id="ai-model" aria-describedby="ai-model-info">
+                            {% for model in ai_models.models %}
+                            <option value="{{ model.id }}"
+                                    data-efforts="{{ model.reasoning_efforts | join(' ') }}"
+                                    data-description="{{ model.description }}"
+                                    data-input-price="{{ model.input_price_per_mtok }}"
+                                    data-output-price="{{ model.output_price_per_mtok }}"
+                                    {% if model.id == ai_default_model %}selected{% endif %}>{{ model.name }} ({{ model.id }})</option>
+                            {% endfor %}
                         </select>
+                        <p id="ai-model-info" class="form-hint" aria-live="polite" data-as-of="{{ ai_models.as_of }}"></p>
                     </div>
                     <div class="form-row">
                         <label for="ai-effort">Effort</label>
@@ -151,11 +157,14 @@
                             <option value="low" selected>low</option>
                             <option value="medium">medium</option>
                             <option value="high">high</option>
+                            <option value="xhigh">xhigh</option>
+                            <option value="max">max</option>
                         </select>
                     </div>
                     <div class="form-row">
                         <label for="ai-tokens">Max output tokens</label>
-                        <input type="number" id="ai-tokens" min="16" max="4000" step="1" value="600">
+                        <input type="number" id="ai-tokens" min="{{ ai_token_limits.min }}" max="{{ ai_token_limits.max }}" step="1" value="{{ ai_token_limits.min }}" aria-describedby="ai-cost-info">
+                        <p id="ai-cost-info" class="form-hint" aria-live="polite" data-input-tokens="{{ ai_models.estimated_input_tokens_per_image }}" data-retries="{{ ai_max_retries }}"></p>
                     </div>
                     <h3 style="margin-top: 2rem;">Artist Attribution</h3>
                     <p class="panel-description">Applied automatically to newly imported/uploaded images only.</p>
@@ -290,12 +299,50 @@
 
     // Grey out efforts the selected model rejects; fall back to 'low'.
     function syncEffortOptions() {
-        const unsupported = (aiModel.selectedOptions[0]?.dataset.unsupportedEfforts || '').split(' ');
-        for (const option of aiEffort.options) option.disabled = unsupported.includes(option.value);
+        // A model outside the catalog has no effort list, so nothing is disabled.
+        const efforts = aiModel.selectedOptions[0]?.dataset.efforts;
+        const supported = efforts ? efforts.split(' ') : null;
+        for (const option of aiEffort.options) option.disabled = !!supported && !supported.includes(option.value);
         if (aiEffort.selectedOptions[0]?.disabled) aiEffort.value = 'low';
     }
-    aiModel?.addEventListener('change', syncEffortOptions);
     const aiTokens = document.getElementById('ai-tokens');
+    const aiModelInfo = document.getElementById('ai-model-info');
+    const aiCostInfo = document.getElementById('ai-cost-info');
+    const formatUsd = value => '$' + (value < 0.01 ? value.toFixed(4) : value.toFixed(2));
+    // Description and list price under the model, worst-case cost under the token limit.
+    function syncModelInfo() {
+        if (!aiModel || !aiModelInfo || !aiCostInfo) return;
+        const data = aiModel.selectedOptions[0]?.dataset || {};
+        const inputPrice = parseFloat(data.inputPrice);
+        const outputPrice = parseFloat(data.outputPrice);
+        if (!Number.isFinite(inputPrice) || !Number.isFinite(outputPrice)) {
+            aiModelInfo.textContent = 'No description or price on file for this model.';
+            aiCostInfo.textContent = 'No price on file for this model, so no cost estimate.';
+            return;
+        }
+        aiModelInfo.textContent = `${data.description} Input ${formatUsd(inputPrice)}, output ${formatUsd(outputPrice)} per 1M tokens (list price as of ${aiModelInfo.dataset.asOf}).`;
+        const typed = parseInt(aiTokens.value, 10);
+        if (!Number.isFinite(typed)) {
+            aiCostInfo.textContent = 'Enter a token limit to see the cost.';
+            return;
+        }
+        // The server keeps the limit inside the allowed range; estimate what will be saved.
+        const tokens = Math.max(Number(aiTokens.min), Math.min(Number(aiTokens.max), typed));
+        const inputTokens = Number(aiCostInfo.dataset.inputTokens);
+        const retries = Number(aiCostInfo.dataset.retries);
+        const perAttempt = (inputTokens * inputPrice + tokens * outputPrice) / 1e6;
+        let text = `Up to about ${formatUsd(perAttempt)} per attempt (roughly ${inputTokens.toLocaleString()} input and ${tokens.toLocaleString()} output tokens). Most attempts use far fewer.`;
+        if (retries > 0) {
+            text += ` A new image that comes back with a field empty is retried automatically up to ${retries} more times, about ${formatUsd(perAttempt * (retries + 1))} in all. Regenerating, reopening its review page or restarting the server can add more attempts.`;
+        }
+        if (typed !== tokens) {
+            text = `${typed.toLocaleString()} is outside the allowed range of ${Number(aiTokens.min).toLocaleString()} to ${Number(aiTokens.max).toLocaleString()}; this estimate uses ${tokens.toLocaleString()}. ` + text;
+        }
+        aiCostInfo.textContent = text;
+    }
+    aiModel?.addEventListener('change', () => { syncEffortOptions(); syncModelInfo(); });
+    aiTokens?.addEventListener('input', syncModelInfo);
+    syncModelInfo();
     const selectAllBtn = document.getElementById('select-all');
     const regenBtn = document.getElementById('regen-selected');
     const forceOverwrite = document.getElementById('force-overwrite');
@@ -494,6 +541,7 @@
             if (typeof cfg.reasoning_effort === 'string') aiEffort.value = cfg.reasoning_effort;
             syncEffortOptions();
             if (typeof cfg.max_output_tokens === 'number') aiTokens.value = cfg.max_output_tokens;
+            syncModelInfo();
             if (typeof cfg.default_artist === 'string' && defaultArtist) defaultArtist.value = cfg.default_artist;
             if (typeof cfg.artist_in_prompt === 'boolean' && artistInPrompt) artistInPrompt.checked = cfg.artist_in_prompt;
             if (typeof cfg.default_copyright === 'string' && defaultCopyright) defaultCopyright.value = cfg.default_copyright;
@@ -523,6 +571,11 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || 'Failed to save settings');
+            // Show what the server stored. An empty token field keeps the
+            // saved limit, so fill it in.
+            if (typeof data.ai?.reasoning_effort === 'string') aiEffort.value = data.ai.reasoning_effort;
+            if (typeof data.ai?.max_output_tokens === 'number') aiTokens.value = data.ai.max_output_tokens;
+            syncModelInfo();
             showFeedback('Settings saved.', 'success');
         } catch (e) {
             console.error(e);
