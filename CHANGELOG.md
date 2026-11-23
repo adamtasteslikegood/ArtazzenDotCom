@@ -22,6 +22,17 @@ All notable changes to this project will be documented in this file.
 - 2560 px WebP derivative for images wider than 1600 px, used by the enlarged
   view. The artwork page image now has a `srcset`, so the browser picks the
   size that fits the screen.
+- Pull-request environments can fill their empty image volume on their own.
+  `railway.json` starts them (and only them) through
+  `scripts/seed_images.py start`, which copies a storage-bucket folder named
+  by the `SEED_S3_*` variables into `IMAGES_DIR` and then runs the `Procfile`
+  command. Existing files are kept, production is refused, and with no
+  variables set the app starts as before. `seed_images.py push` uploads a
+  local folder to the bucket. Adds `boto3`.
+- `scripts/seed-env-images.sh` has `-h/--help`, options for the project,
+  service and target directory (`--project`, `--service`, `--remote-dir`; an
+  option wins over its environment variable), and `--from-bucket` to make a
+  running environment copy the seed folder from the bucket.
 
 ### Changed
 

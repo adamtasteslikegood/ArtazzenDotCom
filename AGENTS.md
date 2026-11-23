@@ -346,28 +346,77 @@ Railway can spin up isolated environments for each pull request, giving reviewer
 **Considerations for this project:**
 
 - Preview environments will need their own `ADMIN_PASSWORD` (set a shared test password in Railway's PR environment config)
-- `IMAGES_DIR` can be left unset (defaults to `Static/images/` with bundled test images) or pointed at a preview volume
+- `IMAGES_DIR` is inherited from the base environment (`/data/images`). Each preview gets its own volume, which starts empty: the repository holds no artwork. See [Seeding preview images](#seeding-preview-images)
 - `IMPORT_ROOT` limits admin filesystem imports to one approved staging directory; keep the default ephemeral `imports/` directory or set an explicit preview path
 - `MY_OPENAI_API_KEY` — use a separate key with lower rate limits for previews, or leave unset to disable AI features in previews
 - Preview URLs are temporary — don't use them for anything persistent
 
 ### Environment Variable Matrix
 
-| Variable                      | Production                                                   | PR Preview                    |
-| ----------------------------- | ------------------------------------------------------------ | ----------------------------- |
-| `IMAGES_DIR`                  | `/data/images` (volume)                                      | unset (uses `Static/images/`) |
-| `IMPORT_ROOT`                 | `/data/images/imports` or another approved staging directory | unset (uses `imports/`)       |
-| `ADMIN_USERNAME`              | `admin`                                                      | `admin`                       |
-| `ADMIN_PASSWORD`              | production secret                                            | shared test password          |
-| `MY_OPENAI_API_KEY`           | production key                                               | test key or unset             |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`                                                 | `gpt-6-luna`                  |
-| `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                          |
-| `CLOUDFLARE_API_TOKEN`        | Cache Purge token                                            | unset (no purge)              |
-| `CLOUDFLARE_ZONE_ID`          | artazzen.com zone id                                         | unset                         |
-| `FIRE_OPAL_PAYLINK_URL`       | GoDaddy/PayPal pay link                                      | unset or same link            |
-| `SUPPORT_LINKS`               | sponsorship links                                            | unset or same links           |
-| `JOIN_FEATURE_IMAGE`          | file name of an approved image                               | unset (first artwork)         |
-| `PORT`                        | set by Railway                                               | set by Railway                |
+| Variable                      | Production                                                   | PR Preview                   |
+| ----------------------------- | ------------------------------------------------------------ | ---------------------------- |
+| `IMAGES_DIR`                  | `/data/images` (volume)                                      | `/data/images` (own volume)  |
+| `IMPORT_ROOT`                 | `/data/images/imports` or another approved staging directory | unset (uses `imports/`)      |
+| `ADMIN_USERNAME`              | `admin`                                                      | `admin`                      |
+| `ADMIN_PASSWORD`              | production secret                                            | shared test password         |
+| `MY_OPENAI_API_KEY`           | production key                                               | test key or unset            |
+| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`                                                 | `gpt-6-luna`                 |
+| `MAX_UPLOAD_SIZE_MB`          | `50`                                                         | `50`                         |
+| `CLOUDFLARE_API_TOKEN`        | Cache Purge token                                            | unset (no purge)             |
+| `CLOUDFLARE_ZONE_ID`          | artazzen.com zone id                                         | unset                        |
+| `FIRE_OPAL_PAYLINK_URL`       | GoDaddy/PayPal pay link                                      | unset or same link           |
+| `SUPPORT_LINKS`               | sponsorship links                                            | unset or same links          |
+| `JOIN_FEATURE_IMAGE`          | file name of an approved image                               | unset (first artwork)        |
+| `SEED_S3_*`                   | unset                                                        | inherited from `staging-dev` |
+| `PORT`                        | set by Railway                                               | set by Railway               |
+
+### Seeding preview images
+
+A new preview's image volume is empty. Two ways to fill it:
+
+**Automatically, from a bucket folder.** `railway.json` gives pull-request
+environments (and only those) the start command
+`python scripts/seed_images.py start`. It copies a folder of a storage bucket
+into `IMAGES_DIR` and then runs the `Procfile`'s web command. It runs in the
+start command because Railway does not mount volumes during a pre-deploy
+command. Files already on the volume are never overwritten, so edits made in a
+preview survive its next deploy. Without the variables below it logs one line
+and starts the app; a failed copy logs a warning and starts the app.
+
+A bucket has no file path or mount. It is reached over HTTPS by endpoint,
+bucket name and key prefix, with credentials. Set these on the `staging-dev`
+service, from the Credentials tab of that environment's bucket:
+
+| Variable                    | Value                                            |
+| --------------------------- | ------------------------------------------------ |
+| `SEED_S3_ENDPOINT`          | the bucket's endpoint                            |
+| `SEED_S3_BUCKET`            | the bucket's S3 name (not its display name)      |
+| `SEED_S3_ACCESS_KEY_ID`     | access key id                                    |
+| `SEED_S3_SECRET_ACCESS_KEY` | secret access key                                |
+| `SEED_S3_PREFIX`            | folder to copy; optional, default `seed/images/` |
+
+- Paste the values. A `${{Bucket.…}}` reference would resolve, in each preview,
+  to that preview's own empty bucket: every environment gets its own bucket
+  instance and credentials. This is also why the seeder ignores the service's
+  `AWS_*` variables.
+- Do not seal them. Sealed variables are not copied into PR environments.
+- The credentials can write to the bucket, and every preview holds them. Keep
+  nothing but seed data in that bucket.
+- The seeder refuses to run when `RAILWAY_ENVIRONMENT_NAME` starts with `prod`
+  or the environment is the production one.
+
+Upload or refresh the seed folder from a machine that has the local seed set
+(`test_data/images`, never committed), with the same variables exported:
+
+```bash
+python scripts/seed_images.py push test_data/images --dry-run
+python scripts/seed_images.py push test_data/images
+```
+
+**By hand, over `railway ssh`.** `scripts/seed-env-images.sh <environment>`
+sends a local folder to the environment's volume and overwrites same-named
+files. `scripts/seed-env-images.sh --from-bucket <environment>` makes a running
+environment repeat the bucket copy. Both refuse production; see `--help`.
 
 ## Workflow Summary
 
@@ -481,7 +530,9 @@ Static/                  # Mounted at /static (preserve capital S)
   images/                # Artwork files + co-located .json sidecars
     .curation/           # collections.json + series.json registries
 artazzen-design-system/  # Design system spec and tokens
-scripts/                 # ahead-behind.sh, generate_agents_md.py, migrate_v2.py, migrate_v3.py
+scripts/                 # ahead-behind.sh, generate_agents_md.py, migrate_v2.py, migrate_v3.py,
+                         # seed_images.py + seed-env-images.sh (fill a PR environment's volume)
+railway.json             # PR environments only: start through scripts/seed_images.py
 docs/agent-handbook.md   # Agent Handbook source (imported by CLAUDE.md via @)
 .claude/                 # Claude Code hooks + settings
 tests/test_main.py       # Pytest suite
@@ -625,6 +676,10 @@ Releases use semantic versioning (`X.Y.Z`) with GitHub tagged releases.
 A persistent volume is attached to the FastAPI service, mounted at `/data/images`. In production, set `IMAGES_DIR=/data/images` so artwork persists across deploys. Locally, `IMAGES_DIR` defaults to `Static/images/`.
 
 Images are always served from `/images` (`media.PublicImageFiles`), with or without a volume. `/static` never serves the `images/` subtree, so `/static/images/...` is 404 everywhere. Derivatives are written to `IMAGES_DIR/.derived/` and so persist on the volume.
+
+### PR environment images
+
+A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which copies the bucket folder named by the `SEED_S3_*` variables into `IMAGES_DIR` (never overwriting, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Setup and the variable list are in `BRANCHING_STRATEGY.md` under "Seeding preview images".
 
 ### Cloudflare cache purge
 

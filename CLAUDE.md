@@ -45,7 +45,9 @@ Static/                  # Mounted at /static (preserve capital S)
   images/                # Artwork files + co-located .json sidecars
     .curation/           # collections.json + series.json registries
 artazzen-design-system/  # Design system spec and tokens
-scripts/                 # ahead-behind.sh, generate_agents_md.py, migrate_v2.py, migrate_v3.py
+scripts/                 # ahead-behind.sh, generate_agents_md.py, migrate_v2.py, migrate_v3.py,
+                         # seed_images.py + seed-env-images.sh (fill a PR environment's volume)
+railway.json             # PR environments only: start through scripts/seed_images.py
 docs/agent-handbook.md   # Agent Handbook source (imported by CLAUDE.md via @)
 .claude/                 # Claude Code hooks + settings
 tests/test_main.py       # Pytest suite
@@ -189,6 +191,10 @@ Releases use semantic versioning (`X.Y.Z`) with GitHub tagged releases.
 A persistent volume is attached to the FastAPI service, mounted at `/data/images`. In production, set `IMAGES_DIR=/data/images` so artwork persists across deploys. Locally, `IMAGES_DIR` defaults to `Static/images/`.
 
 Images are always served from `/images` (`media.PublicImageFiles`), with or without a volume. `/static` never serves the `images/` subtree, so `/static/images/...` is 404 everywhere. Derivatives are written to `IMAGES_DIR/.derived/` and so persist on the volume.
+
+### PR environment images
+
+A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which copies the bucket folder named by the `SEED_S3_*` variables into `IMAGES_DIR` (never overwriting, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Setup and the variable list are in `BRANCHING_STRATEGY.md` under "Seeding preview images".
 
 ### Cloudflare cache purge
 
