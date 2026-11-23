@@ -163,12 +163,50 @@ def set_state(
     return job
 
 
-def delete_prefix(storage: Storage, prefix: str) -> None:
+def delete_prefix(storage: Storage, prefix: str) -> bool:
+    """Delete every object under ``prefix`` and report complete success."""
+    ok = True
     for name in storage.list_names(prefix):
         try:
             storage.delete(name)
         except Exception:
+            ok = False
             logger.exception("Could not delete %s", name)
+    return ok
+
+
+def save_final_metadata(
+    storage: Storage, job: dict[str, Any], **changes: Any
+) -> dict[str, Any]:
+    """Update cleanup metadata without allowing a final-state transition."""
+    with _JOB_LOCK:
+        stored = storage.get_json(job_name(job["id"]))
+        if not stored or stored.get("state") not in FINAL:
+            raise JobError("Job is not in a final state")
+        record = dict(stored)
+        record.update(changes)
+        record["updated_at"] = now_iso()
+        storage.put_json(job_name(record["id"]), record)
+    return record
+
+
+def retry_cleanup(storage: Storage, job: dict[str, Any]) -> dict[str, Any]:
+    """Retry durable cleanup markers and retain only prefixes that still fail."""
+    remaining = []
+    for prefix in job.get("cleanup_pending", []):
+        try:
+            if not delete_prefix(storage, prefix):
+                remaining.append(prefix)
+        except Exception:
+            remaining.append(prefix)
+            logger.exception("Could not list objects for cleanup under %s", prefix)
+    try:
+        return save_final_metadata(storage, job, cleanup_pending=remaining)
+    except Exception:
+        # The existing record still contains the durable marker, so a future
+        # startup can retry even if this metadata write is temporarily down.
+        logger.exception("Could not update cleanup marker for job %s", job["id"])
+        return job
 
 
 # --- estimates ---------------------------------------------------------------
@@ -418,9 +456,15 @@ def prepare(
 
 
 def cancel_staged(storage: Storage, job: dict[str, Any]) -> dict[str, Any]:
-    job = set_state(storage, job, "cancelled", finished_at=now_iso())
-    delete_prefix(storage, f"staging/{job['id']}/")
-    return job
+    prefix = f"staging/{job['id']}/"
+    job = set_state(
+        storage,
+        job,
+        "cancelled",
+        finished_at=now_iso(),
+        cleanup_pending=[prefix],
+    )
+    return retry_cleanup(storage, job)
 
 
 # --- post-processing -----------------------------------------------------------
@@ -549,6 +593,11 @@ class JobRunner:
 
         task.add_done_callback(forget)
 
+    def _retry_later(self, job_id: str) -> None:
+        """Retry a persisted provider cancellation after a bounded pause."""
+        delay = max(1.0, float(self.settings.poll_seconds))
+        asyncio.get_running_loop().call_later(delay, self.start, job_id)
+
     async def _stop_task(self, job_id: str) -> None:
         """Stop this process's runner before cancelling a saved prediction."""
         task = self._tasks.get(job_id)
@@ -592,7 +641,7 @@ class JobRunner:
         # request fails, leave the stored job active and restart polling so
         # the operator can retry instead of recording a false local success.
         cancel_url = (job.get("prediction") or {}).get("cancel_url")
-        if cancel_url:
+        if state != "postprocessing" and cancel_url:
             await self._stop_task(job["id"])
             try:
                 await self.replicate.cancel(cancel_url)
@@ -601,9 +650,15 @@ class JobRunner:
                 raise JobError(
                     f"Replicate cancellation failed: {exc}. Try again."
                 ) from None
+        cleanup = [f"staging/{job['id']}/", f"results/{job['id']}/"]
         try:
             job = await self._io(
-                set_state, self.storage, job, "cancelled", finished_at=now_iso()
+                set_state,
+                self.storage,
+                job,
+                "cancelled",
+                finished_at=now_iso(),
+                cleanup_pending=cleanup,
             )
         except JobFinished as exc:
             raise JobError(str(exc)) from None
@@ -611,19 +666,28 @@ class JobRunner:
         # An empty prediction means the create call is in flight. Aborting it
         # could leave a prediction Replicate already accepted with nobody to
         # stop it; the task cancels it itself once the call returns.
-        if task and job.get("prediction") != {}:
+        # A post-processing thread also cannot be cancelled by asyncio; let it
+        # observe the durable cancelled state and perform its result cleanup.
+        if task and state != "postprocessing" and job.get("prediction") != {}:
             task.cancel()
-        await self._io(delete_prefix, self.storage, f"staging/{job['id']}/")
-        return job
+        if task and state == "postprocessing" and not task.done():
+            return job
+        return await self._io(retry_cleanup, self.storage, job)
 
     async def resume(self) -> list[str]:
         """Restart queued jobs and re-attach to running predictions."""
         resumed = []
         for job in await self._io(list_jobs, self.storage):
             state = job.get("state")
-            if state == "queued" or (
-                state in ("running", "postprocessing")
-                and (job.get("prediction") or {}).get("get_url")
+            if state in FINAL and job.get("cleanup_pending"):
+                await self._io(retry_cleanup, self.storage, job)
+            elif (
+                state == "queued"
+                or job.get("cancel_pending")
+                or (
+                    state in ("running", "postprocessing")
+                    and (job.get("prediction") or {}).get("get_url")
+                )
             ):
                 self.start(job["id"])
                 resumed.append(job["id"])
@@ -656,22 +720,45 @@ class JobRunner:
         except asyncio.CancelledError:
             raise
         except JobFinished:
+            job = await self._fresh(job_id)
+            if job and job["state"] in FINAL and job.get("cleanup_pending"):
+                await self._io(retry_cleanup, self.storage, job)
             return  # cancelled (or finished) elsewhere; nothing to record
         except Exception as exc:
             logger.exception("Job %s failed", job_id)
             job = await self._fresh(job_id)
             if job and job["state"] not in FINAL:
-                cancel_url = (job.get("prediction") or {}).get("cancel_url")
-                if cancel_url:
-                    try:
-                        await self.replicate.cancel(cancel_url)
-                    except ReplicateError as cancel_exc:
-                        logger.warning("Cancel of %s failed: %s", job_id, cancel_exc)
+                pending = job.get("cancel_pending")
+                if pending:
+                    self._retry_later(job_id)
+                    return
                 message = (
                     str(exc)
                     if isinstance(exc, (ReplicateError, JobError))
                     else (f"{type(exc).__name__} during processing; see service logs")
                 )
+                cancel_url = (
+                    (job.get("prediction") or {}).get("cancel_url")
+                    if job.get("state") != "postprocessing"
+                    else None
+                )
+                if cancel_url:
+                    try:
+                        await self.replicate.cancel(cancel_url)
+                    except ReplicateError as cancel_exc:
+                        logger.warning("Cancel of %s failed: %s", job_id, cancel_exc)
+                        await self._io(
+                            save_job,
+                            self.storage,
+                            job,
+                            cancel_pending={"final_state": "error", "error": message},
+                            error=(
+                                f"{message}. Provider cancellation is pending and "
+                                "will be retried."
+                            ),
+                        )
+                        self._retry_later(job_id)
+                        return
                 await self._io(
                     set_state,
                     self.storage,
@@ -682,6 +769,21 @@ class JobRunner:
                 )
 
     async def _execute(self, job: dict[str, Any]) -> None:
+        pending = job.get("cancel_pending")
+        if pending:
+            cancel_url = (job.get("prediction") or {}).get("cancel_url")
+            if cancel_url:
+                await self.replicate.cancel(cancel_url)
+            await self._io(
+                set_state,
+                self.storage,
+                job,
+                pending["final_state"],
+                error=pending["error"],
+                cancel_pending=None,
+                finished_at=now_iso(),
+            )
+            return
         started = time.monotonic()
         prediction = job.get("prediction") or {}
         if not prediction.get("get_url"):
@@ -760,6 +862,7 @@ class JobRunner:
                 job,
                 "done",
                 results=results,
+                cleanup_pending=[f"staging/{job['id']}/"],
                 finished_at=now_iso(),
                 run_seconds=round(time.monotonic() - started, 1),
                 predict_seconds=metrics.get("predict_time"),
@@ -771,4 +874,4 @@ class JobRunner:
         # The durable final record must exist before its source disappears.
         # A restart after this point sees a completed job, not a
         # postprocessing job whose source can no longer be re-opened.
-        await self._io(delete_prefix, self.storage, f"staging/{job['id']}/")
+        await self._io(retry_cleanup, self.storage, job)

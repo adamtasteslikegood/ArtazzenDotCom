@@ -84,6 +84,9 @@ run once on Replicate, but a restart never creates a second prediction for it.
 A cancel during the create call lets the call finish, then cancels the new
 prediction. Job records are re-read under a lock on every write and never
 leave a final state, so a late poll cannot undo a cancel.
+Failed provider cancellations remain pending and are retried without finalizing
+the local job. Failed staging/result deletions are recorded on terminal jobs
+and retried on service startup.
 
 Every import is checked for an allowed extension, size, megapixels and that
 Pillow can read it. Identical bytes are stored once (sha256).
