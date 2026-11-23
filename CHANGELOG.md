@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
   URLs are accepted. An approved artwork is shown beside the offer:
   `JOIN_FEATURE_IMAGE` names it, and the gallery's first artwork is used when
   that is unset or is not an approved image.
+- Upscaler service in `services/upscaler/`, deployed as its own Railway
+  service. This first part imports copies into the `wrapped-stand` bucket from
+  the gallery, a browser upload or a server path, and lists them in a
+  Library. Importing never processes anything; upscaling jobs come in a later
+  change. The gallery admin links to it when `UPSCALER_URL` is set, and the
+  gallery itself does no upscaling.
 - Enlarged view on the artwork page: clicking the image opens it full-window
   instead of opening the original in a new tab. "Full size" (or a click on the
   image) then loads the original and shows it at its real size; the original
@@ -54,6 +60,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- The text under each thumbnail in the gallery and on collection pages is now
+  the artwork's caption, shown whole (six lines at most), instead of the first
+  two lines of its description. An artwork with no caption shows its title
+  alone. The description stays on the artwork page.
 - "Max output tokens" now ranges from 4,000 to 14,000 (was 16 to 4,000) and
   defaults to 4,000. Stored or posted values outside the range are moved to
   the nearest bound, so every existing setup is raised to at least 4,000.
@@ -70,8 +80,13 @@ All notable changes to this project will be documented in this file.
   - The gallery is three columns on wide screens with the middle column set
     lower, and two columns from 601 to 1099 px. The offset used to alternate
     from row to row.
-  - Descriptions in the gallery and collection grids are cut to two lines; the
-    artwork page still shows the whole text.
+  - Descriptions on collection cards are cut to two lines.
+  - Page headings keep a clear gap between words; the tight letter spacing
+    had closed it, most visibly on phones.
+  - On the artwork page every value sits the same distance under its label.
+  - Public pages end 64px above the footer rule instead of 16 to 32px.
+  - The header tagline and the artwork page's labels use the same letter
+    spacing as the other small uppercase labels.
   - Collection cards are two to a row, level with each other, with a wider
     crop. Their covers load a larger image on wide screens, so they
     stay sharp at the new size.

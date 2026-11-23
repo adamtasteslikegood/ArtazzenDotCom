@@ -152,6 +152,9 @@ logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 templates.env.globals["site_url"] = SITE_URL
+# Public URL of the separate upscaler service (services/upscaler). The admin
+# nav links to it only when set; the gallery itself never upscales.
+templates.env.globals["upscaler_url"] = os.getenv("UPSCALER_URL", "").strip()
 
 
 def _https_url(value: str, name: str) -> str:

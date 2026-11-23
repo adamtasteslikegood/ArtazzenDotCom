@@ -91,7 +91,7 @@ The admin dashboard provides tools for content management and system configurati
 
 1.  **Primary:** The visual grid of artwork thumbnails. The user's primary focus is browsing art.
 2.  **Secondary:** Artwork titles.
-3.  **Tertiary:** Artwork descriptions.
+3.  **Tertiary:** Artwork captions (the description is on the detail page).
 
 #### Artwork Detail Page (`/artwork/{id}`)
 
