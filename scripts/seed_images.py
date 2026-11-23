@@ -58,9 +58,14 @@ REQUIRED_VARS = (
 )
 # How Railway names the environment it creates for a pull request.
 PR_ENVIRONMENT_NAME = re.compile(r"-pr-\d+$")
-# The app's registry lock. A running app holds a lock on this very file, so it
-# is never replaced: a new file under the same name would be a different lock.
-REGISTRY_LOCKFILE = PurePosixPath(".curation/.lock")
+# The app's lock files (app/curation.py, app/sidecars.py). A running app holds
+# its locks on these very files, so they are never copied in either direction:
+# a new file under the same name would be a different lock. Kept equal to the
+# app's by a test, since this script does not import the app.
+LOCKFILES = {
+    PurePosixPath(".curation/.lock"),
+    PurePosixPath(".curation/.sidecars.lock"),
+}
 # Never copied in either direction: the volume's own filesystem folder.
 SKIPPED_TOP_LEVEL = {"lost+found"}
 # Keep in sync with app.config.ALLOWED_IMAGE_EXTENSIONS without importing the
@@ -159,7 +164,7 @@ def _relative_path(key: str, prefix: str) -> PurePosixPath | None:
         return None
     if path.parts[0] in SKIPPED_TOP_LEVEL:
         return None
-    if path == REGISTRY_LOCKFILE:
+    if path in LOCKFILES:
         return None
     return path
 
@@ -252,6 +257,8 @@ def push(
             continue
         relative = file.relative_to(source)
         if relative.parts[0] in SKIPPED_TOP_LEVEL:
+            continue
+        if PurePosixPath(relative.as_posix()) in LOCKFILES:
             continue
         key = prefix + relative.as_posix()
         if dry_run:

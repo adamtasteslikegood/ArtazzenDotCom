@@ -1185,6 +1185,18 @@ def test_seed_artwork_suffixes_match_the_app():
     assert _seed_module().ARTWORK_SUFFIXES == set(ALLOWED_IMAGE_EXTENSIONS)
 
 
+def test_seed_lockfiles_match_the_app():
+    # A lock file the seeder does not know about would be replaced under a
+    # running app, which then holds its lock on a file nobody else can find.
+    from app import curation, sidecars
+
+    app_lockfiles = {
+        lock._lockfile_getter().relative_to(config.IMAGES_DIR).as_posix()
+        for lock in (sidecars.sidecar_mutation_lock, curation._registry_lock)
+    }
+    assert {path.as_posix() for path in _seed_module().LOCKFILES} == app_lockfiles
+
+
 def test_seed_source_reads_the_seed_variables():
     seed = _seed_module()
     assert seed.seed_source({}) is None
@@ -1288,6 +1300,7 @@ def test_seed_pull_on_a_running_app_keeps_what_appears_during_the_copy(tmp_path)
     (dest / ".curation").mkdir(parents=True)
     (dest / ".curation" / "collections.json").write_text("app-made")
     (dest / ".curation" / ".lock").write_text("held by the app")
+    (dest / ".curation" / ".sidecars.lock").write_text("held by the app")
 
     class UploadDuringCopy(_FakeBucket):
         def download_file(self, bucket, key, filename):
@@ -1302,6 +1315,7 @@ def test_seed_pull_on_a_running_app_keeps_what_appears_during_the_copy(tmp_path)
         {
             "seed/images/.curation/collections.json": b"seeded registry",
             "seed/images/.curation/.lock": b"",
+            "seed/images/.curation/.sidecars.lock": b"",
             "seed/images/a.json": b"sidecar-a",
             "seed/images/b.jpg": b"seed-b",
             "seed/images/c.jpg": b"seed-c",
@@ -1310,7 +1324,8 @@ def test_seed_pull_on_a_running_app_keeps_what_appears_during_the_copy(tmp_path)
 
     assert seed.pull(bucket, "seed-bucket", "seed/images/", dest) == (2, 2)
     assert (dest / ".curation" / "collections.json").read_text() == "seeded registry"
-    assert (dest / ".curation" / ".lock").read_text() == "held by the app"
+    for lockfile in (".lock", ".sidecars.lock"):
+        assert (dest / ".curation" / lockfile).read_text() == "held by the app"
     assert (dest / "b.jpg").read_bytes() == b"uploaded"
     assert (dest / "c.jpg").read_bytes() == b"uploaded while downloading"
     assert not list(dest.rglob(".seed-*"))
@@ -1358,6 +1373,8 @@ def test_seed_push_uploads_the_folder_under_the_prefix(tmp_path, capsys):
     (source / "lost+found").mkdir()
     (source / "a.jpg").write_bytes(b"image-a")
     (source / ".curation" / "series.json").write_bytes(b"series")
+    (source / ".curation" / ".lock").write_bytes(b"")
+    (source / ".curation" / ".sidecars.lock").write_bytes(b"")
     (source / "lost+found" / "junk").write_bytes(b"junk")
     outside = tmp_path / "secret.txt"
     outside.write_bytes(b"not seed data")
