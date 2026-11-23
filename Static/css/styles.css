@@ -103,11 +103,17 @@ header h1 {
     text-wrap: balance;
 }
 
+/* The tight tracking also closes the word gaps; public pages get them back. */
+body:not(.admin-page) header h1 {
+    word-spacing: 0.12em;
+}
+
 /* Line under the page heading (gallery tagline, collection description) */
 .tagline {
     font-family: var(--font-mono);
     font-size: 0.75rem;
     text-transform: uppercase;
+    letter-spacing: 0.08em;
     opacity: 0.6;
     margin-top: 1rem;
 }
@@ -119,6 +125,12 @@ main {
     margin: 0 auto;
     flex-grow: 1;
     width: 100%;
+}
+
+/* Public pages: keep the last row as far from the footer rule as rows are
+   from each other. */
+body:not(.admin-page) main {
+    padding-bottom: 4rem;
 }
 
 /* Gallery Grid - Asymmetric Editorial Feel */
@@ -172,19 +184,30 @@ main {
     letter-spacing: -0.01em;
 }
 
-.artwork-description {
+.artwork-description,
+.artwork-caption {
     font-size: 0.9rem;
     color: var(--text-muted);
     margin-top: 0.5rem;
     max-width: 30ch;
 }
 
-/* In a grid the description is a teaser; the artwork page has all of it. */
+/* On a collection card the description is a teaser; its page has all of it. */
 .gallery-grid .artwork-description {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
+    overflow: hidden;
+}
+
+/* A caption is written to be read whole (160 characters at most), so the
+   clamp is only a backstop against an overlong one stretching its row. */
+.gallery-grid .artwork-caption {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
     overflow: hidden;
 }
 
@@ -942,6 +965,7 @@ footer {
     font-family: var(--font-mono);
     font-size: 0.7rem;
     text-transform: uppercase;
+    letter-spacing: 0.08em;
     opacity: 0.6;
     margin-bottom: 0.25rem;
 }
@@ -949,6 +973,8 @@ footer {
 .artwork-meta-value {
     font-size: 1rem;
     line-height: 1.6;
+    /* A <p> value would otherwise sit 1em further from its label than a <div> one. */
+    margin-top: 0;
     margin-bottom: 1.5rem;
 }
 
@@ -1033,6 +1059,11 @@ footer {
     display: grid;
     gap: 2rem;
     padding-bottom: 4rem;
+}
+
+/* The gap under the page's last section comes from main, like every public page. */
+.join-page > section:last-child {
+    padding-bottom: 0;
 }
 
 .join-offer-body {
