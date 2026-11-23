@@ -287,9 +287,6 @@ def prepare(
     ext = Path(record["object"]).suffix
     staging = f"staging/{job_id}"
     source_name = f"{staging}/source{ext}"
-    storage.put_bytes(
-        source_name, data, mimetypes.guess_type(source_name)[0] or "image/png"
-    )
 
     warnings: list[str] = []
     blockers: list[str] = []
@@ -313,6 +310,11 @@ def prepare(
         return True
 
     try:
+        # Inside the try: a write the bucket took but the client saw fail
+        # would otherwise stay under staging/ with no job to remove it.
+        storage.put_bytes(
+            source_name, data, mimetypes.guess_type(source_name)[0] or "image/png"
+        )
         with Image.open(io.BytesIO(data)) as img:
             img.load()
             fmt = img.format or ""
@@ -764,14 +766,25 @@ class JobRunner:
                         )
                         self._retry_later(job_id)
                         return
-                await self._io(
+                # Results are listed on the job only once it is done, so a
+                # master uploaded before post-processing failed belongs to
+                # nobody. The staged copy stays: the job page still shows it.
+                cleanup = (
+                    {"cleanup_pending": [f"results/{job_id}/"]}
+                    if job.get("state") == "postprocessing"
+                    else {}
+                )
+                job = await self._io(
                     set_state,
                     self.storage,
                     job,
                     "error",
                     error=message,
                     finished_at=now_iso(),
+                    **cleanup,
                 )
+                if cleanup:
+                    await self._io(retry_cleanup, self.storage, job)
 
     async def _execute(self, job: dict[str, Any]) -> None:
         pending = job.get("cancel_pending")

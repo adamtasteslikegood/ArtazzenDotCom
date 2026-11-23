@@ -19,6 +19,7 @@ from upscaler.jobs import (
     save_job,
     set_state,
 )
+from upscaler.jobs import prepare as prepare_job
 from upscaler.replicate import ReplicateClient, ReplicateError
 
 from tests.patterns import gradient, periodic, png, srgb_icc
@@ -124,6 +125,25 @@ def test_failed_staging_cleanup_is_retried_on_startup(
     assert get_job(storage, job_id)["cleanup_pending"] == []
 
 
+def test_failed_first_staging_write_leaves_no_copy(
+    client, settings, storage, monkeypatch
+):
+    import_id = upload(client, png(gradient()))
+    original_put = storage.put_bytes
+
+    def stored_then_failed(name, data, content_type):
+        # The bucket took the object, but the reply never reached the client.
+        original_put(name, data, content_type)
+        if name.startswith("staging/"):
+            raise RuntimeError("connection lost after the write")
+
+    monkeypatch.setattr(storage, "put_bytes", stored_then_failed)
+    with pytest.raises(RuntimeError, match="connection lost"):
+        prepare_job(storage, settings, import_id, "print", 4)
+    assert storage.list_names("staging/") == []
+    assert list_jobs(storage) == []
+
+
 def test_print_job_runs_and_keeps_icc_at_300_dpi(client, storage, fake_replicate):
     icc = srgb_icc()
     job_id = prepare(client, upload(client, png(gradient(), icc_profile=icc)))
@@ -185,6 +205,51 @@ def test_failed_done_cleanup_remains_pending(client, storage, monkeypatch):
     job = wait_for(client, job_id)
     assert job["state"] == "done"
     assert job["cleanup_pending"] == [f"staging/{job_id}/"]
+    assert storage.list_names(f"staging/{job_id}/")
+
+
+def test_failed_postprocessing_removes_the_uploaded_master(
+    client, settings, storage, fake_replicate, monkeypatch
+):
+    job_id = prepare(client, upload(client, png(periodic(200, 150))), "seamless", 2)
+    original_put = storage.put_bytes
+    original_delete = storage.delete
+    deleted_once = False
+
+    def fail_proof(name, data, content_type):
+        # The master is uploaded first; the proof after it fails.
+        if name == f"results/{job_id}/proof.jpg":
+            raise RuntimeError("bucket temporarily unavailable")
+        original_put(name, data, content_type)
+
+    def fail_once(name):
+        nonlocal deleted_once
+        if name.startswith(f"results/{job_id}/") and not deleted_once:
+            deleted_once = True
+            raise RuntimeError("bucket temporarily unavailable")
+        original_delete(name)
+
+    monkeypatch.setattr(storage, "put_bytes", fail_proof)
+    monkeypatch.setattr(storage, "delete", fail_once)
+    client.post(f"/jobs/{job_id}/confirm")
+
+    assert wait_for(client, job_id)["state"] == "error"
+    deadline = time.monotonic() + 5
+    while not deleted_once and time.monotonic() < deadline:
+        time.sleep(0.01)
+    # No job lists this master, so it is marked for removal, and the mark
+    # survives a failed delete.
+    assert storage.list_names(f"results/{job_id}/") == [f"results/{job_id}/master.png"]
+    assert get_job(storage, job_id)["cleanup_pending"] == [f"results/{job_id}/"]
+
+    replicate = ReplicateClient(settings, transport=httpx.MockTransport(fake_replicate))
+    app = create_app(settings=settings, storage=storage, replicate=replicate)
+    with TestClient(app):
+        pass
+    assert storage.list_names(f"results/{job_id}/") == []
+    job = get_job(storage, job_id)
+    assert job["state"] == "error" and job["cleanup_pending"] == []
+    # The job page of a failed job still shows its staged copy.
     assert storage.list_names(f"staging/{job_id}/")
 
 
