@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% set active = 'import' %}
+{% block title %}Import{% endblock %}
+{% block content %}
+<p class="lede">Importing only saves a copy into the bucket's <code>imports/</code> folder. Nothing is processed until you start a job from the Library.</p>
+
+{% if results %}
+<section class="results" role="status">
+    <h2>Import results</h2>
+    <ul>
+        {% for r in results %}
+        <li class="{{ 'ok' if r.ok else 'err' }}">{% if r.name %}<strong>{{ r.name }}</strong>: {% endif %}{{ r.message }}</li>
+        {% endfor %}
+    </ul>
+    <p><a href="/library">Open the Library</a></p>
+</section>
+{% endif %}
+
+<div class="importer">
+    <div class="tabs" role="tablist">
+        {% for key, label in [('gallery', 'From gallery'), ('upload', 'Upload'), ('path', 'Server path')] %}
+        <a role="tab" href="/import?tab={{ key }}" id="tab-{{ key }}" aria-controls="{{ key }}" aria-selected="{{ 'true' if tab == key else 'false' }}">{{ label }}</a>
+        {% endfor %}
+    </div>
+
+    <section id="gallery" role="tabpanel" aria-labelledby="tab-gallery" {% if tab != 'gallery' %}hidden{% endif %}>
+        {% if not gallery_listed %}
+        <p><a href="/import">Load the gallery list</a> to import more.</p>
+        {% elif gallery_error %}
+        <p class="err">{{ gallery_error }}</p>
+        {% elif not images %}
+        <p>The gallery has no pending or approved images.</p>
+        {% else %}
+        <form method="post" action="/import/gallery">
+            <div class="grid">
+                {% for img in images %}
+                <label class="pick">
+                    <input type="checkbox" name="names" value="{{ img.name }}">
+                    <img src="/gallery/thumb/{{ img.name | urlencode }}" alt="" loading="lazy">
+                    <span class="name">{{ img.title or img.name }}</span>
+                    <span class="badge {{ img.status }}">{{ img.status }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <button type="submit">Import selected</button>
+        </form>
+        {% endif %}
+    </section>
+
+    <section id="upload" role="tabpanel" aria-labelledby="tab-upload" {% if tab != 'upload' %}hidden{% endif %}>
+        <form method="post" action="/import/upload" enctype="multipart/form-data">
+            <label for="files">Choose image files (up to {{ '%g' | format(max_upload_mb) }} MB each)</label>
+            <input id="files" type="file" name="files" accept="image/*" multiple required>
+            <button type="submit">Upload copies</button>
+        </form>
+    </section>
+
+    <section id="path" role="tabpanel" aria-labelledby="tab-path" {% if tab != 'path' %}hidden{% endif %}>
+        <form method="post" action="/import/path">
+            <label for="path-input">Path relative to <code>{{ import_root }}</code> (a file or a folder)</label>
+            <input id="path-input" type="text" name="path" placeholder="batch-01/artwork.png" required>
+            <button type="submit">Import from path</button>
+        </form>
+    </section>
+</div>
+
+<script>
+    // Tabs: one importer, three sources. Without JS, each link asks the server
+    // to render the selected panel.
+    (function () {
+        const tabs = document.querySelectorAll('[role="tab"]');
+        function show(key) {
+            tabs.forEach(function (t) {
+                const on = t.getAttribute('aria-controls') === key;
+                t.setAttribute('aria-selected', on ? 'true' : 'false');
+                document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+            });
+        }
+        tabs.forEach(function (t) {
+            t.addEventListener('click', function (e) {
+                e.preventDefault();
+                show(t.getAttribute('aria-controls'));
+            });
+        });
+    })();
+</script>
+{% endblock %}

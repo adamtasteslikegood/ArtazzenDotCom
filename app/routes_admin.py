@@ -281,11 +281,9 @@ async def update_admin_config(
             except (TypeError, ValueError):
                 pass
         if "max_output_tokens" in ai:
-            try:
-                tok = int(ai["max_output_tokens"])
-                cfg["max_output_tokens"] = max(16, min(4000, tok))
-            except (TypeError, ValueError):
-                pass
+            cfg["max_output_tokens"] = config._coerce_max_output_tokens(
+                ai["max_output_tokens"], cfg["max_output_tokens"]
+            )
         if "default_artist" in ai and isinstance(ai["default_artist"], str):
             cfg["default_artist"] = ai["default_artist"].strip()
         if "artist_in_prompt" in ai:

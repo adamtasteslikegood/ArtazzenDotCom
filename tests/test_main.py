@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from xml.etree import ElementTree
 
+import jsonschema
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -799,25 +800,197 @@ def test_request_empty_content_no_crash(monkeypatch, tmp_path):
     assert result["title"] == ""
 
 
-def test_ai_config_raises_token_floor_for_gpt5(monkeypatch):
-    """Reasoning models get a higher max_output_tokens floor."""
+def test_ai_config_keeps_output_tokens_in_range(monkeypatch):
+    """max_output_tokens is held between 4,000 and 14,000 for every model."""
+    for stored, expected in [
+        (624, 4000),
+        (4000, 4000),
+        (9400, 9400),
+        (14000, 14000),
+        (50000, 14000),
+        ("not a number", 4000),
+        (None, 4000),
+        (float("inf"), 4000),
+    ]:
+        # Not only reasoning models: the range has no per-model exception.
+        for model in ("gpt-6-luna", "gpt-4o-mini", "some-unlisted-model"):
+            monkeypatch.setattr(
+                gallery_app.config,
+                "runtime_ai_config",
+                {"model": model, "max_output_tokens": stored},
+            )
+            assert gallery_app._get_ai_config()["max_output_tokens"] == expected
+
+
+def test_saved_and_env_token_limits_are_clamped_on_load(monkeypatch, tmp_path):
+    config = gallery_app.config
+    path = tmp_path / "ai.json"
+    monkeypatch.setattr(config, "CONFIG_PATH", path)
+    monkeypatch.setenv("OPENAI_IMAGE_METADATA_MAX_TOKENS", "600")
+    assert config._default_ai_config_from_env()["max_output_tokens"] == 4000
+
+    path.write_text(json.dumps({"max_output_tokens": 624}))
+    assert config._load_ai_config()["max_output_tokens"] == 4000
+    path.write_text(json.dumps({"max_output_tokens": 50000}))
+    assert config._load_ai_config()["max_output_tokens"] == 14000
+    # A saved value that is not a number falls back to the env default.
+    monkeypatch.setenv("OPENAI_IMAGE_METADATA_MAX_TOKENS", "9000")
+    path.write_text(json.dumps({"max_output_tokens": "junk"}))
+    assert config._load_ai_config()["max_output_tokens"] == 9000
+
+
+def test_admin_config_infinite_token_limit_keeps_saved_value(monkeypatch, tmp_path):
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
     monkeypatch.setattr(
-        gallery_app.config,
-        "runtime_ai_config",
-        {"model": "gpt-5-mini", "max_output_tokens": 624},
+        gallery_app.config, "runtime_ai_config", {"max_output_tokens": 9400}
     )
-    cfg = gallery_app._get_ai_config()
-    assert cfg["max_output_tokens"] == 1200
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    # json.loads reads 1e999 as infinity, which int() cannot convert.
+    response = client.post(
+        "/admin/config",
+        content='{"ai": {"max_output_tokens": 1e999}}',
+        headers={"Content-Type": "application/json"},
+        auth=("admin", "secret"),
+    )
+    assert response.status_code == 200
+    assert response.json()["ai"]["max_output_tokens"] == 9400
+
+
+def test_unusable_model_catalog_yields_empty_catalog(tmp_path):
+    """A broken catalog file must not stop the app from starting."""
+    config = gallery_app.config
+    assert config._load_model_catalog(tmp_path / "missing.json")["models"] == []
+    for text in (
+        "{not json",
+        "[]",
+        '{"models": [{"id": "x"}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": null}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": "low"}]}',
+        '{"models": [{"id": "x", "reasoning_efforts": [["low"]]}]}',
+        '{"models": [{"id": ["x"], "reasoning_efforts": ["low"]}]}',
+    ):
+        path = tmp_path / "models.json"
+        path.write_text(text)
+        assert config._load_model_catalog(path)["models"] == []
+
+    # The loader checks the whole schema, not only the fields the server reads:
+    # the form would print a missing price or description as it stands.
+    shipped = json.loads(config.MODEL_CATALOG_PATH.read_text(encoding="utf-8"))
+    path.write_text(json.dumps(shipped))
+    assert config._load_model_catalog(path) == shipped
+    for field in ("description", "input_price_per_mtok", "name"):
+        broken = json.loads(json.dumps(shipped))
+        del broken["models"][0][field]
+        path.write_text(json.dumps(broken))
+        assert config._load_model_catalog(path)["models"] == []
+    broken = json.loads(json.dumps(shipped))
+    del broken["as_of"]
+    path.write_text(json.dumps(broken))
+    assert config._load_model_catalog(path)["models"] == []
+    # The server and the form fall back to the default effort, so a model
+    # that does not accept it would turn every fallback into an HTTP 400.
+    broken = json.loads(json.dumps(shipped))
+    broken["models"][0]["reasoning_efforts"].remove(config.DEFAULT_REASONING_EFFORT)
+    path.write_text(json.dumps(broken))
+    assert config._load_model_catalog(path)["models"] == []
+    broken = json.loads(json.dumps(shipped))
+    broken["models"].append(json.loads(json.dumps(broken["models"][0])))
+    path.write_text(json.dumps(broken))
+    assert config._load_model_catalog(path)["models"] == []
+
+
+def test_admin_config_clamps_output_tokens(monkeypatch, tmp_path):
+    monkeypatch.setattr(gallery_app.config, "CONFIG_PATH", tmp_path / "ai.json")
+    monkeypatch.setattr(gallery_app.config, "runtime_ai_config", {})
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    auth = ("admin", "secret")
+
+    def save(value):
+        response = client.post(
+            "/admin/config", json={"ai": {"max_output_tokens": value}}, auth=auth
+        )
+        return response.json()["ai"]["max_output_tokens"]
+
+    assert save(600) == 4000
+    assert save(9400) == 9400
+    assert save(99999) == 14000
+    # A value that is not a number leaves the saved limit alone.
+    assert save(9400) == 9400
+    assert save("lots") == 9400
+    assert json.loads((tmp_path / "ai.json").read_text())["max_output_tokens"] == 9400
+
+
+def test_model_catalog_matches_schema_and_app():
+    config = gallery_app.config
+    catalog = json.loads(config.MODEL_CATALOG_PATH.read_text())
+    schema = json.loads(
+        (config.MODEL_CATALOG_PATH.parent / "models.schema.json").read_text()
+    )
+    jsonschema.validate(catalog, schema)
+    # The file the app loaded is the shipped one, not the empty fallback.
+    assert config.MODEL_CATALOG == catalog
+    effort_enum = schema["properties"]["models"]["items"]["properties"][
+        "reasoning_efforts"
+    ]["items"]["enum"]
+    assert tuple(effort_enum) == config.REASONING_EFFORTS
+    # The schema names the fallback effort itself; keep it equal to the app's.
+    fallback = schema["properties"]["models"]["items"]["properties"][
+        "reasoning_efforts"
+    ]["contains"]["const"]
+    assert fallback == config.DEFAULT_REASONING_EFFORT
+
+    ids = [entry["id"] for entry in catalog["models"]]
+    assert len(ids) == len(set(ids))
+    assert config.OPENAI_DEFAULT_MODEL in ids
+    for entry in catalog["models"]:
+        assert set(entry["reasoning_efforts"]) <= set(config.REASONING_EFFORTS)
+        # The fallback effort must be one every listed model accepts.
+        assert config.DEFAULT_REASONING_EFFORT in entry["reasoning_efforts"]
+
+
+def test_admin_settings_list_models_with_prices(monkeypatch):
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    client = TestClient(gallery_app.app)
+    page = client.get("/admin", auth=("admin", "secret")).text
+
+    config = gallery_app.config
+    catalog = config.MODEL_CATALOG
+    selected = []
+    for entry in catalog["models"]:
+        # Each model's own option carries that model's efforts and prices.
+        match = re.search(rf'<option value="{re.escape(entry["id"])}"[^>]*>', page)
+        assert match, entry["id"]
+        option = match.group(0)
+        assert f'data-efforts="{" ".join(entry["reasoning_efforts"])}"' in option
+        assert f'data-input-price="{entry["input_price_per_mtok"]}"' in option
+        assert f'data-output-price="{entry["output_price_per_mtok"]}"' in option
+        if re.search(r"\sselected>", option):
+            selected.append(entry["id"])
+        # The label is the display name, with the id the API takes beside it.
+        assert f'{option}{entry["name"]} ({entry["id"]})</option>' in page
+    assert selected == [config.OPENAI_DEFAULT_MODEL]
+    assert f'data-as-of="{catalog["as_of"]}"' in page
+    assert f'data-input-tokens="{catalog["estimated_input_tokens_per_image"]}"' in page
+    assert f'data-retries="{config.AI_MAX_RETRIES}"' in page
+    effort_block = page.split('id="ai-effort"', 1)[1].split("</select>", 1)[0]
+    for effort in config.REASONING_EFFORTS:
+        assert f'<option value="{effort}"' in effort_block
+    assert 'id="ai-tokens" min="4000" max="14000"' in page
+    # Both hint lines change as the admin edits, so they are live regions.
+    assert 'id="ai-model-info" class="form-hint" aria-live="polite"' in page
+    assert 'id="ai-cost-info" class="form-hint" aria-live="polite"' in page
 
 
 def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):
-    """GPT-6 models are reasoning models: token floor, no temperature sent."""
+    """GPT-6 models are reasoning models: token minimum, no temperature sent."""
     monkeypatch.setattr(
         gallery_app.config,
         "runtime_ai_config",
         {"model": "gpt-6.1-sol", "max_output_tokens": 624},
     )
-    assert gallery_app._get_ai_config()["max_output_tokens"] == 1200
+    assert gallery_app._get_ai_config()["max_output_tokens"] == 4000
 
     _patch_openai_transport(monkeypatch, _output_text_payload('{"title": "T"}'))
     fake_client = gallery_app.ai_metadata.httpx.Client
@@ -839,9 +1012,24 @@ def test_gpt6_models_get_token_floor_and_no_temperature(monkeypatch, tmp_path):
 def test_reasoning_effort_falls_back_when_model_rejects_it(monkeypatch):
     for model, effort, expected in [
         ("gpt-6-luna", "none", "none"),
+        ("gpt-6-luna", "minimal", "low"),
+        ("gpt-6-astra", "minimal", "low"),
         ("gpt-6-astra", "none", "low"),
         ("gpt-6.1-sol", "minimal", "low"),
         ("gpt-6.1-sol", "high", "high"),
+        ("gpt-6.1-terra", "none", "none"),
+        ("gpt-6.1-terra", "minimal", "low"),
+        ("gpt-6.2-astra", "none", "low"),
+        ("gpt-6.2-astra", "minimal", "low"),
+        ("gpt-6.2-astra", "high", "high"),
+        ("gpt-6.2-sol", "none", "low"),
+        ("gpt-6.2-sol", "minimal", "low"),
+        ("gpt-6.2-sol", "medium", "medium"),
+        ("gpt-6.2-sol", "xhigh", "xhigh"),
+        ("gpt-6-luna", "xhigh", "xhigh"),
+        ("gpt-6-luna", "max", "max"),
+        ("gpt-6.2-astra", "max", "max"),
+        ("some-unlisted-model", "none", "none"),
         ("gpt-6-luna", "bogus", "low"),
     ]:
         monkeypatch.setattr(
@@ -937,6 +1125,711 @@ def test_prompt_includes_tags_instruction_when_tags_requested():
         ["title", "tags"],
     )
     assert "array of lowercase" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Seeding an environment's images (scripts/seed_images.py, seed-env-images.sh)
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+# What push and link read, on a trusted machine. Never set on an environment.
+SEED_ENV = {
+    "SEED_S3_ENDPOINT": "https://s3.example",
+    "SEED_S3_BUCKET": "seed-bucket",
+    "SEED_S3_ACCESS_KEY_ID": "key",
+    "SEED_S3_SECRET_ACCESS_KEY": "secret",
+}
+# What an environment reads: a link that can only read the archive.
+SEED_LINK = "https://seed-bucket.s3.example/seed/images.tar?X-Amz-Signature=sig"
+ARCHIVE_ENV = {"SEED_ARCHIVE_URL": SEED_LINK}
+
+
+def _seed_module():
+    import sys
+    from importlib import util
+
+    spec = util.spec_from_file_location(
+        "seed_images", REPO_ROOT / "scripts" / "seed_images.py"
+    )
+    module = util.module_from_spec(spec)
+    # The dataclass decorator looks its module up by name while it runs.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _seed_archive(path, files, members=()):
+    """Write a tar file holding ``files`` (name -> bytes) and raw ``members``."""
+    import io
+    import tarfile
+
+    with tarfile.open(path, "w") as archive:
+        for name, data in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        for info in members:
+            archive.addfile(info)
+    return path
+
+
+def _pull_archive(seed, tmp_path, files, dest, members=()):
+    import tarfile
+
+    path = _seed_archive(tmp_path / "seed.tar", files, members)
+    with tarfile.open(path) as archive:
+        return seed.pull(archive, dest)
+
+
+class _FakeBucket:
+    """Stands in for the boto3 S3 client: just the calls push and link make."""
+
+    def __init__(self):
+        self.uploads = {}
+        self.presigned = []
+        self.heads = []
+
+    def upload_file(self, filename, bucket, key):
+        self.uploads[key] = Path(filename).read_bytes()
+
+    def head_object(self, Bucket, Key):
+        self.heads.append(Key)
+
+    def generate_presigned_url(self, operation, Params, ExpiresIn):
+        self.presigned.append((operation, Params["Bucket"], Params["Key"], ExpiresIn))
+        return SEED_LINK
+
+
+def test_seed_artwork_suffixes_match_the_app():
+    # The seeder cannot import the app, so its copy of the list is checked here.
+    assert _seed_module().ARTWORK_SUFFIXES == set(ALLOWED_IMAGE_EXTENSIONS)
+
+
+def test_seed_lockfiles_match_the_app():
+    # A lock file the seeder does not know about would be replaced under a
+    # running app, which then holds its lock on a file nobody else can find.
+    from app import curation, sidecars
+
+    app_lockfiles = {
+        lock._lockfile_getter().relative_to(config.IMAGES_DIR).as_posix()
+        for lock in (sidecars.sidecar_mutation_lock, curation._registry_lock)
+    }
+    assert {path.as_posix() for path in _seed_module().LOCKFILES} == app_lockfiles
+
+
+def test_seed_runtime_needs_no_bucket_credentials_or_client():
+    # An environment gets a read-only link. Nothing it runs may need the
+    # bucket's keys, and the S3 client is not an application dependency.
+    requirements = (REPO_ROOT / "requirements.txt").read_text().lower()
+    assert "boto3" not in requirements
+    assert "botocore" not in requirements
+    example = (REPO_ROOT / ".env.example").read_text()
+    assert "SEED_ARCHIVE_URL" in example
+    assert "SEED_S3_" not in example
+
+
+def test_seed_source_reads_the_seed_variables():
+    seed = _seed_module()
+    assert seed.seed_source({}) is None
+    source = seed.seed_source(SEED_ENV)
+    assert (source.bucket, source.region, source.key) == (
+        "seed-bucket",
+        "auto",
+        "seed/images.tar",
+    )
+    custom = seed.seed_source({**SEED_ENV, "SEED_S3_KEY": "/sets/orbs.tar"})
+    assert custom.key == "sets/orbs.tar"
+    partial = {**SEED_ENV, "SEED_S3_SECRET_ACCESS_KEY": ""}
+    with pytest.raises(ValueError, match="SEED_S3_SECRET_ACCESS_KEY"):
+        seed.seed_source(partial)
+
+
+def test_seed_pull_copies_new_files_and_keeps_existing_ones(tmp_path, monkeypatch):
+    import tarfile
+
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    dest.mkdir()
+    (dest / "edited.jpg").write_bytes(b"artwork in the preview")
+    (dest / "edited.json").write_text("edited in the preview")
+    link = tarfile.TarInfo("passwd.json")
+    link.type = tarfile.SYMTYPE
+    link.linkname = "/etc/passwd"
+    folder = tarfile.TarInfo("folder")
+    folder.type = tarfile.DIRTYPE
+    unpacked = []
+    real_extract = seed._extract
+
+    def extract(archive, member, into):
+        unpacked.append(member.name)
+        real_extract(archive, member, into)
+
+    monkeypatch.setattr(seed, "_extract", extract)
+
+    copied, skipped = _pull_archive(
+        seed,
+        tmp_path,
+        {
+            "a.jpg": b"image-a",
+            "a.json": b"sidecar-a",
+            "edited.json": b"from the seed",
+            ".curation/collections.json": b"registry",
+            "lost+found/junk": b"junk",
+            "../escape.txt": b"escape",
+            "/absolute.txt": b"escape",
+            ".": b"",
+        },
+        dest,
+        members=(link, folder),
+    )
+
+    assert (copied, skipped) == (3, 1)
+    assert (dest / "a.jpg").read_bytes() == b"image-a"
+    assert (dest / ".curation" / "collections.json").read_bytes() == b"registry"
+    assert (dest / "edited.json").read_text() == "edited in the preview"
+    assert not (dest / "lost+found").exists()
+    assert not (tmp_path / "escape.txt").exists()
+    assert not (dest / "absolute.txt").exists()
+    assert not (dest / "passwd.json").exists()
+    assert not (dest / "folder").exists()
+    # Sidecars land before the images they describe, and no partial is left.
+    assert unpacked.index("a.json") < unpacked.index("a.jpg")
+    assert not [p for p in dest.rglob(".seed-*")]
+    assert (dest / "a.jpg").stat().st_mode & 0o777 == 0o644
+
+
+def test_seed_pull_rejects_a_destination_symlink_escape(tmp_path):
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    outside = tmp_path / "outside"
+    dest.mkdir()
+    outside.mkdir()
+    (dest / "link").symlink_to(outside, target_is_directory=True)
+
+    files = {"link/escaped.txt": b"escape"}
+    assert _pull_archive(seed, tmp_path, files, dest) == (0, 0)
+    assert not (outside / "escaped.txt").exists()
+
+
+def test_seed_pull_skips_artwork_that_has_no_sidecar(tmp_path):
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    dest.mkdir()
+    (dest / "described.json").write_text("sidecar already on the volume")
+
+    copied, skipped = _pull_archive(
+        seed,
+        tmp_path,
+        {
+            "orphan.jpg": b"no sidecar anywhere",
+            "described.png": b"its sidecar is on the volume",
+            "paired.JPEG": b"image",
+            "paired.json": b"sidecar",
+            # Derivatives and trashed files never have sidecars.
+            ".derived/paired.480.webp": b"derivative",
+            ".trash/old.jpg": b"trashed",
+        },
+        dest,
+    )
+
+    assert (copied, skipped) == (5, 0)
+    assert not (dest / "orphan.jpg").exists()
+    assert (dest / "described.png").exists()
+    assert (dest / "paired.JPEG").exists()
+    assert (dest / ".derived" / "paired.480.webp").exists()
+    assert (dest / ".trash" / "old.jpg").exists()
+
+
+def test_seed_pull_replaces_app_made_registries_on_a_volume_without_artwork(
+    tmp_path,
+):
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    # What the app leaves behind when it first starts on an empty volume.
+    (dest / ".curation").mkdir(parents=True)
+    (dest / ".curation" / "collections.json").write_text('{"collections": []}')
+    (dest / "a.json").write_text("sidecar-a")
+    (dest / "lost+found").mkdir()
+    assert not seed.holds_artwork(dest)
+    assert not seed.holds_artwork(tmp_path / "missing")
+    files = {
+        ".curation/collections.json": b"seeded registry",
+        "a.json": b"sidecar-a",
+        "a.jpg": b"image-a",
+    }
+
+    assert _pull_archive(seed, tmp_path, files, dest) == (2, 1)
+    assert (dest / ".curation" / "collections.json").read_text() == "seeded registry"
+    assert (dest / "a.json").read_text() == "sidecar-a"
+    assert seed.holds_artwork(dest)
+
+    # From now on the volume's own files win, registries included.
+    (dest / ".curation" / "collections.json").write_text("curated in the preview")
+    assert _pull_archive(seed, tmp_path, files, dest) == (0, 3)
+    assert (
+        dest / ".curation" / "collections.json"
+    ).read_text() == "curated in the preview"
+
+
+def test_seed_pull_on_a_running_app_keeps_what_appears_during_the_copy(
+    tmp_path, monkeypatch
+):
+    seed = _seed_module()
+    dest = tmp_path / "images"
+    (dest / ".curation").mkdir(parents=True)
+    (dest / ".curation" / "collections.json").write_text('{"collections": []}')
+    (dest / ".curation" / ".lock").write_text("held by the app")
+    (dest / ".curation" / ".sidecars.lock").write_text("held by the app")
+    real_extract = seed._extract
+
+    def extract(archive, member, into):
+        real_extract(archive, member, into)
+        if member.name.endswith("collections.json"):
+            # A curation edit lands after the unpacking starts. It must win.
+            (dest / ".curation" / "collections.json").write_text(
+                '{"collections": [{"id": "live-edit"}]}'
+            )
+        if member.name == "a.json":
+            # The admin uploads files while the seed is still copying.
+            (dest / "b.jpg").write_bytes(b"uploaded")
+        if member.name == "c.jpg":
+            (dest / "c.jpg").write_bytes(b"uploaded while unpacking")
+
+    monkeypatch.setattr(seed, "_extract", extract)
+
+    files = {
+        ".curation/collections.json": b"seeded registry",
+        ".curation/.lock": b"",
+        ".curation/.sidecars.lock": b"",
+        "a.json": b"sidecar-a",
+        "b.json": b"sidecar-b",
+        "b.jpg": b"seed-b",
+        "c.json": b"sidecar-c",
+        "c.jpg": b"seed-c",
+    }
+    assert _pull_archive(seed, tmp_path, files, dest) == (3, 3)
+    assert json.loads((dest / ".curation" / "collections.json").read_text()) == {
+        "collections": [{"id": "live-edit"}]
+    }
+    for lockfile in (".lock", ".sidecars.lock"):
+        assert (dest / ".curation" / lockfile).read_text() == "held by the app"
+    assert (dest / "b.jpg").read_bytes() == b"uploaded"
+    assert (dest / "c.jpg").read_bytes() == b"uploaded while unpacking"
+    assert not list(dest.rglob(".seed-*"))
+
+
+def test_seed_pull_is_skipped_when_unconfigured_or_in_production(tmp_path):
+    seed = _seed_module()
+
+    def no_fetch(url, into):
+        raise AssertionError("nothing must be downloaded")
+
+    assert "SEED_ARCHIVE_URL is not set" in seed.run_pull({}, fetch=no_fetch)
+    # The bucket's own keys are not a seed source for an environment.
+    assert "is not set" in seed.run_pull(SEED_ENV, fetch=no_fetch)
+    for production in (
+        {"RAILWAY_ENVIRONMENT_NAME": "production"},
+        {"RAILWAY_ENVIRONMENT_NAME": "Prod"},
+        {"RAILWAY_ENVIRONMENT_ID": seed.PRODUCTION_ENVIRONMENT_ID},
+    ):
+        message = seed.run_pull(
+            {**ARCHIVE_ENV, **production}, dest=tmp_path, fetch=no_fetch
+        )
+        assert "production" in message
+    assert seed.production_reason({"RAILWAY_ENVIRONMENT_NAME": "Proj-pr-247"}) is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_seed_pull_reports_what_it_copied(tmp_path, caplog):
+    import shutil
+
+    seed = _seed_module()
+    stored = _seed_archive(tmp_path / "stored.tar", {"a.json": b"{}", "a.jpg": b"a"})
+    fetched = []
+
+    def fetch(url, into):
+        fetched.append(url)
+        shutil.copy(stored, into)
+
+    dest = tmp_path / "images"
+    message = seed.run_pull(ARCHIVE_ENV, dest=dest, fetch=fetch)
+    assert "2 files copied, 0 already there" in message
+    assert fetched == [SEED_LINK]
+    assert SEED_LINK not in message
+    assert "0 files copied, 2 already there" in seed.run_pull(
+        ARCHIVE_ENV, dest=dest, fetch=fetch
+    )
+
+    _seed_archive(stored, {})
+    assert "found nothing" in seed.run_pull(ARCHIVE_ENV, dest=dest, fetch=fetch)
+
+    # Bucket keys found on a Railway environment are called out, not used.
+    preview = {**ARCHIVE_ENV, **SEED_ENV, "RAILWAY_ENVIRONMENT_NAME": "Proj-pr-9"}
+    with caplog.at_level("WARNING", logger="seed_images"):
+        seed.run_pull(preview, dest=dest, fetch=fetch)
+    assert "remove them here" in caplog.text
+
+    # Any bucket setting is a policy violation in a Railway environment, not
+    # only the secret key.
+    for name in (*seed.REQUIRED_VARS, "SEED_S3_REGION", "SEED_S3_KEY"):
+        caplog.clear()
+        preview = {
+            **ARCHIVE_ENV,
+            "RAILWAY_ENVIRONMENT_NAME": "Proj-pr-9",
+            name: "unexpected",
+        }
+        with caplog.at_level("WARNING", logger="seed_images"):
+            seed.run_pull(preview, dest=dest, fetch=fetch)
+        assert "remove them here" in caplog.text, name
+
+
+def test_seed_fetch_accepts_only_https_links(tmp_path):
+    seed = _seed_module()
+
+    def no_opener(url, timeout):
+        raise AssertionError("nothing must be requested")
+
+    for bad in ("http://s3.example/seed.tar", "file:///etc/passwd", "https://", "x"):
+        with pytest.raises(ValueError, match="must be an https link"):
+            seed.fetch_archive(bad, tmp_path / "seed.tar", opener=no_opener)
+    assert not (tmp_path / "seed.tar").exists()
+
+
+def test_seed_fetch_downloads_and_never_repeats_the_link_in_errors(tmp_path):
+    import io
+    from urllib.error import HTTPError, URLError
+
+    seed = _seed_module()
+    into = tmp_path / "seed.tar"
+
+    seed.fetch_archive(
+        SEED_LINK, into, opener=lambda url, timeout: io.BytesIO(b"archive bytes")
+    )
+    assert into.read_bytes() == b"archive bytes"
+
+    def expired(url, timeout):
+        raise HTTPError(url, 403, "Forbidden", {}, None)
+
+    def unreachable(url, timeout):
+        raise URLError(f"cannot reach {url}")
+
+    def slow(url, timeout):
+        return io.BytesIO(b"never finishes in time")
+
+    cases = (
+        (expired, {}, "HTTP 403"),
+        (unreachable, {}, "download failed"),
+        (slow, {"deadline_seconds": -1}, "did not finish"),
+    )
+    for opener, options, expected in cases:
+        with pytest.raises(RuntimeError, match=expected) as raised:
+            seed.fetch_archive(SEED_LINK, into, opener=opener, **options)
+        message = str(raised.value)
+        assert "X-Amz-Signature" not in message
+        assert SEED_LINK not in message
+        assert raised.value.__cause__ is None
+    # An expired link says how to renew it.
+    with pytest.raises(RuntimeError, match="seed_images.py link"):
+        seed.fetch_archive(SEED_LINK, into, opener=expired)
+
+
+def test_seed_fetch_caps_each_socket_read_to_the_total_deadline(tmp_path, monkeypatch):
+    seed = _seed_module()
+    now = iter((10.0, 10.0, 11.0, 12.0, 13.0, 14.5, 15.1))
+    monkeypatch.setattr(seed.time, "monotonic", lambda: next(now))
+
+    class Socket:
+        def __init__(self):
+            self.timeouts = []
+
+        def settimeout(self, value):
+            self.timeouts.append(value)
+
+    class Raw:
+        def __init__(self, sock):
+            self._sock = sock
+
+    class FP:
+        def __init__(self, sock):
+            self.raw = Raw(sock)
+
+    class Response:
+        def __init__(self):
+            self.socket = Socket()
+            self.fp = FP(self.socket)
+            self.reads = iter((b"a", b"b", b"c"))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read1(self, _size):
+            return next(self.reads)
+
+        def read(self, _size):
+            raise AssertionError("the bounded path must use read1")
+
+    response = Response()
+    with pytest.raises(RuntimeError, match="did not finish"):
+        seed.fetch_archive(
+            SEED_LINK,
+            tmp_path / "seed.tar",
+            opener=lambda _url, timeout: response,
+            deadline_seconds=5,
+        )
+
+    assert response.socket.timeouts == [5.0, 3.0, 0.5]
+
+
+def test_seed_archive_holds_the_folder_without_locks_links_or_owner(tmp_path):
+    import tarfile
+
+    seed = _seed_module()
+    source = tmp_path / "set"
+    (source / ".curation").mkdir(parents=True)
+    (source / "lost+found").mkdir()
+    (source / "a.jpg").write_bytes(b"image-a")
+    (source / "a.json").write_bytes(b"sidecar-a")
+    (source / ".curation" / "series.json").write_bytes(b"series")
+    (source / ".curation" / ".lock").write_bytes(b"")
+    (source / ".curation" / ".sidecars.lock").write_bytes(b"")
+    (source / "lost+found" / "junk").write_bytes(b"junk")
+    outside = tmp_path / "secret.txt"
+    outside.write_bytes(b"not seed data")
+    (source / "external.txt").symlink_to(outside)
+
+    packed = tmp_path / "seed.tar"
+    assert seed.build_archive(source, packed) == 3
+    with tarfile.open(packed) as archive:
+        members = archive.getmembers()
+    assert {member.name for member in members} == {
+        "a.jpg",
+        "a.json",
+        ".curation/series.json",
+    }
+    # Nothing about the machine or the person who packed it.
+    assert {(m.uid, m.gid, m.uname, m.gname) for m in members} == {(0, 0, "", "")}
+
+    # What push uploads is that archive, and pull restores the folder from it.
+    bucket = _FakeBucket()
+    assert seed.push(bucket, "seed-bucket", "seed/images.tar", source) == 3
+    assert list(bucket.uploads) == ["seed/images.tar"]
+    stored = tmp_path / "stored.tar"
+    stored.write_bytes(bucket.uploads["seed/images.tar"])
+    dest = tmp_path / "images"
+    with tarfile.open(stored) as archive:
+        assert seed.pull(archive, dest) == (3, 0)
+    assert (dest / "a.jpg").read_bytes() == b"image-a"
+    assert (dest / ".curation" / "series.json").read_bytes() == b"series"
+
+
+def test_seed_push_and_link_print_a_read_only_link(tmp_path, monkeypatch, capsys):
+    seed = _seed_module()
+    source = tmp_path / "set"
+    source.mkdir()
+    (source / "a.jpg").write_bytes(b"image-a")
+    (source / "a.json").write_bytes(b"sidecar-a")
+    bucket = _FakeBucket()
+    monkeypatch.setattr(seed, "make_client", lambda source: bucket)
+    for name in ("SEED_S3_REGION", "SEED_S3_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+    # A dry run needs no credentials and contacts nothing.
+    for name in SEED_ENV:
+        monkeypatch.delenv(name, raising=False)
+    assert seed.main(["push", str(source), "--dry-run"]) == 0
+    assert "would pack a.jpg" in capsys.readouterr().out
+    assert seed.main(["push", str(source)]) == 1
+    assert "No SEED_S3_* variables" in capsys.readouterr().err
+    assert bucket.uploads == {}
+
+    for name, value in SEED_ENV.items():
+        monkeypatch.setenv(name, value)
+    # A link that cannot be made must not leave a new archive behind.
+    assert seed.main(["push", str(source), "--days", "91"]) == 1
+    assert "between 1 and 90" in capsys.readouterr().err
+    assert bucket.uploads == {}
+
+    assert seed.main(["push", str(source), "--days", "30"]) == 0
+    printed = capsys.readouterr()
+    # The link alone on stdout, so it can be piped; the rest on stderr.
+    assert printed.out == SEED_LINK + "\n"
+    assert "SEED_ARCHIVE_URL" in printed.err
+    assert list(bucket.uploads) == ["seed/images.tar"]
+    assert bucket.presigned[-1] == (
+        "get_object",
+        "seed-bucket",
+        "seed/images.tar",
+        30 * 24 * 60 * 60,
+    )
+
+    assert seed.main(["link"]) == 0
+    assert capsys.readouterr().out == SEED_LINK + "\n"
+    assert bucket.heads == ["seed/images.tar"]
+    assert bucket.presigned[-1][3] == 90 * 24 * 60 * 60
+    assert list(bucket.uploads) == ["seed/images.tar"]
+
+
+def test_seed_start_runs_the_procfile_command_even_when_seeding_fails(monkeypatch):
+    seed = _seed_module()
+    procfile = (REPO_ROOT / "Procfile").read_text()
+    web_command = seed.procfile_web_command()
+    assert web_command.startswith("uvicorn main:app")
+    assert f"web: {web_command}" in procfile
+
+    launched = []
+    monkeypatch.setattr(seed.os, "execvp", lambda file, args: launched.append(args))
+    preview = {"RAILWAY_ENVIRONMENT_NAME": "ArtazzenDotCom-pr-252"}
+    # A link that is not https makes the pull raise; the app must still start.
+    seed.start({**preview, "SEED_ARCHIVE_URL": "http://s3.example/seed.tar"})
+    seed.start(preview)
+    seed.start({})
+    assert launched == [["sh", "-c", f"exec {web_command}"]] * 3
+
+
+def test_seed_start_pulls_only_in_pull_request_environments(monkeypatch):
+    seed = _seed_module()
+    monkeypatch.setattr(seed.os, "execvp", lambda file, args: None)
+    pulled = []
+    monkeypatch.setattr(
+        seed,
+        "run_pull",
+        lambda environ: pulled.append(environ["RAILWAY_ENVIRONMENT_NAME"]) or "ok",
+    )
+    for name in ("staging-dev", "production", "pr-preview", "my-pr-12-copy", ""):
+        seed.start({**ARCHIVE_ENV, "RAILWAY_ENVIRONMENT_NAME": name})
+    assert pulled == []
+    seed.start({**ARCHIVE_ENV, "RAILWAY_ENVIRONMENT_NAME": "ArtazzenDotCom-pr-252"})
+    assert pulled == ["ArtazzenDotCom-pr-252"]
+
+
+def test_only_pr_environments_use_the_seeding_start_command():
+    railway = json.loads((REPO_ROOT / "railway.json").read_text())
+    assert railway["environments"] == {
+        "pr": {"deploy": {"startCommand": "python scripts/seed_images.py start"}}
+    }
+    # No base start command: staging and production keep the Procfile.
+    assert "deploy" not in railway
+
+
+def _run_seed_script(tmp_path, *args, env=None):
+    """Run seed-env-images.sh with a fake `railway` that records its arguments."""
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    calls = tmp_path / "railway-calls.txt"
+    fake = bin_dir / "railway"
+    fake.write_text(f'#!/bin/sh\ncat >/dev/null\necho "$@" >> "{calls}"\necho 26\n')
+    fake.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "seed-env-images.sh"), *args],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=tmp_path,
+        env={"PATH": f"{bin_dir}:{os.environ['PATH']}", **(env or {})},
+        timeout=30,
+    )
+    recorded = calls.read_text().splitlines() if calls.exists() else []
+    return result, recorded
+
+
+def test_seed_script_help_and_usage_errors(tmp_path):
+    for flag in ("-h", "--help"):
+        result, calls = _run_seed_script(tmp_path, flag)
+        assert result.returncode == 0
+        assert result.stdout.startswith("Usage:")
+        assert "--from-archive" in result.stdout
+        assert calls == []
+    for bad in (
+        [],
+        ["--nope", "pr-1"],
+        ["pr-1", "a", "b"],
+        ["--project"],
+        ["--from-archive", "pr-1", "a"],
+    ):
+        result, calls = _run_seed_script(tmp_path, *bad)
+        assert result.returncode == 2
+        assert calls == []
+
+
+def test_seed_script_rejects_values_railway_would_replace_with_a_default(tmp_path):
+    # An empty project, service or environment makes railway choose one itself.
+    for bad in (
+        [""],
+        ["--from-archive", ""],
+        [" production"],
+        ["pr-9 "],
+        ["--", "-x"],
+        ["--project=", "pr-9"],
+        ["--service", "", "pr-9"],
+        ["--project", "--from-archive", "pr-9"],
+        ["--from-archive", "--remote-dir", "--project", "pr-9"],
+    ):
+        result, calls = _run_seed_script(tmp_path, *bad)
+        assert result.returncode == 2, bad
+        assert calls == [], bad
+
+
+def test_seed_script_checks_project_and_service_from_the_environment(tmp_path):
+    # RAILWAY_PROJECT and RAILWAY_SERVICE reach railway like the options do.
+    for env in (
+        {"RAILWAY_PROJECT": "--other-project"},
+        {"RAILWAY_SERVICE": "-x"},
+        {"RAILWAY_SERVICE": " padded"},
+    ):
+        result, calls = _run_seed_script(tmp_path, "pr-9", env=env)
+        assert result.returncode == 2, env
+        assert calls == [], env
+    # An empty variable means "not set": the default is used.
+    result, calls = _run_seed_script(
+        tmp_path, "--from-archive", "pr-9", env={"RAILWAY_PROJECT": ""}
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--project=182bb54e-88dc-4026-97ed-cffc1d3c1f33" in calls[0]
+
+
+def test_seed_script_refuses_production(tmp_path):
+    for name in ("production", "Prod", "54b8b12f-df88-47f7-aef4-3cd356770e1a"):
+        for mode in ([], ["--from-archive"]):
+            result, calls = _run_seed_script(tmp_path, *mode, name)
+            assert result.returncode == 1
+            assert "Refusing" in result.stderr
+            assert calls == []
+
+
+def test_seed_script_options_win_over_environment_variables(tmp_path):
+    source = tmp_path / "set"
+    source.mkdir()
+    (source / "a.jpg").write_bytes(b"a")
+    result, calls = _run_seed_script(
+        tmp_path,
+        "--project=flag-project",
+        "--remote-dir",
+        "/data/flag",
+        "pr-9",
+        str(source),
+        env={"RAILWAY_PROJECT": "env-project", "RAILWAY_SERVICE": "env-service"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Sending 1 files" in result.stdout
+    assert len(calls) == 2
+    for call in calls:
+        assert "--project=flag-project" in call
+        assert "--service=env-service" in call
+        assert "--environment=pr-9" in call
+        assert "/data/flag" in call
+
+
+def test_seed_script_from_archive_runs_the_pull_in_the_environment(tmp_path):
+    result, calls = _run_seed_script(tmp_path, "--from-archive", "pr-9")
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 1
+    assert "--environment=pr-9" in calls[0]
+    assert calls[0].endswith("python scripts/seed_images.py pull --dest '/data/images'")
 
 
 # ---------------------------------------------------------------------------
@@ -1263,6 +2156,53 @@ def test_collection_page_series_order_anchor_and_dedup(client, tmp_path, monkeyp
     # c is standalone and renders in the grid; hidden is excluded.
     assert "/artwork/c.jpg" in html
     assert "hidden.jpg" not in html
+
+
+def _add_captioned_and_bare(image_root, **fields):
+    """One artwork with a caption and a description, one with a description only."""
+    _add_image(
+        image_root,
+        "captioned.jpg",
+        title="Captioned",
+        caption="Petals in low light",
+        description="A long description of the captioned work.",
+        **fields,
+    )
+    _add_image(
+        image_root,
+        "bare.jpg",
+        title="Bare",
+        description="A long description of the bare work.",
+        **fields,
+    )
+
+
+def _assert_grid_text_is_caption(html):
+    assert '<p class="artwork-caption">Petals in low light</p>' in html
+    assert "A long description of the captioned work." not in html
+    # No caption: the title stands alone, the description does not fill in.
+    assert "A long description of the bare work." not in html
+    assert html.count('class="artwork-caption"') == 1
+    assert "artwork-description" not in html
+
+
+def test_gallery_grid_shows_caption_not_description(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    _add_captioned_and_bare(image_root)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "/artwork/bare.jpg" in response.text
+    _assert_grid_text_is_caption(response.text)
+
+
+def test_collection_grid_shows_caption_not_description(client, tmp_path, monkeypatch):
+    image_root = _make_curation_root(tmp_path, monkeypatch)
+    gallery_app.curation.upsert_collection({"id": "flora", "title": "Flora"})
+    _add_captioned_and_bare(image_root, collections=["flora"])
+    response = client.get("/collections/flora")
+    assert response.status_code == 200
+    assert "/artwork/bare.jpg" in response.text
+    _assert_grid_text_is_caption(response.text)
 
 
 def test_collection_image_state_markup_and_series_css(client, tmp_path, monkeypatch):
@@ -3553,6 +4493,18 @@ def test_artwork_page_requires_approval(client, tmp_path, monkeypatch, image_sta
     response = client.get("/artwork/a.jpg")
     assert response.status_code == 404
     assert "Secret Title" not in response.text
+
+
+def test_admin_nav_links_upscaler_only_when_configured(authed_client, monkeypatch):
+    from app import config as gallery_config
+
+    globals_ = gallery_config.templates.env.globals
+    monkeypatch.setitem(globals_, "upscaler_url", "")
+    assert "Upscaler" not in authed_client.get("/admin").text
+
+    monkeypatch.setitem(globals_, "upscaler_url", "https://upscaler.example")
+    page = authed_client.get("/admin").text
+    assert 'href="https://upscaler.example"' in page
 
 
 # ---------------------------------------------------------------------------

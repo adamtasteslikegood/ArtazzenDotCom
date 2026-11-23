@@ -37,6 +37,7 @@ app/
   factory.py             # create_app: lifespan, mounts, middleware, routers
 manage_sidecars.py       # CLI: validate/migrate sidecars + curation registries
 ImageSidecar.schema.json # Authoritative schema for per-image metadata
+ai_config/               # AI model catalog: models.json (prices, efforts), schema, README
 CollectionsRegistry.schema.json  # Schema for .curation/collections.json
 SeriesRegistry.schema.json       # Schema for .curation/series.json
 templates/               # Jinja2: base + base_admin, pages extend them
@@ -45,7 +46,9 @@ Static/                  # Mounted at /static (preserve capital S)
   images/                # Artwork files + co-located .json sidecars
     .curation/           # collections.json + series.json registries
 artazzen-design-system/  # Design system spec and tokens
-scripts/                 # ahead-behind.sh, generate_agents_md.py, migrate_v2.py, migrate_v3.py
+scripts/                 # ahead-behind.sh, generate_agents_md.py, migrate_v2.py, migrate_v3.py,
+                         # seed_images.py + seed-env-images.sh (fill a PR environment's volume)
+railway.json             # PR environments only: start through scripts/seed_images.py
 docs/agent-handbook.md   # Agent Handbook source (imported by CLAUDE.md via @)
 .claude/                 # Claude Code hooks + settings
 tests/test_main.py       # Pytest suite
@@ -190,6 +193,10 @@ A persistent volume is attached to the FastAPI service, mounted at `/data/images
 
 Images are always served from `/images` (`media.PublicImageFiles`), with or without a volume. `/static` never serves the `images/` subtree, so `/static/images/...` is 404 everywhere. Derivatives are written to `IMAGES_DIR/.derived/` and so persist on the volume.
 
+### PR environment images
+
+A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which downloads the seed archive behind the read-only link in `SEED_ARCHIVE_URL` and unpacks it into `IMAGES_DIR` (never overwriting a file already on the volume, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Environments never hold the bucket's keys (`SEED_S3_*`): only `seed_images.py push` and `link` use them, on a trusted machine. Setup is in `BRANCHING_STRATEGY.md` under "Seeding preview images".
+
 ### Cloudflare cache purge
 
 Set `CLOUDFLARE_API_TOKEN` (a token with only Zone → Cache Purge) and `CLOUDFLARE_ZONE_ID` on the Railway service. With both set, unapproving or deleting an image purges its edge copies by cache tag, and versioned image URLs may stay on the edge for a year. With either unset, purge is skipped and shared caches are capped at one day (`s-maxage=86400`). A failed purge logs a warning and never fails the admin action.
@@ -205,25 +212,27 @@ Admin routes (`/admin/*`) are protected by HTTP Basic Auth.
 
 See `.env.example` for the full list. Key vars:
 
-| Variable                      | Default                | Description                                                            |
-| ----------------------------- | ---------------------- | ---------------------------------------------------------------------- |
-| `SITE_URL`                    | `https://artazzen.com` | Canonical site URL for SEO (sitemap, robots.txt, canonical tags)       |
-| `IMAGES_DIR`                  | `Static/images`        | Image storage path. Set to `/data/images` on Railway                   |
-| `IMPORT_ROOT`                 | `imports`              | Only server directory allowed as a source for admin filesystem imports |
-| `ADMIN_USERNAME`              | `admin`                | Basic auth username for admin                                          |
-| `ADMIN_PASSWORD`              | _(none)_               | Basic auth password (**required** for admin)                           |
-| `MY_OPENAI_API_KEY`           | _(none)_               | OpenAI API key for AI metadata                                         |
-| `OPENAI_IMAGE_METADATA_MODEL` | `gpt-6-luna`           | Model for AI descriptions                                              |
-| `OPENAI_TIMEOUT_SECONDS`      | `30`                   | Timeout for OpenAI calls                                               |
-| `AI_MAX_RETRIES`              | `5`                    | Automatic retries after a failed AI metadata attempt (watcher only)    |
-| `AI_RETRY_DELAY_SECONDS`      | `60`                   | Minimum wait between those automatic retries                           |
-| `MAX_UPLOAD_SIZE_MB`          | `50`                   | Max upload file size                                                   |
-| `CLOUDFLARE_API_TOKEN`        | _(none)_               | Cache Purge token; with the zone id, enables purge on unapprove/delete |
-| `CLOUDFLARE_ZONE_ID`          | _(none)_               | Cloudflare zone of the site                                            |
-| `FIRE_OPAL_PAYLINK_URL`       | _(none)_               | Hosted pay link for the Fire Opal membership on `/join` (https only)   |
-| `SUPPORT_LINKS`               | _(none)_               | `Label\|URL; Label\|URL` sponsorship links on `/join` (https only)     |
-| `JOIN_FEATURE_IMAGE`          | _(first artwork)_      | File name of the approved image shown beside the offer on `/join`      |
-| `PORT`                        | _(uvicorn default)_    | Server port (set by Railway)                                           |
+| Variable                           | Default                | Description                                                                                                         |
+| ---------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `SITE_URL`                         | `https://artazzen.com` | Canonical site URL for SEO (sitemap, robots.txt, canonical tags)                                                    |
+| `UPSCALER_URL`                     | (unset)                | Public URL of the separate upscaler service (`services/upscaler`); the admin shows an "Upscaler" link only when set |
+| `IMAGES_DIR`                       | `Static/images`        | Image storage path. Set to `/data/images` on Railway                                                                |
+| `IMPORT_ROOT`                      | `imports`              | Only server directory allowed as a source for admin filesystem imports                                              |
+| `ADMIN_USERNAME`                   | `admin`                | Basic auth username for admin                                                                                       |
+| `ADMIN_PASSWORD`                   | _(none)_               | Basic auth password (**required** for admin)                                                                        |
+| `MY_OPENAI_API_KEY`                | _(none)_               | OpenAI API key for AI metadata                                                                                      |
+| `OPENAI_IMAGE_METADATA_MODEL`      | `gpt-6-luna`           | Model for AI descriptions                                                                                           |
+| `OPENAI_IMAGE_METADATA_MAX_TOKENS` | `4000`                 | Startup output token limit per AI request, kept inside 4,000 to 14,000; a limit saved in `ai_config.json` wins      |
+| `OPENAI_TIMEOUT_SECONDS`           | `30`                   | Timeout for OpenAI calls                                                                                            |
+| `AI_MAX_RETRIES`                   | `5`                    | Automatic retries after a failed AI metadata attempt (watcher only)                                                 |
+| `AI_RETRY_DELAY_SECONDS`           | `60`                   | Minimum wait between those automatic retries                                                                        |
+| `MAX_UPLOAD_SIZE_MB`               | `50`                   | Max upload file size                                                                                                |
+| `CLOUDFLARE_API_TOKEN`             | _(none)_               | Cache Purge token; with the zone id, enables purge on unapprove/delete                                              |
+| `CLOUDFLARE_ZONE_ID`               | _(none)_               | Cloudflare zone of the site                                                                                         |
+| `FIRE_OPAL_PAYLINK_URL`            | _(none)_               | Hosted pay link for the Fire Opal membership on `/join` (https only)                                                |
+| `SUPPORT_LINKS`                    | _(none)_               | `Label\|URL; Label\|URL` sponsorship links on `/join` (https only)                                                  |
+| `JOIN_FEATURE_IMAGE`               | _(first artwork)_      | File name of the approved image shown beside the offer on `/join`                                                   |
+| `PORT`                             | _(uvicorn default)_    | Server port (set by Railway)                                                                                        |
 
 ## Core Principles
 
