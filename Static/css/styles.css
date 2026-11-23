@@ -98,11 +98,14 @@ header h1 {
     line-height: 0.9;
     text-transform: uppercase;
     letter-spacing: -0.03em;
-    /* The tight tracking also closes the word gaps; give those back. */
-    word-spacing: 0.12em;
     margin: 0;
     font-weight: 700;
     text-wrap: balance;
+}
+
+/* The tight tracking also closes the word gaps; public pages get them back. */
+body:not(.admin-page) header h1 {
+    word-spacing: 0.12em;
 }
 
 /* Line under the page heading (gallery tagline, collection description) */
