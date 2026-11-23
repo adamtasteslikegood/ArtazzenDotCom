@@ -136,10 +136,11 @@ environments (and only those) the start command
 `python scripts/seed_images.py start`. It downloads one archive, unpacks it
 into `IMAGES_DIR` and then runs the `Procfile`'s web command. It runs in the
 start command because Railway does not mount volumes during a pre-deploy
-command. Once the volume holds artwork, files already on it are never
-overwritten, so edits made in a preview survive its next deploy. Until then the
-seed replaces what is there: the app creates empty collection and series
-registries on its first start, and they would otherwise hide the seeded ones.
+command. Files already on the volume are never overwritten, so edits made in a
+preview survive its next deploy. The one exception: while the volume still has
+no artwork, an empty collection or series registry that the app created on its
+first start is replaced, under the app's registry lock, because it would
+otherwise hide the seeded one.
 An artwork image is unpacked only if its sidecar is in the archive or already
 on the volume. Without the variable below it logs one line and starts the app;
 a failed download logs a warning and starts the app.

@@ -41,8 +41,8 @@ All notable changes to this project will be documented in this file.
   `railway.json` starts them (and only them) through
   `scripts/seed_images.py start`, which downloads one seed archive from the
   read-only link in `SEED_ARCHIVE_URL`, unpacks it into `IMAGES_DIR` and then
-  runs the `Procfile` command. Once the volume holds artwork its files are
-  kept, production is refused, and with no link set the app starts as before.
+  runs the `Procfile` command. Files already on the volume are kept,
+  production is refused, and with no link set the app starts as before.
   Environments never hold storage-bucket keys: `seed_images.py push` packs
   and uploads a local folder from a trusted machine and prints the link, and
   `link` renews it (a link lasts at most 90 days).

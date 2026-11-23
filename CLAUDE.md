@@ -195,7 +195,7 @@ Images are always served from `/images` (`media.PublicImageFiles`), with or with
 
 ### PR environment images
 
-A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which downloads the seed archive behind the read-only link in `SEED_ARCHIVE_URL` and unpacks it into `IMAGES_DIR` (never overwriting once the volume holds artwork, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Environments never hold the bucket's keys (`SEED_S3_*`): only `seed_images.py push` and `link` use them, on a trusted machine. Setup is in `BRANCHING_STRATEGY.md` under "Seeding preview images".
+A PR environment's volume starts empty; the repository holds no artwork. `railway.json` makes PR environments (only) start with `python scripts/seed_images.py start`, which downloads the seed archive behind the read-only link in `SEED_ARCHIVE_URL` and unpacks it into `IMAGES_DIR` (never overwriting a file already on the volume, never in production) and then runs the `Procfile` web command. Staging and production start from the `Procfile` directly. `scripts/seed-env-images.sh` fills a volume by hand over `railway ssh`. Environments never hold the bucket's keys (`SEED_S3_*`): only `seed_images.py push` and `link` use them, on a trusted machine. Setup is in `BRANCHING_STRATEGY.md` under "Seeding preview images".
 
 ### Cloudflare cache purge
 

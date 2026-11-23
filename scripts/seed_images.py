@@ -8,11 +8,10 @@ Usage:
     python scripts/seed_images.py link [--days N]
 
 pull   Download the archive at SEED_ARCHIVE_URL and unpack it into DIR
-       (default: IMAGES_DIR). Once DIR holds artwork, files that already
-       exist are left alone, so edits made in the environment survive the
-       next deploy. Until then the seed replaces what is there (the empty
-       registries the app creates on its first start). Refuses to run in
-       production.
+       (default: IMAGES_DIR). Existing files are left alone, so edits made in
+       the environment survive the next deploy. The only exception is an
+       app-made empty collection or series registry on a volume that still
+       has no artwork. Refuses to run in production.
 start  What a PR environment runs to start: pull, then run the Procfile's
        web command. A failed or unconfigured pull never stops the app, and
        outside a pull-request environment (Railway names them "<name>-pr-<n>")
@@ -44,6 +43,7 @@ on the machine that runs them; do not set these on a Railway environment:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -55,6 +55,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -83,9 +84,17 @@ PR_ENVIRONMENT_NAME = re.compile(r"-pr-\d+$")
 # its locks on these very files, so they are never copied in either direction:
 # a new file under the same name would be a different lock. Kept equal to the
 # app's by a test, since this script does not import the app.
+REGISTRY_LOCKFILE = PurePosixPath(".curation/.lock")
 LOCKFILES = {
-    PurePosixPath(".curation/.lock"),
+    REGISTRY_LOCKFILE,
     PurePosixPath(".curation/.sidecars.lock"),
+}
+# These are the only existing files an initial seed may replace. The app makes
+# them on an empty volume, and their empty values would otherwise hide the
+# registries from the seed.
+EMPTY_REGISTRIES = {
+    PurePosixPath(".curation/collections.json"): "collections",
+    PurePosixPath(".curation/series.json"): "series",
 }
 # Never copied in either direction: the volume's own filesystem folder.
 SKIPPED_TOP_LEVEL = {"lost+found"}
@@ -214,6 +223,64 @@ def holds_artwork(dest: Path) -> bool:
     )
 
 
+def _is_app_made_empty_registry(path: PurePosixPath, target: Path) -> bool:
+    """Whether ``target`` is one of the empty registries made by the app."""
+    field = EMPTY_REGISTRIES.get(path)
+    if field is None or target.is_symlink() or not target.is_file():
+        return False
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    return (
+        isinstance(data, dict)
+        and set(data).issubset({"version", field})
+        and data.get("version", 1) == 1
+        and data.get(field) == []
+    )
+
+
+@contextmanager
+def _registry_lock(dest: Path):
+    """Use the same cross-process registry lock as ``app.curation``."""
+    lockfile = dest.joinpath(*REGISTRY_LOCKFILE.parts)
+    lockfile.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(lockfile, "a")  # noqa: SIM115 - must remain open for flock
+    try:
+        import fcntl
+
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        handle.close()
+
+
+def _publish_download(
+    partial: str, target: Path, path: PurePosixPath, dest: Path
+) -> bool:
+    """Publish a complete file without clobbering concurrent changes."""
+    if path in EMPTY_REGISTRIES:
+        with _registry_lock(dest):
+            if target.exists():
+                if holds_artwork(dest) or not _is_app_made_empty_registry(path, target):
+                    return False
+                os.replace(partial, target)
+                return True
+            try:
+                os.link(partial, target)
+            except FileExistsError:
+                return False
+            return True
+
+    # Hard-linking the completed temporary file publishes it atomically and,
+    # unlike replace(), fails if an upload created the target in the meantime.
+    try:
+        os.link(partial, target)
+    except FileExistsError:
+        return False
+    return True
+
+
 def _is_artwork(path: PurePosixPath) -> bool:
     return len(path.parts) == 1 and path.suffix.lower() in ARTWORK_SUFFIXES
 
@@ -221,10 +288,10 @@ def _is_artwork(path: PurePosixPath) -> bool:
 def pull(archive: tarfile.TarFile, dest: Path) -> tuple[int, int]:
     """Unpack the seed archive into ``dest``. Returns (copied, skipped).
 
-    Existing files are kept once ``dest`` holds artwork. Before that, the
-    files that were there when the pull began are replaced, or app-made empty
-    registries would hide the seeded collections. A file that appears while
-    the copy runs (an upload to a running app) is never replaced.
+    Existing files are always kept, except for the app-made empty collection
+    and series registries on a volume that still has no artwork. Those are
+    replaced under the same cross-process lock the app uses. A file that
+    appears while the copy runs is never replaced.
     """
     paths: dict[PurePosixPath, tarfile.TarInfo] = {}
     for member in archive:
@@ -242,11 +309,6 @@ def pull(archive: tarfile.TarFile, dest: Path) -> tuple[int, int]:
     copied = skipped = 0
     dest.mkdir(parents=True, exist_ok=True)
     dest_root = dest.resolve()
-    replaceable = (
-        set()
-        if holds_artwork(dest_root)
-        else {found for found in dest_root.rglob("*") if found.is_file()}
-    )
     for path in sorted(paths, key=_sidecars_first):
         target = dest.joinpath(*path.parts)
         target_parent = target.parent.resolve()
@@ -254,7 +316,7 @@ def pull(archive: tarfile.TarFile, dest: Path) -> tuple[int, int]:
             logger.warning("Skipping entry outside destination: %s", path)
             continue
         target = target_parent / target.name
-        if target.exists() and target not in replaceable:
+        if target.exists() and path not in EMPTY_REGISTRIES:
             skipped += 1
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -264,12 +326,11 @@ def pull(archive: tarfile.TarFile, dest: Path) -> tuple[int, int]:
         os.close(handle)
         try:
             _extract(archive, paths[path], partial)
-            if target.exists() and target not in replaceable:
-                skipped += 1  # it appeared while this one was unpacking
-                continue
             os.chmod(partial, 0o644)  # mkstemp makes it owner-only
-            os.replace(partial, target)
-            copied += 1
+            if _publish_download(partial, target, path, dest_root):
+                copied += 1
+            else:
+                skipped += 1
         finally:
             if os.path.exists(partial):
                 os.remove(partial)

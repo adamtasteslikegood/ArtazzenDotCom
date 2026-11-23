@@ -15,8 +15,8 @@ volume. Files are added and same-named files are overwritten; nothing is
 deleted. Production is refused.
 
 With --from-archive nothing is sent from this machine: the environment
-downloads its seed archive again (see scripts/seed_images.py), and once the
-volume holds artwork, files that already exist there are left alone. The
+downloads its seed archive again (see scripts/seed_images.py). Files that
+already exist on the volume are left alone. The
 environment must be running a build that has scripts/seed_images.py and the
 SEED_ARCHIVE_URL variable.
 
